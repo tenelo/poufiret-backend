@@ -36,6 +36,7 @@ THIRD_PARTY_APPS = [
 
 LOCAL_APPS = [
     # On ajoutera ici nos apps : users, catalog, social, orders, etc.
+    'apps.users',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -128,3 +129,8 @@ CORS_ALLOW_CREDENTIALS = True
 # Type de clé primaire par défaut
 # ------------------------------------------------------------------------------
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ------------------------------------------------------------------------------
+# Modèle utilisateur personnalisé
+# ------------------------------------------------------------------------------
+AUTH_USER_MODEL = 'users.User'
