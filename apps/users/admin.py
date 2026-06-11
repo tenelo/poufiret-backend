@@ -5,7 +5,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import User, PlanAbonnement
+from .models import User, PlanAbonnement, ProfilCommercant
 
 
 @admin.register(User)
@@ -75,3 +75,71 @@ class PlanAbonnementAdmin(admin.ModelAdmin):
             'fields': ('ordre',),
         }),
     )
+
+
+@admin.register(ProfilCommercant)
+class ProfilCommercantAdmin(admin.ModelAdmin):
+    """Admin pour les profils commerçants — point de contrôle central."""
+
+    list_display = (
+        'nom_commerce', 'telephone_user', 'plan', 'statut',
+        'est_visible', 'badge_certifie', 'est_faveur', 'created_at',
+    )
+    list_filter = (
+        'statut', 'est_visible', 'badge_certifie', 'taxes_communales_ok',
+        'est_faveur', 'paye_publicite', 'plan', 'ville', 'source_inscription',
+    )
+    search_fields = (
+        'nom_commerce', 'user__telephone', 'user__username',
+        'quartier', 'secteur', 'adresse', 'id_kobo',
+    )
+    list_editable = ('statut', 'est_visible', 'badge_certifie', 'est_faveur')
+    autocomplete_fields = ('user', 'plan', 'faveur_accordee_par')
+    readonly_fields = ('created_at', 'updated_at')
+    ordering = ('-created_at',)
+
+    fieldsets = (
+        (None, {
+            'fields': ('user', 'nom_commerce', 'description', 'logo', 'photo_couverture'),
+        }),
+        (_('Localisation'), {
+            'fields': ('adresse', 'quartier', 'secteur', 'ville',
+                       'description_acces', 'localisation'),
+        }),
+        (_('Contact professionnel'), {
+            'fields': ('telephone_pro', 'whatsapp', 'email_pro'),
+        }),
+        (_('Plan & abonnement'), {
+            'fields': ('plan', 'abonnement_debut', 'abonnement_fin'),
+        }),
+        (_('Visibilité & statut'), {
+            'fields': ('statut', 'est_visible', 'visibilite_jusquau', 'score_priorite'),
+        }),
+        (_('Publicité'), {
+            'fields': ('paye_publicite', 'pub_active_jusquau'),
+        }),
+        (_('Certification & taxes'), {
+            'fields': ('badge_certifie', 'taxes_communales_ok', 'date_verif_taxes'),
+        }),
+        (_('Faveur (visibilité offerte)'), {
+            'fields': ('est_faveur', 'faveur_accordee_par', 'faveur_motif'),
+            'classes': ('collapse',),  # repliable par défaut
+        }),
+        (_('Notes admin'), {
+            'fields': ('notes_admin', 'derniere_verif'),
+            'classes': ('collapse',),
+        }),
+        (_('Traçabilité'), {
+            'fields': ('source_inscription', 'id_kobo', 'created_at', 'updated_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def telephone_user(self, obj):
+        """Affiche le téléphone du User lié dans la liste."""
+        return obj.user.telephone
+    telephone_user.short_description = _('Téléphone')
+    telephone_user.admin_order_field = 'user__telephone'
+
+
+
