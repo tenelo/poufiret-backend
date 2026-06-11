@@ -37,6 +37,7 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     # On ajoutera ici nos apps : users, catalog, social, orders, etc.
     'apps.users',
+    'apps.catalog',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
