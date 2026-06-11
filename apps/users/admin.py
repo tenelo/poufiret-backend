@@ -5,8 +5,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import User, PlanAbonnement, ProfilCommercant
-
+from .models import User, PlanAbonnement, ProfilCommercant, HoraireOuverture, AdresseClient
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
@@ -76,11 +75,21 @@ class PlanAbonnementAdmin(admin.ModelAdmin):
         }),
     )
 
+class HoraireOuvertureInline(admin.TabularInline):
+    """Inline pour afficher les horaires sur la fiche du commerçant."""
+    model = HoraireOuverture
+    extra = 1
+    fields = ('jour_semaine', 'ouvert', 'heure_ouverture',
+              'heure_fermeture', 'pause_debut', 'pause_fin', 'note')
+
+
 
 @admin.register(ProfilCommercant)
 class ProfilCommercantAdmin(admin.ModelAdmin):
     """Admin pour les profils commerçants — point de contrôle central."""
 
+    
+    inlines = [HoraireOuvertureInline]
     list_display = (
         'nom_commerce', 'telephone_user', 'plan', 'statut',
         'est_visible', 'badge_certifie', 'est_faveur', 'created_at',
@@ -141,5 +150,28 @@ class ProfilCommercantAdmin(admin.ModelAdmin):
     telephone_user.short_description = _('Téléphone')
     telephone_user.admin_order_field = 'user__telephone'
 
+
+
+@admin.register(HoraireOuverture)
+class HoraireOuvertureAdmin(admin.ModelAdmin):
+    """Vue standalone des horaires (utile pour les rares besoins admin)."""
+    list_display = ('commercant', 'jour_semaine', 'ouvert',
+                    'heure_ouverture', 'heure_fermeture')
+    list_filter = ('jour_semaine', 'ouvert')
+    search_fields = ('commercant__nom_commerce',)
+    autocomplete_fields = ('commercant',)
+    ordering = ('commercant', 'jour_semaine')
+
+
+@admin.register(AdresseClient)
+class AdresseClientAdmin(admin.ModelAdmin):
+    """Admin des adresses sauvegardées des clients."""
+    list_display = ('libelle', 'user', 'adresse', 'est_principale', 'est_active', 'updated_at')
+    list_filter = ('est_principale', 'est_active')
+    search_fields = ('libelle', 'adresse', 'user__telephone', 'user__username')
+    autocomplete_fields = ('user',)
+    list_editable = ('est_principale', 'est_active')
+    ordering = ('-updated_at',)
+    readonly_fields = ('created_at', 'updated_at')
 
 

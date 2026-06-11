@@ -356,3 +356,113 @@ class ProfilCommercant(models.Model):
 
     def __str__(self):
         return f"{self.nom_commerce} — {self.user.telephone}"
+    
+
+
+
+class HoraireOuverture(models.Model):
+    """
+    Horaires d'ouverture hebdomadaires d'un commerçant.
+
+    Un commerçant a généralement 7 horaires (un par jour de la semaine).
+    Permet de répondre à des requêtes type "qui est ouvert maintenant ?".
+    """
+
+    class Jour(models.IntegerChoices):
+        LUNDI = 0, _('Lundi')
+        MARDI = 1, _('Mardi')
+        MERCREDI = 2, _('Mercredi')
+        JEUDI = 3, _('Jeudi')
+        VENDREDI = 4, _('Vendredi')
+        SAMEDI = 5, _('Samedi')
+        DIMANCHE = 6, _('Dimanche')
+
+    commercant = models.ForeignKey(
+        ProfilCommercant,
+        on_delete=models.CASCADE,
+        related_name='horaires',
+        verbose_name=_('commerçant'),
+    )
+    jour_semaine = models.IntegerField(_('jour'), choices=Jour.choices)
+    ouvert = models.BooleanField(_('ouvert ce jour'), default=True)
+
+    heure_ouverture = models.TimeField(_('heure d\'ouverture'), blank=True, null=True)
+    heure_fermeture = models.TimeField(_('heure de fermeture'), blank=True, null=True)
+
+    # Pause méridienne (facultatif)
+    pause_debut = models.TimeField(_('début de pause'), blank=True, null=True)
+    pause_fin = models.TimeField(_('fin de pause'), blank=True, null=True)
+
+    note = models.CharField(
+        _('note'),
+        max_length=200,
+        blank=True,
+        help_text=_('Ex: "Horaires Ramadan", "Fermé en cas de pluie"…'),
+    )
+
+    class Meta:
+        verbose_name = _('horaire d\'ouverture')
+        verbose_name_plural = _('horaires d\'ouverture')
+        ordering = ['commercant', 'jour_semaine']
+        # Un seul horaire par couple (commerçant, jour)
+        constraints = [
+            models.UniqueConstraint(
+                fields=['commercant', 'jour_semaine'],
+                name='unique_horaire_par_jour',
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.commercant.nom_commerce} — {self.get_jour_semaine_display()}"
+
+
+class AdresseClient(models.Model):
+    """
+    Adresses sauvegardées d'un client (pour commandes & livraisons).
+
+    Un client peut avoir plusieurs adresses (maison, bureau, chez maman…).
+    Évite de devoir retaper l'adresse à chaque commande.
+    """
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='adresses',
+        verbose_name=_('utilisateur'),
+    )
+    libelle = models.CharField(
+        _('libellé'),
+        max_length=50,
+        help_text=_('Ex: "Maison", "Bureau", "Chez maman"…'),
+    )
+    adresse = models.CharField(_('adresse'), max_length=255)
+    description_acces = models.TextField(
+        _('comment trouver l\'adresse'),
+        blank=True,
+        help_text=_('Ex: "Porte verte, 1er étage, à droite de la pharmacie".'),
+    )
+
+    # GPS optionnel — comme pour les commerçants
+    localisation = gis_models.PointField(
+        _('position GPS'),
+        geography=True,
+        blank=True, null=True,
+    )
+
+    est_principale = models.BooleanField(
+        _('adresse principale'),
+        default=False,
+        help_text=_('L\'adresse principale est sélectionnée par défaut au moment de commander.'),
+    )
+    est_active = models.BooleanField(_('adresse active'), default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('adresse client')
+        verbose_name_plural = _('adresses clients')
+        ordering = ['user', '-est_principale', '-updated_at']
+
+    def __str__(self):
+        return f"{self.libelle} — {self.user.telephone}"
