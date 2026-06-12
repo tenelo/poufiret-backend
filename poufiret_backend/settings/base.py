@@ -32,9 +32,12 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     'rest_framework',               # API REST
     'corsheaders',                  # CORS pour Flutter
+    'rest_framework_simplejwt.token_blacklist',  # blacklist refresh tokens
+    'waffle',                       # feature flags
 ]
 
 LOCAL_APPS = [
+    'apps.core',                    # couche commune (modele abstrait, exceptions)
     # On ajoutera ici nos apps : users, catalog, social, orders, etc.
     'apps.users',
     'apps.catalog',
@@ -58,6 +61,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'waffle.middleware.WaffleMiddleware',
 ]
 
 ROOT_URLCONF = 'poufiret_backend.urls'
@@ -139,3 +143,43 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Modèle utilisateur personnalisé
 # ------------------------------------------------------------------------------
 AUTH_USER_MODEL = 'users.User'
+
+# ------------------------------------------------------------------------------
+# Django REST Framework
+# ------------------------------------------------------------------------------
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': config('API_PAGE_SIZE', default=20, cast=int),
+    'DEFAULT_VERSIONING_CLASS': 'rest_framework.versioning.URLPathVersioning',
+    'DEFAULT_VERSION': 'v1',
+    'ALLOWED_VERSIONS': ['v1'],
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': config('THROTTLE_ANON', default='60/min'),
+        'user': config('THROTTLE_USER', default='1000/min'),
+    },
+    'EXCEPTION_HANDLER': 'apps.core.exceptions.custom_exception_handler',
+}
+
+# ------------------------------------------------------------------------------
+# SIMPLE_JWT — authentification par token (style "reste connecté")
+# ------------------------------------------------------------------------------
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=180),   # 6 mois d'inactivite max
+    'ROTATE_REFRESH_TOKENS': True,                   # fenetre glissante
+    'BLACKLIST_AFTER_ROTATION': True,                # invalide l'ancien refresh
+    'UPDATE_LAST_LOGIN': True,                        # alimente last_login
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
