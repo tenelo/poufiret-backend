@@ -7,7 +7,7 @@ from decouple import config, Csv
 # ------------------------------------------------------------------------------
 # Chemins de base
 # ------------------------------------------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # ------------------------------------------------------------------------------
 # Sécurité — lues depuis le .env
