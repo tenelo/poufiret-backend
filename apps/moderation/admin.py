@@ -5,7 +5,7 @@ from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
 from .models import (
-    SignalementArticle, SignalementCommercant,
+    SignalementArticle, SignalementPartenaire,
     SignalementCommentaire, SignalementMessage,
     Notification,
 )
@@ -32,12 +32,12 @@ class SignalementArticleAdmin(SignalementBaseAdmin):
     autocomplete_fields = ('article', 'rapporteur', 'traite_par')
 
 
-@admin.register(SignalementCommercant)
-class SignalementCommercantAdmin(SignalementBaseAdmin):
-    list_display = ('id', 'commercant', 'rapporteur', 'motif', 'statut',
+@admin.register(SignalementPartenaire)
+class SignalementPartenaireAdmin(SignalementBaseAdmin):
+    list_display = ('id', 'partenaire', 'rapporteur', 'motif', 'statut',
                     'traite_par', 'created_at')
-    search_fields = ('commercant__nom_commerce', 'rapporteur__telephone', 'description')
-    autocomplete_fields = ('commercant', 'rapporteur', 'traite_par')
+    search_fields = ('partenaire__nom_commerce', 'rapporteur__telephone', 'description')
+    autocomplete_fields = ('partenaire', 'rapporteur', 'traite_par')
 
 
 @admin.register(SignalementCommentaire)
@@ -46,15 +46,15 @@ class SignalementCommentaireAdmin(SignalementBaseAdmin):
                     'traite_par', 'created_at')
     search_fields = ('rapporteur__telephone', 'description')
     autocomplete_fields = (
-        'commentaire_article', 'commentaire_commercant',
+        'commentaire_article', 'commentaire_partenaire',
         'rapporteur', 'traite_par',
     )
 
     def cible(self, obj):
         if obj.commentaire_article:
             return f"Article : {obj.commentaire_article}"
-        if obj.commentaire_commercant:
-            return f"Commerçant : {obj.commentaire_commercant}"
+        if obj.commentaire_partenaire:
+            return f"Commerçant : {obj.commentaire_partenaire}"
         return '—'
     cible.short_description = _('Cible')
 

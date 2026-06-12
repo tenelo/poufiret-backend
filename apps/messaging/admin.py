@@ -29,14 +29,14 @@ class MessageInline(admin.TabularInline):
 
 @admin.register(Conversation)
 class ConversationAdmin(admin.ModelAdmin):
-    list_display = ('client', 'commercant', 'article', 'nb_messages',
+    list_display = ('client', 'partenaire', 'article', 'nb_messages',
                     'est_archivee', 'derniere_activite')
     list_filter = ('est_archivee',)
     search_fields = (
         'client__telephone', 'client__first_name',
-        'commercant__nom_commerce', 'article__nom',
+        'partenaire__nom_commerce', 'article__nom',
     )
-    autocomplete_fields = ('client', 'commercant', 'article')
+    autocomplete_fields = ('client', 'partenaire', 'article')
     readonly_fields = ('created_at', 'derniere_activite')
     inlines = [MessageInline]
     date_hierarchy = 'derniere_activite'

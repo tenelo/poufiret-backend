@@ -5,7 +5,7 @@ from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
 from .models import (
-    Categorie, CommercantCategorie, SectionMenu, Article,
+    Categorie, PartenaireCategorie, SectionMenu, Article,
     Logement, Vehicule, ArticleImage, Panorama,
     Variante, Supplement, VueArticle,
 )
@@ -38,12 +38,12 @@ class CategorieAdmin(admin.ModelAdmin):
     )
 
 
-@admin.register(CommercantCategorie)
-class CommercantCategorieAdmin(admin.ModelAdmin):
-    list_display = ('commercant', 'categorie', 'est_principale')
+@admin.register(PartenaireCategorie)
+class PartenaireCategorieAdmin(admin.ModelAdmin):
+    list_display = ('partenaire', 'categorie', 'est_principale')
     list_filter = ('est_principale', 'categorie')
-    search_fields = ('commercant__nom_commerce', 'categorie__nom')
-    autocomplete_fields = ('commercant', 'categorie')
+    search_fields = ('partenaire__nom_commerce', 'categorie__nom')
+    autocomplete_fields = ('partenaire', 'categorie')
     list_editable = ('est_principale',)
 
 
@@ -53,10 +53,10 @@ class CommercantCategorieAdmin(admin.ModelAdmin):
 
 @admin.register(SectionMenu)
 class SectionMenuAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'commercant', 'ordre', 'est_active')
+    list_display = ('nom', 'partenaire', 'ordre', 'est_active')
     list_filter = ('est_active',)
-    search_fields = ('nom', 'commercant__nom_commerce')
-    autocomplete_fields = ('commercant',)
+    search_fields = ('nom', 'partenaire__nom_commerce')
+    autocomplete_fields = ('partenaire',)
     list_editable = ('ordre', 'est_active')
 
 
@@ -107,13 +107,13 @@ class VehiculeInline(admin.StackedInline):
 @admin.register(Article)
 class ArticleAdmin(admin.ModelAdmin):
     list_display = (
-        'nom', 'commercant', 'categorie', 'type', 'prix',
+        'nom', 'partenaire', 'categorie', 'type', 'prix',
         'est_actif', 'est_disponible', 'nb_vues', 'nb_likes', 'created_at',
     )
     list_filter = ('type', 'est_actif', 'est_disponible', 'est_en_promotion', 'categorie')
-    search_fields = ('nom', 'slug', 'description', 'commercant__nom_commerce')
+    search_fields = ('nom', 'slug', 'description', 'partenaire__nom_commerce')
     list_editable = ('est_actif', 'est_disponible')
-    autocomplete_fields = ('commercant', 'categorie', 'section_menu')
+    autocomplete_fields = ('partenaire', 'categorie', 'section_menu')
     prepopulated_fields = {'slug': ('nom',)}
     readonly_fields = ('nb_vues', 'nb_likes', 'nb_commentaires', 'nb_favoris',
                        'created_at', 'updated_at')
@@ -122,7 +122,7 @@ class ArticleAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (None, {
-            'fields': ('commercant', 'categorie', 'type', 'nom', 'slug', 'description'),
+            'fields': ('partenaire', 'categorie', 'type', 'nom', 'slug', 'description'),
         }),
         (_('Tarif'), {
             'fields': ('prix', 'prix_promotion', 'unite', 'est_en_promotion'),
@@ -154,7 +154,7 @@ class ArticleAdmin(admin.ModelAdmin):
 class LogementAdmin(admin.ModelAdmin):
     list_display = ('article', 'nb_chambres', 'nb_sdb', 'surface_m2', 'meuble')
     list_filter = ('meuble',)
-    search_fields = ('article__nom', 'article__commercant__nom_commerce')
+    search_fields = ('article__nom', 'article__partenaire__nom_commerce')
     autocomplete_fields = ('article',)
 
 

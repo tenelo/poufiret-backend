@@ -5,7 +5,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import User, PlanAbonnement, ProfilCommercant, HoraireOuverture, AdresseClient
+from .models import User, PlanAbonnement, ProfilPartenaire, HoraireOuverture, AdresseClient
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
@@ -84,8 +84,8 @@ class HoraireOuvertureInline(admin.TabularInline):
 
 
 
-@admin.register(ProfilCommercant)
-class ProfilCommercantAdmin(admin.ModelAdmin):
+@admin.register(ProfilPartenaire)
+class ProfilPartenaireAdmin(admin.ModelAdmin):
     """Admin pour les profils commerçants — point de contrôle central."""
 
     
@@ -155,12 +155,12 @@ class ProfilCommercantAdmin(admin.ModelAdmin):
 @admin.register(HoraireOuverture)
 class HoraireOuvertureAdmin(admin.ModelAdmin):
     """Vue standalone des horaires (utile pour les rares besoins admin)."""
-    list_display = ('commercant', 'jour_semaine', 'ouvert',
+    list_display = ('partenaire', 'jour_semaine', 'ouvert',
                     'heure_ouverture', 'heure_fermeture')
     list_filter = ('jour_semaine', 'ouvert')
-    search_fields = ('commercant__nom_commerce',)
-    autocomplete_fields = ('commercant',)
-    ordering = ('commercant', 'jour_semaine')
+    search_fields = ('partenaire__nom_commerce',)
+    autocomplete_fields = ('partenaire',)
+    ordering = ('partenaire', 'jour_semaine')
 
 
 @admin.register(AdresseClient)

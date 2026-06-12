@@ -5,9 +5,9 @@ from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 
 from .models import (
-    LikeArticle, LikeCommercant, LikeCommentaire,
-    FavoriArticle, FavoriCommercant,
-    CommentaireArticle, CommentaireCommercant,
+    LikeArticle, LikePartenaire, LikeCommentaire,
+    FavoriArticle, FavoriPartenaire,
+    CommentaireArticle, CommentairePartenaire,
 )
 
 
@@ -25,11 +25,11 @@ class LikeArticleAdmin(admin.ModelAdmin):
     ordering = ('-created_at',)
 
 
-@admin.register(LikeCommercant)
-class LikeCommercantAdmin(admin.ModelAdmin):
-    list_display = ('user', 'commercant', 'created_at')
-    search_fields = ('user__telephone', 'commercant__nom_commerce')
-    autocomplete_fields = ('user', 'commercant')
+@admin.register(LikePartenaire)
+class LikePartenaireAdmin(admin.ModelAdmin):
+    list_display = ('user', 'partenaire', 'created_at')
+    search_fields = ('user__telephone', 'partenaire__nom_commerce')
+    autocomplete_fields = ('user', 'partenaire')
     readonly_fields = ('created_at',)
     date_hierarchy = 'created_at'
     ordering = ('-created_at',)
@@ -37,9 +37,9 @@ class LikeCommercantAdmin(admin.ModelAdmin):
 
 @admin.register(LikeCommentaire)
 class LikeCommentaireAdmin(admin.ModelAdmin):
-    list_display = ('user', 'commentaire_article', 'commentaire_commercant', 'created_at')
+    list_display = ('user', 'commentaire_article', 'commentaire_partenaire', 'created_at')
     search_fields = ('user__telephone',)
-    autocomplete_fields = ('user', 'commentaire_article', 'commentaire_commercant')
+    autocomplete_fields = ('user', 'commentaire_article', 'commentaire_partenaire')
     readonly_fields = ('created_at',)
     ordering = ('-created_at',)
 
@@ -58,11 +58,11 @@ class FavoriArticleAdmin(admin.ModelAdmin):
     ordering = ('-created_at',)
 
 
-@admin.register(FavoriCommercant)
-class FavoriCommercantAdmin(admin.ModelAdmin):
-    list_display = ('user', 'commercant', 'created_at')
-    search_fields = ('user__telephone', 'commercant__nom_commerce')
-    autocomplete_fields = ('user', 'commercant')
+@admin.register(FavoriPartenaire)
+class FavoriPartenaireAdmin(admin.ModelAdmin):
+    list_display = ('user', 'partenaire', 'created_at')
+    search_fields = ('user__telephone', 'partenaire__nom_commerce')
+    autocomplete_fields = ('user', 'partenaire')
     readonly_fields = ('created_at',)
     date_hierarchy = 'created_at'
     ordering = ('-created_at',)
@@ -99,25 +99,25 @@ class CommentaireArticleAdmin(admin.ModelAdmin):
     preview.short_description = _('Aperçu')
 
 
-class ReponseCommercantInline(admin.TabularInline):
+class ReponsePartenaireInline(admin.TabularInline):
     """Inline pour afficher les réponses sous un commentaire de commerçant."""
-    model = CommentaireCommercant
+    model = CommentairePartenaire
     fk_name = 'parent'
     extra = 0
     fields = ('user', 'contenu', 'est_visible', 'nb_likes', 'created_at')
     readonly_fields = ('user', 'created_at', 'nb_likes')
 
 
-@admin.register(CommentaireCommercant)
-class CommentaireCommercantAdmin(admin.ModelAdmin):
-    list_display = ('user', 'commercant', 'preview', 'parent', 'est_visible',
+@admin.register(CommentairePartenaire)
+class CommentairePartenaireAdmin(admin.ModelAdmin):
+    list_display = ('user', 'partenaire', 'preview', 'parent', 'est_visible',
                     'nb_likes', 'created_at')
     list_filter = ('est_visible',)
-    search_fields = ('contenu', 'user__telephone', 'commercant__nom_commerce')
+    search_fields = ('contenu', 'user__telephone', 'partenaire__nom_commerce')
     list_editable = ('est_visible',)
-    autocomplete_fields = ('user', 'commercant', 'parent')
+    autocomplete_fields = ('user', 'partenaire', 'parent')
     readonly_fields = ('nb_likes', 'created_at', 'updated_at', 'est_modifie')
-    inlines = [ReponseCommercantInline]
+    inlines = [ReponsePartenaireInline]
     date_hierarchy = 'created_at'
     ordering = ('-created_at',)
 
