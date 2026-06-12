@@ -23,7 +23,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.catalog.models import Article
-from apps.users.models import AdresseClient, ProfilCommercant, User
+from apps.users.models import AdresseClient, ProfilPartenaire, User
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -43,8 +43,8 @@ class Panier(models.Model):
         related_name='paniers',
         verbose_name=_('utilisateur'),
     )
-    commercant = models.ForeignKey(
-        ProfilCommercant,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire,
         on_delete=models.CASCADE,
         related_name='paniers',
         verbose_name=_('commerçant'),
@@ -59,13 +59,13 @@ class Panier(models.Model):
         ordering = ['-updated_at']
         constraints = [
             models.UniqueConstraint(
-                fields=['user', 'commercant'],
+                fields=['user', 'partenaire'],
                 name='unique_panier_par_couple',
             ),
         ]
 
     def __str__(self):
-        return f"Panier {self.user.telephone} → {self.commercant.nom_commerce}"
+        return f"Panier {self.user.telephone} → {self.partenaire.nom_commerce}"
 
 
 class LignePanier(models.Model):
@@ -163,8 +163,8 @@ class Commande(models.Model):
         User, on_delete=models.PROTECT,
         related_name='commandes', verbose_name=_('client'),
     )
-    commercant = models.ForeignKey(
-        ProfilCommercant, on_delete=models.PROTECT,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire, on_delete=models.PROTECT,
         related_name='commandes', verbose_name=_('commerçant'),
     )
 
@@ -228,7 +228,7 @@ class Commande(models.Model):
 
     # ── Notes ────────────────────────────────────────────────────────
     notes_client = models.TextField(_('notes du client'), blank=True)
-    notes_commercant = models.TextField(_('notes du commerçant'), blank=True)
+    notes_partenaire = models.TextField(_('notes du commerçant'), blank=True)
 
     # ── Dates clés du workflow ───────────────────────────────────────
     created_at = models.DateTimeField(auto_now_add=True)
@@ -242,13 +242,13 @@ class Commande(models.Model):
         verbose_name_plural = _('commandes')
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['commercant', 'statut', '-created_at']),
+            models.Index(fields=['partenaire', 'statut', '-created_at']),
             models.Index(fields=['user', '-created_at']),
             models.Index(fields=['statut']),
         ]
 
     def __str__(self):
-        return f"{self.numero} — {self.commercant.nom_commerce}"
+        return f"{self.numero} — {self.partenaire.nom_commerce}"
 
 
 class LigneCommande(models.Model):

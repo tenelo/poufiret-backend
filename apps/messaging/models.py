@@ -11,7 +11,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.catalog.models import Article
-from apps.users.models import AdresseClient, ProfilCommercant, User
+from apps.users.models import AdresseClient, ProfilPartenaire, User
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -29,8 +29,8 @@ class Conversation(models.Model):
         related_name='conversations_client',
         verbose_name=_('client'),
     )
-    commercant = models.ForeignKey(
-        ProfilCommercant, on_delete=models.CASCADE,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire, on_delete=models.CASCADE,
         related_name='conversations',
         verbose_name=_('commerçant'),
     )
@@ -53,12 +53,12 @@ class Conversation(models.Model):
         ordering = ['-derniere_activite']
         indexes = [
             models.Index(fields=['client', '-derniere_activite']),
-            models.Index(fields=['commercant', '-derniere_activite']),
+            models.Index(fields=['partenaire', '-derniere_activite']),
         ]
 
     def __str__(self):
         contexte = f" à propos de {self.article.nom}" if self.article else ''
-        return f"{self.client.telephone} ↔ {self.commercant.nom_commerce}{contexte}"
+        return f"{self.client.telephone} ↔ {self.partenaire.nom_commerce}{contexte}"
 
 
 class Message(models.Model):
@@ -168,7 +168,7 @@ class DemandeIntervention(models.Model):
         verbose_name=_('client'),
     )
     artisan = models.ForeignKey(
-        ProfilCommercant, on_delete=models.PROTECT,
+        ProfilPartenaire, on_delete=models.PROTECT,
         related_name='interventions_recues',
         verbose_name=_('artisan'),
     )

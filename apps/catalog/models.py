@@ -8,7 +8,7 @@ from django.contrib.gis.db import models as gis_models
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
-from apps.users.models import ProfilCommercant, User
+from apps.users.models import ProfilPartenaire, User
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -85,13 +85,13 @@ class Categorie(models.Model):
         return self.nom
 
 
-class CommercantCategorie(models.Model):
+class PartenaireCategorie(models.Model):
     """
     Lien plusieurs-à-plusieurs entre commerçants et catégories.
     Un commerçant peut être dans plusieurs catégories ; une seule est principale.
     """
-    commercant = models.ForeignKey(
-        ProfilCommercant,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire,
         on_delete=models.CASCADE,
         related_name='liens_categories',
         verbose_name=_('commerçant'),
@@ -99,7 +99,7 @@ class CommercantCategorie(models.Model):
     categorie = models.ForeignKey(
         Categorie,
         on_delete=models.CASCADE,
-        related_name='liens_commercants',
+        related_name='liens_partenaires',
         verbose_name=_('catégorie'),
     )
     est_principale = models.BooleanField(_('catégorie principale'), default=False)
@@ -109,14 +109,14 @@ class CommercantCategorie(models.Model):
         verbose_name_plural = _('catégories des commerçants')
         constraints = [
             models.UniqueConstraint(
-                fields=['commercant', 'categorie'],
-                name='unique_commercant_categorie',
+                fields=['partenaire', 'categorie'],
+                name='unique_partenaire_categorie',
             ),
         ]
 
     def __str__(self):
         marqueur = ' ★' if self.est_principale else ''
-        return f"{self.commercant.nom_commerce} → {self.categorie.nom}{marqueur}"
+        return f"{self.partenaire.nom_commerce} → {self.categorie.nom}{marqueur}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -128,8 +128,8 @@ class SectionMenu(models.Model):
     Section d'un menu (Entrées, Burgers, Pizzas, Boissons…).
     Spécifique aux restaurants et fast-foods.
     """
-    commercant = models.ForeignKey(
-        ProfilCommercant,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire,
         on_delete=models.CASCADE,
         related_name='sections_menu',
         verbose_name=_('commerçant'),
@@ -143,10 +143,10 @@ class SectionMenu(models.Model):
     class Meta:
         verbose_name = _('section de menu')
         verbose_name_plural = _('sections de menu')
-        ordering = ['commercant', 'ordre', 'nom']
+        ordering = ['partenaire', 'ordre', 'nom']
 
     def __str__(self):
-        return f"{self.commercant.nom_commerce} — {self.nom}"
+        return f"{self.partenaire.nom_commerce} — {self.nom}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -172,8 +172,8 @@ class Article(models.Model):
         MODELE_COUTURE = 'modele_couture', _('Modèle de couture')
         MODELE_MENUISERIE = 'modele_menuiserie', _('Modèle de menuiserie')
 
-    commercant = models.ForeignKey(
-        ProfilCommercant,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire,
         on_delete=models.CASCADE,
         related_name='articles',
         verbose_name=_('commerçant'),
@@ -252,18 +252,18 @@ class Article(models.Model):
             # Slug unique par commerçant : deux commerçants peuvent avoir un "burger-classique",
             # mais pas le même commerçant qui aurait deux articles identiques.
             models.UniqueConstraint(
-                fields=['commercant', 'slug'],
-                name='unique_article_commercant_slug',
+                fields=['partenaire', 'slug'],
+                name='unique_article_partenaire_slug',
             ),
         ]
         indexes = [
             models.Index(fields=['categorie', 'est_actif']),
-            models.Index(fields=['commercant', 'est_actif']),
+            models.Index(fields=['partenaire', 'est_actif']),
             models.Index(fields=['type']),
         ]
 
     def __str__(self):
-        return f"{self.nom} ({self.commercant.nom_commerce})"
+        return f"{self.nom} ({self.partenaire.nom_commerce})"
 
 
 # ═══════════════════════════════════════════════════════════════════════

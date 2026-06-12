@@ -10,8 +10,8 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.catalog.models import Article
 from apps.messaging.models import Message
-from apps.social.models import CommentaireArticle, CommentaireCommercant
-from apps.users.models import ProfilCommercant, User
+from apps.social.models import CommentaireArticle, CommentairePartenaire
+from apps.users.models import ProfilPartenaire, User
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -98,24 +98,24 @@ class SignalementArticle(SignalementBase):
         return f"#{self.id} {self.get_motif_display()} → {self.article.nom}"
 
 
-class SignalementCommercant(SignalementBase):
+class SignalementPartenaire(SignalementBase):
     """Signalement portant sur un commerçant entier."""
 
     rapporteur = models.ForeignKey(
         User, on_delete=models.SET_NULL,
         blank=True, null=True,
-        related_name='signalements_commercants',
+        related_name='signalements_partenaires',
         verbose_name=_('rapporteur'),
     )
-    commercant = models.ForeignKey(
-        ProfilCommercant, on_delete=models.CASCADE,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire, on_delete=models.CASCADE,
         related_name='signalements',
         verbose_name=_('commerçant signalé'),
     )
     traite_par = models.ForeignKey(
         User, on_delete=models.SET_NULL,
         blank=True, null=True,
-        related_name='signalements_commercants_traites',
+        related_name='signalements_partenaires_traites',
         verbose_name=_('traité par'),
     )
 
@@ -124,7 +124,7 @@ class SignalementCommercant(SignalementBase):
         verbose_name_plural = _('signalements — commerçants')
 
     def __str__(self):
-        return f"#{self.id} {self.get_motif_display()} → {self.commercant.nom_commerce}"
+        return f"#{self.id} {self.get_motif_display()} → {self.partenaire.nom_commerce}"
 
 
 class SignalementCommentaire(SignalementBase):
@@ -144,8 +144,8 @@ class SignalementCommentaire(SignalementBase):
         related_name='signalements',
         verbose_name=_('commentaire (article)'),
     )
-    commentaire_commercant = models.ForeignKey(
-        CommentaireCommercant, on_delete=models.CASCADE,
+    commentaire_partenaire = models.ForeignKey(
+        CommentairePartenaire, on_delete=models.CASCADE,
         blank=True, null=True,
         related_name='signalements',
         verbose_name=_('commentaire (commerçant)'),
@@ -163,15 +163,15 @@ class SignalementCommentaire(SignalementBase):
         constraints = [
             models.CheckConstraint(
                 check=(
-                    models.Q(commentaire_article__isnull=False, commentaire_commercant__isnull=True)
-                    | models.Q(commentaire_article__isnull=True, commentaire_commercant__isnull=False)
+                    models.Q(commentaire_article__isnull=False, commentaire_partenaire__isnull=True)
+                    | models.Q(commentaire_article__isnull=True, commentaire_partenaire__isnull=False)
                 ),
                 name='signalement_commentaire_exclusif',
             ),
         ]
 
     def __str__(self):
-        cible_id = (self.commentaire_article or self.commentaire_commercant).id
+        cible_id = (self.commentaire_article or self.commentaire_partenaire).id
         return f"#{self.id} {self.get_motif_display()} → commentaire #{cible_id}"
 
 

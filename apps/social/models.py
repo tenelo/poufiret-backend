@@ -2,15 +2,15 @@
 Modèles de l'app social.
 
 Module 3 du modèle Poufiret. Gère les interactions sociales :
-- Likes (❤️ rouge, publics)   : LikeArticle, LikeCommercant, LikeCommentaire
-- Favoris (🤎 marron, privés) : FavoriArticle, FavoriCommercant
-- Commentaires                : CommentaireArticle, CommentaireCommercant
+- Likes (❤️ rouge, publics)   : LikeArticle, LikePartenaire, LikeCommentaire
+- Favoris (🤎 marron, privés) : FavoriArticle, FavoriPartenaire
+- Commentaires                : CommentaireArticle, CommentairePartenaire
 """
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.catalog.models import Article
-from apps.users.models import ProfilCommercant, User
+from apps.users.models import ProfilPartenaire, User
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -46,14 +46,14 @@ class LikeArticle(models.Model):
         return f"{self.user.telephone} ❤️ {self.article.nom}"
 
 
-class LikeCommercant(models.Model):
+class LikePartenaire(models.Model):
     """Like (❤️ rouge) public sur un commerçant."""
     user = models.ForeignKey(
         User, on_delete=models.CASCADE,
-        related_name='likes_commercants', verbose_name=_('utilisateur'),
+        related_name='likes_partenaires', verbose_name=_('utilisateur'),
     )
-    commercant = models.ForeignKey(
-        ProfilCommercant, on_delete=models.CASCADE,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire, on_delete=models.CASCADE,
         related_name='likes', verbose_name=_('commerçant'),
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -63,16 +63,16 @@ class LikeCommercant(models.Model):
         verbose_name_plural = _('likes de commerçants')
         constraints = [
             models.UniqueConstraint(
-                fields=['user', 'commercant'],
-                name='unique_like_commercant',
+                fields=['user', 'partenaire'],
+                name='unique_like_partenaire',
             ),
         ]
         indexes = [
-            models.Index(fields=['commercant', '-created_at']),
+            models.Index(fields=['partenaire', '-created_at']),
         ]
 
     def __str__(self):
-        return f"{self.user.telephone} ❤️ {self.commercant.nom_commerce}"
+        return f"{self.user.telephone} ❤️ {self.partenaire.nom_commerce}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -108,14 +108,14 @@ class FavoriArticle(models.Model):
         return f"{self.user.telephone} 🤎 {self.article.nom}"
 
 
-class FavoriCommercant(models.Model):
+class FavoriPartenaire(models.Model):
     """Commerçant ajouté aux favoris privés d'un client (🤎 marron)."""
     user = models.ForeignKey(
         User, on_delete=models.CASCADE,
-        related_name='favoris_commercants', verbose_name=_('utilisateur'),
+        related_name='favoris_partenaires', verbose_name=_('utilisateur'),
     )
-    commercant = models.ForeignKey(
-        ProfilCommercant, on_delete=models.CASCADE,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire, on_delete=models.CASCADE,
         related_name='favoris', verbose_name=_('commerçant'),
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -125,8 +125,8 @@ class FavoriCommercant(models.Model):
         verbose_name_plural = _('favoris - commerçants')
         constraints = [
             models.UniqueConstraint(
-                fields=['user', 'commercant'],
-                name='unique_favori_commercant',
+                fields=['user', 'partenaire'],
+                name='unique_favori_partenaire',
             ),
         ]
         indexes = [
@@ -134,7 +134,7 @@ class FavoriCommercant(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.user.telephone} 🤎 {self.commercant.nom_commerce}"
+        return f"{self.user.telephone} 🤎 {self.partenaire.nom_commerce}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -186,17 +186,17 @@ class CommentaireArticle(models.Model):
         return f"{self.user.telephone} : {preview}"
 
 
-class CommentaireCommercant(models.Model):
+class CommentairePartenaire(models.Model):
     """
     Commentaire sur un commerçant (sur sa fiche, pas un article particulier).
     Supporte 1 niveau de réponse.
     """
     user = models.ForeignKey(
         User, on_delete=models.CASCADE,
-        related_name='commentaires_commercants', verbose_name=_('utilisateur'),
+        related_name='commentaires_partenaires', verbose_name=_('utilisateur'),
     )
-    commercant = models.ForeignKey(
-        ProfilCommercant, on_delete=models.CASCADE,
+    partenaire = models.ForeignKey(
+        ProfilPartenaire, on_delete=models.CASCADE,
         related_name='commentaires', verbose_name=_('commerçant'),
     )
     parent = models.ForeignKey(
@@ -218,7 +218,7 @@ class CommentaireCommercant(models.Model):
         verbose_name_plural = _('commentaires - commerçants')
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['commercant', '-created_at']),
+            models.Index(fields=['partenaire', '-created_at']),
         ]
 
     def __str__(self):
@@ -246,8 +246,8 @@ class LikeCommentaire(models.Model):
         related_name='likes',
         verbose_name=_('commentaire (article)'),
     )
-    commentaire_commercant = models.ForeignKey(
-        CommentaireCommercant,
+    commentaire_partenaire = models.ForeignKey(
+        CommentairePartenaire,
         on_delete=models.CASCADE,
         blank=True, null=True,
         related_name='likes',
@@ -262,8 +262,8 @@ class LikeCommentaire(models.Model):
             # Exactement un des deux champs commentaire_* est rempli
             models.CheckConstraint(
                 check=(
-                    models.Q(commentaire_article__isnull=False, commentaire_commercant__isnull=True)
-                    | models.Q(commentaire_article__isnull=True, commentaire_commercant__isnull=False)
+                    models.Q(commentaire_article__isnull=False, commentaire_partenaire__isnull=True)
+                    | models.Q(commentaire_article__isnull=True, commentaire_partenaire__isnull=False)
                 ),
                 name='like_commentaire_exclusif',
             ),
@@ -275,12 +275,12 @@ class LikeCommentaire(models.Model):
             ),
             # Pas deux fois la même paire user × commentaire de commerçant
             models.UniqueConstraint(
-                fields=['user', 'commentaire_commercant'],
-                condition=models.Q(commentaire_commercant__isnull=False),
-                name='unique_like_commentaire_commercant',
+                fields=['user', 'commentaire_partenaire'],
+                condition=models.Q(commentaire_partenaire__isnull=False),
+                name='unique_like_commentaire_partenaire',
             ),
         ]
 
     def __str__(self):
-        cible = self.commentaire_article or self.commentaire_commercant
+        cible = self.commentaire_article or self.commentaire_partenaire
         return f"{self.user.telephone} ❤️ commentaire #{cible.id}"
