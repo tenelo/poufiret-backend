@@ -158,3 +158,22 @@ class MessagesView(APIView):
             return Response({'erreur': True, 'message': 'Accès refusé.'}, status=403)
         msgs = conv.messages.filter(est_supprime=False).order_by('created_at')
         return Response(MessageSerializer(msgs, many=True, context={'request': request}).data)
+
+
+from apps.catalog.models import Article
+
+
+class ContacterView(APIView):
+    """POST /messaging/contacter/ — vitrine/chat : ouvre une conversation à partir
+    d'un article. Body: article (id). Crée/récupère la conversation avec l'article en contexte."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        article = get_object_or_404(Article, pk=request.data.get('article'), est_actif=True)
+        conv, cree = Conversation.objects.get_or_create(
+            client=request.user, partenaire=article.partenaire,
+            article=article,
+        )
+        data = ConversationSerializer(conv, context={'request': request}).data
+        data['nouvelle'] = cree
+        return Response(data, status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK)
