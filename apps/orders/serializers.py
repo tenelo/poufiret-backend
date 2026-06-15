@@ -35,3 +35,31 @@ class PanierSerializer(serializers.ModelSerializer):
             supp = sum(s.get('prix', 0) for s in (l.supplements or []))
             t += (l.prix_unitaire + supp) * l.quantite
         return t
+
+
+from .models import Commande, LigneCommande
+
+
+class LigneCommandeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LigneCommande
+        fields = ['id', 'article', 'nom_article', 'variante_nom', 'supplements',
+                  'quantite', 'prix_unitaire', 'prix_ligne', 'note_speciale']
+
+
+class CommandeSerializer(serializers.ModelSerializer):
+    lignes = LigneCommandeSerializer(many=True, read_only=True)
+    partenaire_nom = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
+    client_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Commande
+        fields = ['id', 'numero', 'user', 'client_nom', 'partenaire', 'partenaire_nom',
+                  'mode_livraison', 'adresse', 'adresse_snapshot', 'heure_souhaitee',
+                  'statut', 'raison_refus', 'sous_total', 'frais_livraison', 'total',
+                  'mode_paiement', 'notes_client', 'notes_partenaire', 'lignes',
+                  'created_at', 'acceptee_le', 'prete_le', 'livree_le']
+        read_only_fields = ['numero', 'user', 'partenaire', 'statut', 'sous_total', 'total']
+
+    def get_client_nom(self, obj):
+        return obj.user.get_full_name() or obj.user.username or obj.user.telephone
