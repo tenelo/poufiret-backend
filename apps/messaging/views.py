@@ -117,3 +117,44 @@ class AjouterPhotoView(APIView):
         ser.is_valid(raise_exception=True)
         ser.save()
         return Response(ser.data, status=status.HTTP_201_CREATED)
+
+
+from .models import Conversation, Message
+from .serializers import ConversationSerializer, MessageSerializer
+
+
+class ConversationsView(APIView):
+    """GET liste mes conversations / POST créer (ou récupérer) une conversation."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        u = request.user
+        qs = Conversation.objects.filter(client=u)
+        if hasattr(u, 'profil_partenaire'):
+            qs = (Conversation.objects.filter(client=u) |
+                  Conversation.objects.filter(partenaire=u.profil_partenaire)).distinct()
+        qs = qs.select_related('partenaire', 'client').prefetch_related('messages')
+        return Response(ConversationSerializer(qs, many=True, context={'request': request}).data)
+
+    def post(self, request):
+        partenaire = get_object_or_404(ProfilPartenaire, pk=request.data.get('partenaire'))
+        article_id = request.data.get('article')
+        conv, _ = Conversation.objects.get_or_create(
+            client=request.user, partenaire=partenaire,
+            defaults={'article_id': article_id} if article_id else {})
+        return Response(ConversationSerializer(conv, context={'request': request}).data,
+                        status=status.HTTP_201_CREATED)
+
+
+class MessagesView(APIView):
+    """GET /conversations/<id>/messages/ — historique (participant uniquement)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk=None):
+        conv = get_object_or_404(Conversation, pk=pk)
+        u = request.user
+        ok = conv.client_id == u.id or (hasattr(u, 'profil_partenaire') and conv.partenaire_id == u.profil_partenaire.id)
+        if not ok:
+            return Response({'erreur': True, 'message': 'Accès refusé.'}, status=403)
+        msgs = conv.messages.filter(est_supprime=False).order_by('created_at')
+        return Response(MessageSerializer(msgs, many=True, context={'request': request}).data)

@@ -27,3 +27,34 @@ class DemandeInterventionSerializer(serializers.ModelSerializer):
 
     def get_client_nom(self, obj):
         return obj.user.get_full_name() or obj.user.username or obj.user.telephone
+
+
+from .models import Conversation, Message
+
+
+class MessageSerializer(serializers.ModelSerializer):
+    expediteur_nom = serializers.SerializerMethodField()
+    class Meta:
+        model = Message
+        fields = ['id', 'conversation', 'expediteur', 'expediteur_nom', 'type',
+                  'contenu', 'media_url', 'statut', 'created_at']
+        read_only_fields = ['expediteur', 'statut']
+    def get_expediteur_nom(self, obj):
+        if not obj.expediteur: return 'Système'
+        return obj.expediteur.get_full_name() or obj.expediteur.username or obj.expediteur.telephone
+
+
+class ConversationSerializer(serializers.ModelSerializer):
+    partenaire_nom = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
+    client_nom = serializers.SerializerMethodField()
+    dernier_message = serializers.SerializerMethodField()
+    class Meta:
+        model = Conversation
+        fields = ['id', 'client', 'client_nom', 'partenaire', 'partenaire_nom',
+                  'article', 'derniere_activite', 'est_archivee', 'dernier_message', 'created_at']
+        read_only_fields = ['client']
+    def get_client_nom(self, obj):
+        return obj.client.get_full_name() or obj.client.username or obj.client.telephone
+    def get_dernier_message(self, obj):
+        m = obj.messages.order_by('-created_at').first()
+        return {'contenu': m.contenu, 'created_at': m.created_at.isoformat()} if m else None
