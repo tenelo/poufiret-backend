@@ -4,7 +4,7 @@ Serializers de l'app users : authentification et profil.
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User
+from .models import User, SessionAppareil, ProfilPartenaire
 
 
 class UtilisateurSerializer(serializers.ModelSerializer):
@@ -65,3 +65,37 @@ class InscriptionSerializer(serializers.ModelSerializer):
         user.set_password(password)
         user.save()
         return user
+
+
+class SessionAppareilSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SessionAppareil
+        fields = ['id', 'appareil_nom', 'appareil_id', 'plateforme',
+                  'adresse_ip', 'derniere_activite_le', 'est_active', 'cree_le']
+        read_only_fields = fields
+
+
+class DevenirPartenaireSerializer(serializers.ModelSerializer):
+    """Crée le ProfilPartenaire d'un client. Rôle partenaire immédiat,
+    mais profil EN_ATTENTE + invisible jusqu'à validation admin."""
+    class Meta:
+        model = ProfilPartenaire
+        fields = ['type_partenaire', 'nom_commerce', 'description', 'adresse',
+                  'quartier', 'secteur', 'ville', 'telephone_pro', 'whatsapp', 'email_pro']
+
+    def create(self, validated_data):
+        from .models import PlanAbonnement
+        user = self.context['request'].user
+        if hasattr(user, 'profil_partenaire'):
+            raise serializers.ValidationError("Vous avez déjà un profil partenaire.")
+        plan, _ = PlanAbonnement.objects.get_or_create(
+            code='basique', duree_jours=-1,
+            defaults={'libelle': 'Basique', 'prix': 0,
+                      'nb_articles_max': 10, 'nb_photos_par_article': 1})
+        profil = ProfilPartenaire.objects.create(
+            user=user, plan=plan,
+            statut=ProfilPartenaire.Statut.EN_ATTENTE,
+            est_visible=False, **validated_data)
+        user.role = User.Role.PARTENAIRE
+        user.save(update_fields=['role'])
+        return profil
