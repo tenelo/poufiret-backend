@@ -10,6 +10,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/auth/', include('apps.users.urls')),
+    path('api/v1/catalogue/', include('apps.catalog.urls')),
 ]
 
 # Service des fichiers médias en développement uniquement
