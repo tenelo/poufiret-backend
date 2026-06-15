@@ -13,6 +13,7 @@ urlpatterns = [
     path('api/v1/catalogue/', include('apps.catalog.urls')),
     path('api/v1/social/', include('apps.social.urls')),
     path('api/v1/orders/', include('apps.orders.urls')),
+    path('api/v1/messaging/', include('apps.messaging.urls')),
 ]
 
 # Service des fichiers médias en développement uniquement
