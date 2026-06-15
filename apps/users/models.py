@@ -7,6 +7,7 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.contrib.gis.db import models as gis_models
+from apps.core.models import ModeleBase
 
 
 class User(AbstractUser):
@@ -476,3 +477,61 @@ class AdresseClient(models.Model):
 
     def __str__(self):
         return f"{self.libelle} — {self.user.telephone}"
+
+class SessionAppareil(ModeleBase):
+    """
+    Trace des connexions par appareil (audit + déconnexion ciblée).
+
+    Une ligne par appareil connecté. Permet de savoir qui s'est connecté,
+    depuis quel appareil et quand, et de révoquer un appareil précis sans
+    déconnecter les autres. Alimente aussi la future définition d'utilisateur
+    actif (via derniere_activite_le).
+    """
+
+    class Plateforme(models.TextChoices):
+        ANDROID = 'android', _('Android')
+        IOS = 'ios', _('iOS')
+        WEB = 'web', _('Web')
+        AUTRE = 'autre', _('Autre')
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='sessions_appareils',
+        verbose_name=_('utilisateur'),
+    )
+    appareil_nom = models.CharField(_('nom de l\'appareil'), max_length=150, blank=True)
+    appareil_id = models.CharField(
+        _('identifiant appareil'),
+        max_length=255, blank=True,
+        help_text=_('Identifiant unique fourni par le client (device id).'),
+    )
+    plateforme = models.CharField(
+        _('plateforme'),
+        max_length=10,
+        choices=Plateforme.choices,
+        default=Plateforme.AUTRE,
+    )
+    adresse_ip = models.GenericIPAddressField(_('adresse IP'), blank=True, null=True)
+
+    derniere_activite_le = models.DateTimeField(_('dernière activité'), auto_now=True)
+    est_active = models.BooleanField(_('session active'), default=True)
+    revoque_le = models.DateTimeField(_('révoquée le'), blank=True, null=True)
+    revoque_par = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        blank=True, null=True,
+        related_name='sessions_revoquees',
+        verbose_name=_('révoquée par'),
+    )
+
+    class Meta:
+        verbose_name = _('session appareil')
+        verbose_name_plural = _('sessions appareils')
+        ordering = ['-derniere_activite_le']
+        indexes = [
+            models.Index(fields=['user', 'est_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.telephone} — {self.appareil_nom or self.plateforme}"
