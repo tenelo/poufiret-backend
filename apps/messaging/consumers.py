@@ -1,0 +1,76 @@
+"""Consumer WebSocket du chat temps réel.
+Connexion : ws://host/ws/chat/<conversation_id>/?token=<access>
+"""
+import json
+from channels.generic.websocket import AsyncWebsocketConsumer
+from channels.db import database_sync_to_async
+
+
+class ChatConsumer(AsyncWebsocketConsumer):
+
+    async def connect(self):
+        self.user = self.scope['user']
+        self.conv_id = self.scope['url_route']['kwargs']['conversation_id']
+        self.group = f'chat_{self.conv_id}'
+
+        if not self.user or not self.user.is_authenticated:
+            await self.close(code=4001)  # non authentifié
+            return
+        if not await self._participe(self.conv_id, self.user):
+            await self.close(code=4003)  # pas membre de la conversation
+            return
+
+        await self.channel_layer.group_add(self.group, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, code):
+        if hasattr(self, 'group'):
+            await self.channel_layer.group_discard(self.group, self.channel_name)
+
+    async def receive(self, text_data=None, bytes_data=None):
+        try:
+            data = json.loads(text_data)
+        except Exception:
+            return
+        contenu = (data.get('contenu') or '').strip()
+        if not contenu:
+            return
+        msg = await self._enregistrer(self.conv_id, self.user, contenu)
+        # Diffuse à tous les participants connectés
+        await self.channel_layer.group_send(self.group, {
+            'type': 'chat_message',
+            'message': {
+                'id': str(msg['id']),
+                'conversation': str(self.conv_id),
+                'expediteur': msg['expediteur'],
+                'expediteur_nom': msg['expediteur_nom'],
+                'contenu': msg['contenu'],
+                'created_at': msg['created_at'],
+            },
+        })
+
+    async def chat_message(self, event):
+        await self.send(text_data=json.dumps(event['message'], ensure_ascii=False))
+
+    # ── Accès base (sync -> async) ────────────────────────────────────
+    @database_sync_to_async
+    def _participe(self, conv_id, user):
+        from .models import Conversation
+        c = Conversation.objects.filter(pk=conv_id).select_related('partenaire').first()
+        if not c:
+            return False
+        if c.client_id == user.id:
+            return True
+        return hasattr(user, 'profil_partenaire') and c.partenaire_id == user.profil_partenaire.id
+
+    @database_sync_to_async
+    def _enregistrer(self, conv_id, user, contenu):
+        from .models import Conversation, Message
+        c = Conversation.objects.get(pk=conv_id)
+        m = Message.objects.create(conversation=c, expediteur=user, contenu=contenu)
+        Conversation.objects.filter(pk=conv_id).update(derniere_activite=m.created_at)
+        return {
+            'id': m.id, 'expediteur': user.id,
+            'expediteur_nom': user.get_full_name() or user.username or user.telephone,
+            'contenu': m.contenu, 'created_at': m.created_at.isoformat(),
+        }

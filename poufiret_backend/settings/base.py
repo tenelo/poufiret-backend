@@ -20,6 +20,7 @@ ALLOWED_HOSTS = config('DJANGO_ALLOWED_HOSTS', default='', cast=Csv())
 # Applications installées
 # ------------------------------------------------------------------------------
 DJANGO_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -31,6 +32,7 @@ DJANGO_APPS = [
 
 THIRD_PARTY_APPS = [
     'rest_framework',               # API REST
+    'channels',                     # WebSocket temps reel
     'corsheaders',                  # CORS pour Flutter
     'rest_framework_simplejwt.token_blacklist',  # blacklist refresh tokens
     'waffle',                       # feature flags
@@ -183,4 +185,18 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,                # invalide l'ancien refresh
     'UPDATE_LAST_LOGIN': True,                        # alimente last_login
     'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+# ------------------------------------------------------------------------------
+# Channels (WebSocket temps réel)
+# ------------------------------------------------------------------------------
+ASGI_APPLICATION = 'poufiret_backend.asgi.application'
+
+REDIS_URL = config('REDIS_URL', default='redis://redis-poufiret:6379/0')
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {'hosts': [REDIS_URL]},
+    }
 }
