@@ -11,6 +11,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/v1/auth/', include('apps.users.urls')),
     path('api/v1/catalogue/', include('apps.catalog.urls')),
+    path('api/v1/social/', include('apps.social.urls')),
 ]
 
 # Service des fichiers médias en développement uniquement
