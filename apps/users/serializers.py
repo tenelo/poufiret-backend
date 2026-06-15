@@ -40,3 +40,28 @@ class LogoutSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {'refresh': 'Token invalide ou déjà expiré.'}
             )
+
+
+class InscriptionSerializer(serializers.ModelSerializer):
+    """
+    Inscription d'un nouvel utilisateur (rôle client par défaut).
+    Le passage partenaire se fait via un flux séparé.
+    """
+    password = serializers.CharField(write_only=True, min_length=8)
+
+    class Meta:
+        model = User
+        fields = ['telephone', 'username', 'first_name', 'last_name', 'password']
+
+    def validate_password(self, value):
+        from django.contrib.auth.password_validation import validate_password
+        validate_password(value)
+        return value
+
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        user = User(**validated_data)
+        user.role = User.Role.CLIENT
+        user.set_password(password)
+        user.save()
+        return user
