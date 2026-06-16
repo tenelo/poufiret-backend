@@ -48,6 +48,7 @@ LOCAL_APPS = [
     'apps.messaging',
     'apps.moderation',
     'apps.payments',
+    'apps.notifications',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -200,3 +201,8 @@ CHANNEL_LAYERS = {
         'CONFIG': {'hosts': [REDIS_URL]},
     }
 }
+
+# ------------------------------------------------------------------------------
+# Firebase Cloud Messaging (notifications push) — inerte tant que non configuré
+# ------------------------------------------------------------------------------
+FIREBASE_CREDENTIALS = config('FIREBASE_CREDENTIALS', default='')
