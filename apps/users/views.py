@@ -5,10 +5,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, SessionAppareil
+from .models import User, SessionAppareil, ProfilPartenaire
 from .serializers import (
     ConnexionSerializer, UtilisateurSerializer, LogoutSerializer,
     InscriptionSerializer, SessionAppareilSerializer, DevenirPartenaireSerializer,
+    VitrinePartenaireSerializer,
 )
 
 
@@ -125,3 +126,17 @@ class DevenirPartenaireView(generics.CreateAPIView):
             'message': 'Profil partenaire créé. En attente de validation par un administrateur.',
             'utilisateur': UtilisateurSerializer(request.user).data,
         }, status=status.HTTP_201_CREATED)
+
+
+class VitrinePartenaireView(generics.RetrieveAPIView):
+    """Vitrine publique d'un partenaire. Accessible à tous (client connecté
+    ou non). Ne renvoie que les partenaires actifs et visibles."""
+    serializer_class = VitrinePartenaireSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = 'pk'
+
+    def get_queryset(self):
+        return ProfilPartenaire.objects.filter(
+            statut=ProfilPartenaire.Statut.ACTIF,
+            est_visible=True,
+        )

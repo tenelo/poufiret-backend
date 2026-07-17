@@ -99,3 +99,39 @@ class DevenirPartenaireSerializer(serializers.ModelSerializer):
         user.role = User.Role.PARTENAIRE
         user.save(update_fields=['role'])
         return profil
+
+
+class VitrinePartenaireSerializer(serializers.ModelSerializer):
+    """Représentation PUBLIQUE d'un partenaire (vitrine côté client).
+    Lecture seule. N'expose aucun champ sensible (plan, abonnement, GPS)."""
+    nombre_likes = serializers.SerializerMethodField()
+    est_like_par_moi = serializers.SerializerMethodField()
+    est_favori_par_moi = serializers.SerializerMethodField()
+    type_partenaire_libelle = serializers.CharField(
+        source='get_type_partenaire_display', read_only=True)
+
+    class Meta:
+        model = ProfilPartenaire
+        fields = [
+            'id', 'nom_commerce', 'type_partenaire', 'type_partenaire_libelle',
+            'description', 'logo', 'photo_couverture',
+            'adresse', 'quartier', 'secteur', 'ville', 'description_acces',
+            'telephone_pro', 'whatsapp', 'email_pro',
+            'nombre_likes', 'est_like_par_moi', 'est_favori_par_moi',
+        ]
+        read_only_fields = fields
+
+    def get_nombre_likes(self, obj):
+        return obj.likes.count() if hasattr(obj, 'likes') else 0
+
+    def get_est_like_par_moi(self, obj):
+        user = self.context['request'].user
+        if not user.is_authenticated:
+            return False
+        return obj.likes.filter(user=user).exists() if hasattr(obj, 'likes') else False
+
+    def get_est_favori_par_moi(self, obj):
+        user = self.context['request'].user
+        if not user.is_authenticated:
+            return False
+        return obj.favoris.filter(user=user).exists() if hasattr(obj, 'favoris') else False

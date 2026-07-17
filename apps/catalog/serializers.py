@@ -78,7 +78,6 @@ class ArticleListeSerializer(serializers.ModelSerializer):
             return req.build_absolute_uri(img.image.url) if req else img.image.url
         return None
 
-
 class ArticleDetailSerializer(serializers.ModelSerializer):
     images = ArticleImageSerializer(many=True, read_only=True)
     variantes = VarianteSerializer(many=True, read_only=True)
@@ -87,6 +86,8 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
     logement = LogementSerializer(read_only=True)
     vehicule = VehiculeSerializer(read_only=True)
     partenaire_nom = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
+    est_like_par_moi = serializers.SerializerMethodField()
+    est_favori_par_moi = serializers.SerializerMethodField()
 
     class Meta:
         model = Article
@@ -95,6 +96,25 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
                   'temps_preparation_min', 'nb_vues', 'nb_likes', 'nb_commentaires',
                   'nb_favoris', 'partenaire', 'partenaire_nom', 'categorie', 'section_menu',
                   'images', 'variantes', 'supplements', 'panoramas', 'logement', 'vehicule',
+                  'est_like_par_moi', 'est_favori_par_moi',
                   'created_at', 'updated_at']
         read_only_fields = ['slug', 'nb_vues', 'nb_likes', 'nb_commentaires',
                             'nb_favoris', 'partenaire']
+
+    def _user(self):
+        req = self.context.get('request')
+        if req and req.user and req.user.is_authenticated:
+            return req.user
+        return None
+
+    def get_est_like_par_moi(self, obj):
+        user = self._user()
+        if user is None:
+            return False
+        return obj.likes.filter(user=user).exists()
+
+    def get_est_favori_par_moi(self, obj):
+        user = self._user()
+        if user is None:
+            return False
+        return obj.favoris.filter(user=user).exists()

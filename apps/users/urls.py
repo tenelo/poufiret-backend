@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     ConnexionView, DeconnexionView, MonProfilView, InscriptionView,
     MesAppareilsView, RevoquerAppareilView, DevenirPartenaireView,
+    VitrinePartenaireView,
 )
 
 urlpatterns = [
@@ -15,4 +16,5 @@ urlpatterns = [
     path('devenir-partenaire/', DevenirPartenaireView.as_view(), name='devenir-partenaire'),
     path('appareils/', MesAppareilsView.as_view(), name='appareils'),
     path('appareils/<uuid:pk>/revoquer/', RevoquerAppareilView.as_view(), name='appareil-revoquer'),
+    path('partenaires/<int:pk>/', VitrinePartenaireView.as_view(), name='vitrine-partenaire'),
 ]
