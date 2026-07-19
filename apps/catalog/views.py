@@ -188,8 +188,11 @@ class PartenairesParCategorieView(_APIView):
             cat = Categorie.objects.get(slug=slug, est_active=True)
         except Categorie.DoesNotExist:
             return _Response({'erreur': True, 'message': 'Catégorie introuvable.'}, status=404)
-        ids = (Article.objects.filter(categorie=cat, est_actif=True)
-               .values_list('partenaire_id', flat=True).distinct())
+        from .models import PartenaireCategorie
+        ids = set(Article.objects.filter(categorie=cat, est_actif=True)
+                  .values_list('partenaire_id', flat=True))
+        ids |= set(PartenaireCategorie.objects.filter(categorie=cat)
+                   .values_list('partenaire_id', flat=True))
         partenaires = (_ProfilPartenaire.objects
                        .filter(id__in=list(ids), est_visible=True)
                        .order_by('-est_faveur', 'nom_commerce'))
@@ -208,3 +211,45 @@ class PartenairesParCategorieView(_APIView):
             'photo_couverture': _url(p.photo_couverture),
         } for p in partenaires]
         return _Response(donnees)
+
+
+# ── Stats de vues pour l'espace partenaire ───────────────────────────
+from django.utils import timezone as _tz
+from datetime import timedelta as _td
+from django.db.models import Count as _Count
+
+
+class StatsVuesPartenaireView(_APIView):
+    """GET /partenaire/stats-vues/ — vues par article (jour/semaine/mois/total)
+    pour le partenaire connecté."""
+    from rest_framework import permissions as _perms
+    permission_classes = [_perms.IsAuthenticated]
+
+    def get(self, request):
+        if not hasattr(request.user, 'profil_partenaire'):
+            return _Response({'erreur': True, 'message': 'Réservé aux partenaires.'}, status=403)
+        profil = request.user.profil_partenaire
+        maintenant = _tz.now()
+        bornes = {
+            'jour': maintenant - _td(days=1),
+            'semaine': maintenant - _td(days=7),
+            'mois': maintenant - _td(days=30),
+        }
+        donnees = []
+        articles = Article.objects.filter(partenaire=profil).order_by('-nb_vues')
+        for a in articles:
+            qs = VueArticle.objects.filter(article=a)
+            donnees.append({
+                'article_id': a.id,
+                'nom': a.nom,
+                'slug': a.slug,
+                'est_actif': a.est_actif,
+                'total': a.nb_vues,
+                'jour': qs.filter(date_vue__gte=bornes['jour']).count(),
+                'semaine': qs.filter(date_vue__gte=bornes['semaine']).count(),
+                'mois': qs.filter(date_vue__gte=bornes['mois']).count(),
+            })
+        return _Response({
+            'total_vues': sum(d['total'] for d in donnees),
+            'articles': donnees,
+        })

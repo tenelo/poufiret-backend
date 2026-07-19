@@ -2,7 +2,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    PartenairesParCategorieView,
+    PartenairesParCategorieView, StatsVuesPartenaireView,
     CategorieViewSet, ArticleViewSet, EnregistrerVueView,
     ArticleImageViewSet, VarianteViewSet, SupplementViewSet,
     PanoramaViewSet, LogementView, VehiculeView,
@@ -17,6 +17,7 @@ router.register(r'supplements', SupplementViewSet, basename='supplement')
 router.register(r'panoramas', PanoramaViewSet, basename='panorama')
 
 urlpatterns = [
+    path('partenaire/stats-vues/', StatsVuesPartenaireView.as_view(), name='partenaire-stats-vues'),
     path('categories/<slug:slug>/partenaires/', PartenairesParCategorieView.as_view(), name='categorie-partenaires'),
     path('articles/<slug:slug>/vue/', EnregistrerVueView.as_view(), name='article-vue'),
     path('articles/<slug:slug>/logement/', LogementView.as_view(), name='article-logement'),
