@@ -28,9 +28,12 @@ class AjouterLigneView(APIView):
         if quantite < 1:
             return Response({'erreur': True, 'message': 'Quantité invalide.'}, status=400)
 
-        # Panier du partenaire de cet article (créé si absent)
-        panier, _ = Panier.objects.get_or_create(user=request.user, partenaire=article.partenaire)
-
+        # Panier pur (partenaire + catégorie de cet article), créé si absent
+        panier, _ = Panier.objects.get_or_create(
+            user=request.user,
+            partenaire=article.partenaire,
+            categorie=article.categorie,
+        )
         # Prix unitaire = prix article (promo si active) + variante
         prix = article.prix_promotion if (article.est_en_promotion and article.prix_promotion) else article.prix
         prix = prix or 0

@@ -201,6 +201,12 @@ class DemandeIntervention(models.Model):
         max_length=500, blank=True,
     )
     description_acces = models.TextField(_('comment trouver le lieu'), blank=True)
+    latitude = models.DecimalField(
+        _('latitude'), max_digits=9, decimal_places=6, blank=True, null=True,
+    )
+    longitude = models.DecimalField(
+        _('longitude'), max_digits=9, decimal_places=6, blank=True, null=True,
+    )
 
     # ── Disponibilité ────────────────────────────────────────────────
     disponibilite_preferee = models.CharField(

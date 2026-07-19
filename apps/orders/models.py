@@ -32,10 +32,11 @@ from apps.users.models import AdresseClient, ProfilPartenaire, User
 
 class Panier(models.Model):
     """
-    Panier d'un client chez un commerçant.
-    Un client a UN panier par commerçant (logique : 1 panier = 1 vendeur).
-    Si un client commence un panier chez B alors qu'il en a un chez A,
-    l'app le préviendra et lui demandera s'il veut vider A.
+    Panier d'un client, pur par (commerçant, catégorie).
+    Un client peut avoir plusieurs paniers simultanés : un par couple
+    (commerçant, catégorie). Ex. : poisson chez Tenelo et chaussures chez
+    Tenelo sont deux paniers distincts. Permet un affichage et une commande
+    regroupés par catégorie côté client.
     """
     user = models.ForeignKey(
         User,
@@ -49,7 +50,12 @@ class Panier(models.Model):
         related_name='paniers',
         verbose_name=_('commerçant'),
     )
-
+    categorie = models.ForeignKey(
+            'catalog.Categorie',
+            on_delete=models.CASCADE,
+            related_name='paniers',
+            verbose_name=_('catégorie'),
+        )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -59,8 +65,8 @@ class Panier(models.Model):
         ordering = ['-updated_at']
         constraints = [
             models.UniqueConstraint(
-                fields=['user', 'partenaire'],
-                name='unique_panier_par_couple',
+                fields=['user', 'partenaire', 'categorie'],
+                name='unique_panier_par_triplet',
             ),
         ]
 

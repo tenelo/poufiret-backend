@@ -22,14 +22,16 @@ class LignePanierSerializer(serializers.ModelSerializer):
 class PanierSerializer(serializers.ModelSerializer):
     lignes = LignePanierSerializer(many=True, read_only=True)
     partenaire_nom = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
+    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
     total = serializers.SerializerMethodField()
-
+    
     class Meta:
-        model = Panier
-        fields = ['id', 'partenaire', 'partenaire_nom', 'lignes', 'total',
-                  'created_at', 'updated_at']
+            model = Panier
+            fields = ['id', 'partenaire', 'partenaire_nom', 'categorie', 'categorie_nom',
+                    'lignes', 'total', 'created_at', 'updated_at']
 
     def get_total(self, obj):
+        
         t = 0
         for l in obj.lignes.all():
             supp = sum(s.get('prix', 0) for s in (l.supplements or []))

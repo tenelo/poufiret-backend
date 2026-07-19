@@ -169,3 +169,42 @@ class EnregistrerVueView(generics.GenericAPIView):
         )
         Article.objects.filter(pk=article.pk).update(nb_vues=F('nb_vues') + 1)
         return Response({'message': 'Vue enregistrée.'}, status=status.HTTP_201_CREATED)
+
+
+# ── Annuaire : partenaires d'une catégorie ───────────────────────────
+from rest_framework.views import APIView as _APIView
+from rest_framework.response import Response as _Response
+from apps.users.models import ProfilPartenaire as _ProfilPartenaire
+
+
+class PartenairesParCategorieView(_APIView):
+    """GET /categories/<slug>/partenaires/ — partenaires visibles ayant
+    au moins un article actif dans la catégorie."""
+    permission_classes = []
+
+    def get(self, request, slug=None):
+        from .models import Categorie, Article
+        try:
+            cat = Categorie.objects.get(slug=slug, est_active=True)
+        except Categorie.DoesNotExist:
+            return _Response({'erreur': True, 'message': 'Catégorie introuvable.'}, status=404)
+        ids = (Article.objects.filter(categorie=cat, est_actif=True)
+               .values_list('partenaire_id', flat=True).distinct())
+        partenaires = (_ProfilPartenaire.objects
+                       .filter(id__in=list(ids), est_visible=True)
+                       .order_by('-est_faveur', 'nom_commerce'))
+        def _url(champ):
+            if not champ:
+                return ''
+            try:
+                return request.build_absolute_uri(champ.url)
+            except Exception:
+                return ''
+        donnees = [{
+            'id': p.id,
+            'nom_commerce': p.nom_commerce,
+            'description': p.description,
+            'logo': _url(p.logo),
+            'photo_couverture': _url(p.photo_couverture),
+        } for p in partenaires]
+        return _Response(donnees)

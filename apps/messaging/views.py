@@ -50,6 +50,8 @@ class DemandesView(APIView):
             adresse=adresse_obj, adresse_snapshot=snap,
             description_acces=request.data.get('description_acces', ''),
             disponibilite_preferee=request.data.get('disponibilite_preferee', 'indifferent'),
+            latitude=request.data.get('latitude') or None,
+            longitude=request.data.get('longitude') or None,
         )
         return Response(DemandeInterventionSerializer(demande, context={'request': request}).data,
                         status=status.HTTP_201_CREATED)
