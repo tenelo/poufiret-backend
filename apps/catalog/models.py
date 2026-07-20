@@ -54,6 +54,12 @@ class Categorie(models.Model):
         help_text=_('Vide si racine, sinon la catégorie qui l\'englobe.'),
     )
 
+    types_articles = models.JSONField(
+        _('types d\'articles autorisés'),
+        default=list, blank=True,
+        help_text=_('Liste des types proposés au partenaire pour cette catégorie, '
+                    'ex: ["plat", "produit"]. Vide = tous les types.'),
+    )
     mode_transaction = models.CharField(
         _('mode de transaction'),
         max_length=40,
@@ -70,6 +76,11 @@ class Categorie(models.Model):
 
     ordre = models.IntegerField(_('ordre d\'affichage'), default=0)
     est_active = models.BooleanField(_('catégorie active'), default=True)
+    est_archivee = models.BooleanField(
+        _('catégorie archivée'), default=False,
+        help_text=_('Archivée = totalement invisible dans l\'application. '
+                    'Désactivée (case active décochée) = grisée "Bientôt disponible".'),
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

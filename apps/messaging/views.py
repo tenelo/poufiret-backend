@@ -171,11 +171,24 @@ class ContacterView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        article = get_object_or_404(Article, pk=request.data.get('article'), est_actif=True)
-        conv, cree = Conversation.objects.get_or_create(
-            client=request.user, partenaire=article.partenaire,
-            article=article,
-        )
+        """Body: article (id) OU partenaire (id). Avec article, la conversation
+        garde l'article en contexte ; avec partenaire seul, conversation générale."""
+        if request.data.get('article'):
+            article = get_object_or_404(Article, pk=request.data['article'], est_actif=True)
+            conv, cree = Conversation.objects.get_or_create(
+                client=request.user, partenaire=article.partenaire,
+                article=article,
+            )
+        elif request.data.get('partenaire'):
+            from apps.users.models import ProfilPartenaire
+            partenaire = get_object_or_404(
+                ProfilPartenaire, pk=request.data['partenaire'], statut='actif')
+            conv, cree = Conversation.objects.get_or_create(
+                client=request.user, partenaire=partenaire, article=None,
+            )
+        else:
+            return Response({'erreur': True, 'message': 'article ou partenaire requis.'},
+                            status=400)
         data = ConversationSerializer(conv, context={'request': request}).data
         data['nouvelle'] = cree
         return Response(data, status=status.HTTP_201_CREATED if cree else status.HTTP_200_OK)

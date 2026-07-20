@@ -8,11 +8,20 @@ from .models import (
 
 class CategorieSerializer(serializers.ModelSerializer):
     enfants = serializers.SerializerMethodField()
+    nb_partenaires = serializers.SerializerMethodField()
 
     class Meta:
         model = Categorie
         fields = ['id', 'nom', 'slug', 'description', 'icone', 'image_couverture',
-                  'parent', 'mode_transaction', 'module_flutter', 'ordre', 'enfants']
+                  'parent', 'mode_transaction', 'types_articles', 'module_flutter', 'ordre',
+                  'est_active', 'nb_partenaires', 'enfants']
+
+    def get_nb_partenaires(self, obj):
+        a = getattr(obj, 'nb_via_liaison', None)
+        b = getattr(obj, 'nb_via_articles', None)
+        if a is None and b is None:
+            return None  # contexte sans annotation (ex: enfants imbriqués)
+        return max(a or 0, b or 0)
 
     def get_enfants(self, obj):
         e = obj.enfants.filter(est_active=True).order_by('ordre', 'nom')
