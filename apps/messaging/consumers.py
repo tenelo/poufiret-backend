@@ -69,6 +69,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
         c = Conversation.objects.get(pk=conv_id)
         m = Message.objects.create(conversation=c, expediteur=user, contenu=contenu)
         Conversation.objects.filter(pk=conv_id).update(derniere_activite=m.created_at)
+        # Notifie le destinataire (l'autre participant) par push FCM.
+        try:
+            from apps.notifications.fcm import notifier_utilisateur
+            nom = user.get_full_name() or user.username or user.telephone
+            if c.client_id == user.id:
+                destinataire = c.partenaire.user
+            else:
+                destinataire = c.client
+            notifier_utilisateur(
+                destinataire,
+                titre=f'Nouveau message de {nom}',
+                corps=contenu[:120],
+                data={'conversation_id': str(conv_id)},
+            )
+        except Exception:
+            pass  # une notification ratee ne doit jamais bloquer le chat
         return {
             'id': m.id, 'expediteur': user.id,
             'expediteur_nom': user.get_full_name() or user.username or user.telephone,
