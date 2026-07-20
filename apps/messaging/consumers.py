@@ -32,6 +32,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
             data = json.loads(text_data)
         except Exception:
             return
+        if data.get('type') == 'marquer_lu':
+            ids = await self._marquer_lus(self.conv_id, self.user)
+            if ids:
+                await self.channel_layer.group_send(self.group, {
+                    'type': 'messages_lus',
+                    'payload': {'type': 'messages_lus', 'lecteur': self.user.id,
+                                'message_ids': ids},
+                })
+            return
         contenu = (data.get('contenu') or '').strip()
         if not contenu:
             return
@@ -51,6 +60,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def chat_message(self, event):
         await self.send(text_data=json.dumps(event['message'], ensure_ascii=False))
+    async def messages_lus(self, event):
+        await self.send(text_data=json.dumps(event['payload'], ensure_ascii=False))
 
     # ── Accès base (sync -> async) ────────────────────────────────────
     @database_sync_to_async
@@ -63,6 +74,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return True
         return hasattr(user, 'profil_partenaire') and c.partenaire_id == user.profil_partenaire.id
 
+    @database_sync_to_async
+    def _marquer_lus(self, conv_id, user):
+        from django.utils import timezone
+        from .models import Message
+        qs = Message.objects.filter(
+            conversation_id=conv_id,
+        ).exclude(expediteur=user).exclude(statut=Message.Statut.LU)
+        ids = list(qs.values_list('id', flat=True))
+        if ids:
+            qs.update(statut=Message.Statut.LU, lu_le=timezone.now())
+        return ids
     @database_sync_to_async
     def _enregistrer(self, conv_id, user, contenu):
         from .models import Conversation, Message
