@@ -40,8 +40,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_send(self.group, {
             'type': 'chat_message',
             'message': {
-                'id': str(msg['id']),
-                'conversation': str(self.conv_id),
+                'id': msg['id'],
+                'conversation': int(self.conv_id),
                 'expediteur': msg['expediteur'],
                 'expediteur_nom': msg['expediteur_nom'],
                 'contenu': msg['contenu'],
