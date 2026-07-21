@@ -69,3 +69,26 @@ class PingSessionView(APIView):
             'duree_secondes': session.duree_secondes,
             'minute_session': session.minute_session,
         })
+
+
+class EngagementAdminView(APIView):
+    """Liste des profils de navigation + statut client actif (admin/Angular)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response({'detail': 'Réservé aux administrateurs.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        profils = ProfilNavigation.objects.select_related('utilisateur').order_by('-derniere_activite')
+        donnees = [{
+            'utilisateur_id': p.utilisateur_id,
+            'telephone': p.utilisateur.telephone,
+            'username': p.utilisateur.username,
+            'nb_articles_vus_mois': p.nb_articles_vus_mois,
+            'temps_cumule_secondes_mois': p.temps_cumule_secondes_mois,
+            'derniere_activite': p.derniere_activite,
+            'est_client_actif': p.est_client_actif,
+            'categories_consultees': p.categories_consultees,
+        } for p in profils]
+        nb_actifs = sum(1 for d in donnees if d['est_client_actif'])
+        return Response({'nb_profils': len(donnees), 'nb_clients_actifs': nb_actifs, 'profils': donnees})
