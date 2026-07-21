@@ -6,10 +6,15 @@ from .views import (
     PubliciteDetailView, TransitionPubliciteView,
 )
 
+from .stats import ExportCSVView, StatsAdminView, StatsPartenaireView
+
 app_name = 'publicites'
 
 urlpatterns = [
     path('formules/', FormulesView.as_view(), name='formules'),
+    path('mes-stats/', StatsPartenaireView.as_view(), name='mes-stats'),
+    path('admin/stats/', StatsAdminView.as_view(), name='admin-stats'),
+    path('admin/export/', ExportCSVView.as_view(), name='admin-export'),
     path('carrousel/', CarrouselView.as_view(), name='carrousel'),
     path('interstitiel/', InterstitielView.as_view(), name='interstitiel'),
     path('bandeau-bas/', BandeauBasView.as_view(), name='bandeau-bas'),

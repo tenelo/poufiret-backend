@@ -92,3 +92,28 @@ class EngagementAdminView(APIView):
         } for p in profils]
         nb_actifs = sum(1 for d in donnees if d['est_client_actif'])
         return Response({'nb_profils': len(donnees), 'nb_clients_actifs': nb_actifs, 'profils': donnees})
+
+
+class VisiteCategorieView(APIView):
+    """POST categorie/visite/ — l'utilisateur entre dans un catalogue."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not flag_is_active(request._request, 'analytics_actif'):
+            return Response({'detail': 'Analytics désactivé.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        slug = request.data.get('categorie')
+        if not slug:
+            # Le client peut envoyer l'id numerique plutot que le slug.
+            categorie_id = request.data.get('categorie_id')
+            if categorie_id:
+                from apps.catalog.models import Categorie
+                cat = Categorie.objects.filter(pk=categorie_id).only('slug').first()
+                slug = cat.slug if cat else None
+        if not slug:
+            return Response({'erreur': True, 'message': 'Catégorie manquante.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        from .services import enregistrer_visite_categorie
+        enregistrer_visite_categorie(request.user, slug)
+        return Response({'message': 'Visite enregistrée.'},
+                        status=status.HTTP_201_CREATED)
