@@ -38,7 +38,9 @@ class ImpressionAdmin(admin.ModelAdmin):
 @admin.register(ParametresPublicite)
 class ParametresPubliciteAdmin(admin.ModelAdmin):
     list_display = ('__str__', 'affluence_debut', 'affluence_fin',
-                    'calcul_affluence_auto', 'validation_auto')
+                    'calcul_affluence_auto', 'validation_auto',
+                    'interstitiel_minute_min', 'interstitiel_minute_max',
+                    'interstitiel_ratio_session_courte')
 
     def has_add_permission(self, request):
         return not ParametresPublicite.objects.exists()

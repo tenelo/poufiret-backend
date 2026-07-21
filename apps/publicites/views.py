@@ -39,23 +39,73 @@ class CarrouselView(APIView):
     def get(self, request):
         if not flag_is_active(request._request, 'publicite_active'):
             return Response({'publicites': []})
-        pubs = _pubs_actives().filter(
-            formule__types_affichage__contains='carrousel',
-        ).order_by('-formule__priorite', 'cree_le')
+        from .services import selectionner_pubs
+        pubs = selectionner_pubs(
+            TypeAffichage.CARROUSEL,
+            utilisateur=request.user if request.user.is_authenticated else None,
+        )
         return Response({'publicites': PubliciteListSerializer(
             pubs, many=True, context={'request': request}).data})
 
 
 class PagePublicitesView(APIView):
-    """Toutes les pubs actives (onglet Publicités, public)."""
+    """Toutes les pubs actives (onglet Publicites, public)."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         if not flag_is_active(request._request, 'publicite_active'):
             return Response({'publicites': []})
-        pubs = _pubs_actives().order_by('-formule__priorite', 'cree_le')
+        from .services import selectionner_pubs
+        pubs = selectionner_pubs(
+            TypeAffichage.PAGE_PUBLICITES,
+            utilisateur=request.user if request.user.is_authenticated else None,
+        )
         return Response({'publicites': PubliciteListSerializer(
             pubs, many=True, context={'request': request}).data})
+
+
+class InterstitielView(APIView):
+    """Pub plein ecran a servir maintenant, ou rien.
+
+    Flutter appelle avec ?minute_session=N (renvoye par le ping analytics).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not flag_is_active(request._request, 'publicite_active'):
+            return Response({'publicite': None})
+        from .services import selectionner_pubs
+        try:
+            minute = int(request.query_params.get('minute_session', 0))
+        except (TypeError, ValueError):
+            minute = 0
+        pubs = selectionner_pubs(
+            TypeAffichage.INTERSTITIEL, utilisateur=request.user,
+            minute_session=minute, limite=1,
+        )
+        if not pubs:
+            return Response({'publicite': None})
+        return Response({'publicite': PubliciteDetailSerializer(
+            pubs[0], context={'request': request}).data})
+
+
+class BandeauBasView(APIView):
+    """Bandeau transparent en bas d'ecran (public)."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        if not flag_is_active(request._request, 'publicite_active'):
+            return Response({'publicite': None})
+        from .services import selectionner_pubs
+        pubs = selectionner_pubs(
+            TypeAffichage.BANDEAU_BAS,
+            utilisateur=request.user if request.user.is_authenticated else None,
+            limite=1,
+        )
+        if not pubs:
+            return Response({'publicite': None})
+        return Response({'publicite': PubliciteListSerializer(
+            pubs[0], context={'request': request}).data})
 
 
 class PubliciteDetailView(generics.RetrieveAPIView):

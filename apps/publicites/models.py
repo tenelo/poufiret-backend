@@ -186,6 +186,18 @@ class ParametresPublicite(ModeleBase):
     validation_auto = models.BooleanField(
         'validation automatique après paiement', default=False,
     )
+    interstitiel_minute_min = models.PositiveIntegerField(
+        'interstitiel : minute nominale', default=10,
+        help_text='Minute a laquelle servir la pub aux sessions longues',
+    )
+    interstitiel_minute_max = models.PositiveIntegerField(
+        'interstitiel : borne haute du creneau', default=15,
+        help_text='Au-dela de cette duree moyenne, on utilise la minute nominale',
+    )
+    interstitiel_ratio_session_courte = models.PositiveIntegerField(
+        'interstitiel : % de la session courte', default=70,
+        help_text='Session courte : pub servie a ce pourcentage de la duree habituelle',
+    )
 
     class Meta:
         verbose_name = 'paramètres publicité'
