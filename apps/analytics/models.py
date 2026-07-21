@@ -81,3 +81,54 @@ class ProfilNavigation(ModeleBase):
 
     def __str__(self):
         return f'Profil navigation — {self.utilisateur}'
+
+    # ── Scoring d'engagement ─────────────────────────────────────────
+    SEUIL_JOURS_CONNEXION = 7
+    SEUIL_ARTICLES_MOIS = 5
+    SEUIL_MINUTES_MOIS = 15
+
+    @property
+    def est_client_actif(self):
+        """Client actif = connecté sous 7 jours ET >=5 articles ce mois
+        ET >=15 minutes cumulées ce mois (3 conditions cumulatives)."""
+        if not self.derniere_activite:
+            return False
+        p = ParametresAnalytics.obtenir()
+        recence_ok = (timezone.now() - self.derniere_activite).days < p.seuil_jours_connexion
+        articles_ok = self.nb_articles_vus_mois >= p.seuil_articles_mois
+        temps_ok = self.temps_cumule_secondes_mois >= p.seuil_minutes_mois * 60
+        return recence_ok and articles_ok and temps_ok
+
+
+class ParametresAnalytics(ModeleBase):
+    """Paramètres modifiables du scoring d'engagement (ligne unique)."""
+
+    seuil_jours_connexion = models.PositiveIntegerField(
+        'seuil jours dernière connexion', default=7,
+        help_text='Client actif si connecté il y a moins de N jours',
+    )
+    seuil_articles_mois = models.PositiveIntegerField(
+        'seuil articles vus par mois', default=5,
+    )
+    seuil_minutes_mois = models.PositiveIntegerField(
+        'seuil minutes cumulées par mois', default=15,
+    )
+
+    class Meta:
+        verbose_name = 'paramètres analytics'
+        verbose_name_plural = 'paramètres analytics'
+
+    def save(self, *args, **kwargs):
+        # Singleton : on force une seule ligne
+        self.pk = self.pk or self.__class__.objects.first() and self.__class__.objects.first().pk or None
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def obtenir(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create()
+        return obj
+
+    def __str__(self):
+        return f'Paramètres analytics ({self.seuil_jours_connexion}j / {self.seuil_articles_mois} art. / {self.seuil_minutes_mois} min)'
