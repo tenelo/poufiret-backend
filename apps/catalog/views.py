@@ -178,6 +178,8 @@ class EnregistrerVueView(generics.GenericAPIView):
             duree_secondes=request.data.get('duree_secondes'),
         )
         Article.objects.filter(pk=article.pk).update(nb_vues=F('nb_vues') + 1)
+        from apps.analytics.services import enregistrer_vue_dans_profil
+        enregistrer_vue_dans_profil(request.user if request.user.is_authenticated else None, article)
         return Response({'message': 'Vue enregistrée.'}, status=status.HTTP_201_CREATED)
 
 
