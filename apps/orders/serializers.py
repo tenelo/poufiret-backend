@@ -1,5 +1,5 @@
 """Serializers panier (Module 4 - bloc A1)."""
-from rest_framework import serializers
+from rest_framework import serializers # type: ignore
 from apps.catalog.models import Article, Variante, Supplement
 from .models import Panier, LignePanier
 

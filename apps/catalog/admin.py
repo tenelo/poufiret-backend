@@ -17,10 +17,10 @@ from .models import (
 
 @admin.register(Categorie)
 class CategorieAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'parent', 'mode_transaction', 'module_flutter', 'ordre', 'est_active')
-    list_filter = ('mode_transaction', 'est_active', 'parent')
+    list_display = ('nom', 'parent', 'mode_transaction', 'module_flutter', 'ordre', 'est_active', 'est_archivee')
+    list_filter = ('mode_transaction', 'est_active', 'est_archivee', 'parent')
     search_fields = ('nom', 'slug', 'description', 'module_flutter')
-    list_editable = ('ordre', 'est_active')
+    list_editable = ('ordre', 'est_active', 'est_archivee')
     prepopulated_fields = {'slug': ('nom',)}
     autocomplete_fields = ('parent',)
     ordering = ('ordre', 'nom')
@@ -30,7 +30,7 @@ class CategorieAdmin(admin.ModelAdmin):
             'fields': ('nom', 'slug', 'description', 'icone', 'image_couverture'),
         }),
         (_('Hiérarchie & comportement'), {
-            'fields': ('parent', 'mode_transaction', 'module_flutter'),
+            'fields': ('parent', 'mode_transaction', 'types_articles', 'module_flutter'),
         }),
         (_('Affichage'), {
             'fields': ('ordre', 'est_active'),
