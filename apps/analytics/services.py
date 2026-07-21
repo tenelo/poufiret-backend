@@ -36,3 +36,31 @@ def enregistrer_visite_categorie(utilisateur, slug_categorie):
     profil.categories_consultees = compteurs
     profil.derniere_activite = timezone.now()
     profil.save()
+
+
+def enregistrer_vue_vitrine(utilisateur, partenaire, source='autre'):
+    """Consultation de la vitrine d'un partenaire.
+
+    Incremente le compteur public du partenaire et, pour un utilisateur
+    connecte, alimente son profil de navigation : c'est le seul signal
+    disponible pour les metiers de service, ou aucun article n'est consulte.
+    """
+    from django.db.models import F
+    from apps.users.models import ProfilPartenaire
+    from .models import VueVitrine
+
+    utilisateur_reel = (
+        utilisateur if utilisateur and utilisateur.is_authenticated else None
+    )
+    VueVitrine.objects.create(
+        partenaire=partenaire, utilisateur=utilisateur_reel, source=source,
+    )
+    ProfilPartenaire.objects.filter(pk=partenaire.pk).update(
+        nb_vues=F('nb_vues') + 1,
+    )
+
+    profil = _profil_utilisateur(utilisateur_reel)
+    if profil is None:
+        return
+    profil.derniere_activite = timezone.now()
+    profil.save()

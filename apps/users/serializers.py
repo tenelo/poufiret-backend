@@ -117,7 +117,7 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
             'description', 'logo', 'photo_couverture',
             'adresse', 'quartier', 'secteur', 'ville', 'description_acces',
             'telephone_pro', 'whatsapp', 'email_pro',
-            'nombre_likes', 'est_like_par_moi', 'est_favori_par_moi',
+            'nombre_likes', 'nb_vues', 'est_like_par_moi', 'est_favori_par_moi',
         ]
         read_only_fields = fields
 

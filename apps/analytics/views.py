@@ -1,6 +1,6 @@
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from waffle import flag_is_active
@@ -116,4 +116,34 @@ class VisiteCategorieView(APIView):
         from .services import enregistrer_visite_categorie
         enregistrer_visite_categorie(request.user, slug)
         return Response({'message': 'Visite enregistrée.'},
+                        status=status.HTTP_201_CREATED)
+
+
+class VueVitrineView(APIView):
+    """POST vitrine/vue/ — consultation de la vitrine d'un partenaire.
+
+    Accessible sans authentification : un visiteur anonyme incremente le
+    compteur public, sans alimenter de profil de navigation.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        if not flag_is_active(request._request, 'analytics_actif'):
+            return Response({'detail': 'Analytics désactivé.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        partenaire_id = request.data.get('partenaire')
+        if not partenaire_id:
+            return Response({'erreur': True, 'message': 'Partenaire manquant.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        from apps.users.models import ProfilPartenaire
+        partenaire = ProfilPartenaire.objects.filter(pk=partenaire_id).first()
+        if partenaire is None:
+            return Response({'erreur': True, 'message': 'Partenaire introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        from .services import enregistrer_vue_vitrine
+        enregistrer_vue_vitrine(
+            request.user, partenaire,
+            source=request.data.get('source', 'autre'),
+        )
+        return Response({'message': 'Vue enregistrée.'},
                         status=status.HTTP_201_CREATED)

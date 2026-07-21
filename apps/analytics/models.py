@@ -132,3 +132,48 @@ class ParametresAnalytics(ModeleBase):
 
     def __str__(self):
         return f'Paramètres analytics ({self.seuil_jours_connexion}j / {self.seuil_articles_mois} art. / {self.seuil_minutes_mois} min)'
+
+
+class VueVitrine(ModeleBase):
+    """Trace chaque consultation de la vitrine d'un partenaire.
+
+    Pendant du VueArticle du catalogue : indispensable pour les metiers de
+    service (plombier, mecanicien...) ou le client ne consulte aucun article.
+    """
+
+    class Source(models.TextChoices):
+        ANNUAIRE = 'annuaire', 'Liste de la categorie'
+        RECHERCHE = 'recherche', 'Recherche'
+        ARTICLE = 'article', 'Depuis une fiche article'
+        FAVORIS = 'favoris', 'Liste des favoris'
+        PUBLICITE = 'publicite', 'Depuis une publicite'
+        AUTRE = 'autre', 'Autre'
+
+    partenaire = models.ForeignKey(
+        'users.ProfilPartenaire',
+        on_delete=models.CASCADE,
+        related_name='vues_vitrine',
+        verbose_name='partenaire',
+    )
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True, null=True,
+        related_name='vues_vitrines',
+        verbose_name='utilisateur',
+    )
+    source = models.CharField(
+        'source', max_length=15,
+        choices=Source.choices, default=Source.AUTRE,
+    )
+
+    class Meta:
+        verbose_name = 'vue de vitrine'
+        verbose_name_plural = 'vues de vitrine'
+        ordering = ['-cree_le']
+        indexes = [
+            models.Index(fields=['partenaire', 'cree_le']),
+        ]
+
+    def __str__(self):
+        return f'{self.partenaire} — {self.utilisateur or "anonyme"}'

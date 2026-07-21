@@ -264,6 +264,9 @@ class ProfilPartenaire(models.Model):
     )
 
     # ── Contact professionnel ────────────────────────────────────────
+    nb_vues = models.PositiveIntegerField(
+        _('nombre de vues de la vitrine'), default=0,
+    )
     telephone_pro = models.CharField(_('téléphone professionnel'), max_length=20, blank=True)
     whatsapp = models.CharField(_('numéro WhatsApp'), max_length=20, blank=True)
     email_pro = models.EmailField(_('email professionnel'), blank=True)
