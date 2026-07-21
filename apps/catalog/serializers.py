@@ -13,7 +13,7 @@ class CategorieSerializer(serializers.ModelSerializer):
     class Meta:
         model = Categorie
         fields = ['id', 'nom', 'slug', 'description', 'icone', 'image_couverture',
-                  'parent', 'mode_transaction', 'types_articles', 'module_flutter', 'ordre',
+                  'parent', 'mode_transaction', 'types_articles', 'affiche_catalogue', 'module_flutter', 'ordre',
                   'est_active', 'nb_partenaires', 'enfants']
 
     def get_nb_partenaires(self, obj):

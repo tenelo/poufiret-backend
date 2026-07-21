@@ -54,6 +54,13 @@ class Categorie(models.Model):
         help_text=_('Vide si racine, sinon la catégorie qui l\'englobe.'),
     )
 
+    affiche_catalogue = models.BooleanField(
+        _('affiche un catalogue'), default=True,
+        help_text=(
+            'Decoche pour les metiers de service pur (plomberie, electricite...) : '
+            'le client va directement sur la fiche du partenaire, sans etape catalogue.'
+        ),
+    )
     types_articles = models.JSONField(
         _('types d\'articles autorisés'),
         default=list, blank=True,
