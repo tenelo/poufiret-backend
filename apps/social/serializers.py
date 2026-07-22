@@ -73,16 +73,23 @@ class CommentaireArticleSerializer(serializers.ModelSerializer):
 class CommentairePartenaireSerializer(serializers.ModelSerializer):
     user_nom = serializers.SerializerMethodField()
     reponses = serializers.SerializerMethodField()
+    est_like_par_moi = serializers.SerializerMethodField()
 
     class Meta:
         model = CommentairePartenaire
         fields = ['id', 'user', 'user_nom', 'partenaire', 'parent', 'contenu',
-                  'est_visible', 'est_modifie', 'nb_likes', 'reponses',
+                  'est_visible', 'est_modifie', 'nb_likes', 'est_like_par_moi', 'reponses',
                   'created_at', 'updated_at']
         read_only_fields = ['user', 'est_visible', 'est_modifie', 'nb_likes']
 
     def get_user_nom(self, obj):
         return obj.user.get_full_name() or obj.user.username or obj.user.telephone
+
+    def get_est_like_par_moi(self, obj):
+        req = self.context.get('request')
+        if req and req.user and req.user.is_authenticated:
+            return obj.likes.filter(user=req.user).exists()
+        return False
 
     def get_reponses(self, obj):
         if obj.parent_id is not None:

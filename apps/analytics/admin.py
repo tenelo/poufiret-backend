@@ -13,7 +13,7 @@ class TempsSessionAdmin(admin.ModelAdmin):
 
 @admin.register(ProfilNavigation)
 class ProfilNavigationAdmin(admin.ModelAdmin):
-    list_display = ('utilisateur', 'mois_reference', 'nb_articles_vus_mois',
+    list_display = ('utilisateur', 'mois_reference', 'nb_articles_vus_mois', 'nb_interactions_mois',
                     'temps_cumule_secondes_mois', 'derniere_activite', 'est_client_actif')
     search_fields = ('utilisateur__telephone', 'utilisateur__username')
 

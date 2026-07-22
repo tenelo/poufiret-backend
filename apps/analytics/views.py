@@ -18,6 +18,7 @@ def _profil(utilisateur):
         # Nouveau mois : remise à zéro des compteurs mensuels
         profil.mois_reference = mois
         profil.nb_articles_vus_mois = 0
+        profil.nb_interactions_mois = 0
         profil.temps_cumule_secondes_mois = 0
     return profil
 
@@ -85,6 +86,7 @@ class EngagementAdminView(APIView):
             'telephone': p.utilisateur.telephone,
             'username': p.utilisateur.username,
             'nb_articles_vus_mois': p.nb_articles_vus_mois,
+            'nb_interactions_mois': p.nb_interactions_mois,
             'temps_cumule_secondes_mois': p.temps_cumule_secondes_mois,
             'derniere_activite': p.derniere_activite,
             'est_client_actif': p.est_client_actif,
@@ -146,4 +148,21 @@ class VueVitrineView(APIView):
             source=request.data.get('source', 'autre'),
         )
         return Response({'message': 'Vue enregistrée.'},
+                        status=status.HTTP_201_CREATED)
+
+
+class OuvertureDemandeInterventionView(APIView):
+    """POST intervention/ouverture/ — l'utilisateur ouvre l'ecran de demande.
+
+    Signal d'intention forte, compte comme une interaction meme sans envoi.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not flag_is_active(request._request, 'analytics_actif'):
+            return Response({'detail': 'Analytics désactivé.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        from .services import enregistrer_demande_intervention
+        enregistrer_demande_intervention(request.user)
+        return Response({'message': 'Ouverture enregistrée.'},
                         status=status.HTTP_201_CREATED)
