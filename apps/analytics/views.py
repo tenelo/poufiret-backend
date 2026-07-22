@@ -18,7 +18,7 @@ def _profil(utilisateur):
         # Nouveau mois : remise à zéro des compteurs mensuels
         profil.mois_reference = mois
         profil.nb_articles_vus_mois = 0
-        profil.nb_interactions_mois = 0
+        profil.nb_vues_catalogue_mois = 0
         profil.temps_cumule_secondes_mois = 0
     return profil
 
@@ -86,7 +86,7 @@ class EngagementAdminView(APIView):
             'telephone': p.utilisateur.telephone,
             'username': p.utilisateur.username,
             'nb_articles_vus_mois': p.nb_articles_vus_mois,
-            'nb_interactions_mois': p.nb_interactions_mois,
+            'nb_vues_catalogue_mois': p.nb_vues_catalogue_mois,
             'temps_cumule_secondes_mois': p.temps_cumule_secondes_mois,
             'derniere_activite': p.derniere_activite,
             'est_client_actif': p.est_client_actif,

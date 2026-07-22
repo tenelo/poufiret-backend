@@ -67,7 +67,7 @@ class ProfilNavigation(ModeleBase):
     # Compteurs du mois courant
     mois_reference = models.DateField('mois de référence')
     nb_articles_vus_mois = models.PositiveIntegerField('articles vus ce mois', default=0)
-    nb_interactions_mois = models.PositiveIntegerField('interactions ce mois', default=0)
+    nb_vues_catalogue_mois = models.PositiveIntegerField('vues de catalogue ce mois', default=0)
     temps_cumule_secondes_mois = models.PositiveIntegerField('temps cumulé ce mois (s)', default=0)
     # Habitudes (cumulées, tous mois confondus)
     categories_consultees = models.JSONField(
@@ -96,9 +96,9 @@ class ProfilNavigation(ModeleBase):
             return False
         p = ParametresAnalytics.obtenir()
         recence_ok = (timezone.now() - self.derniere_activite).days < p.seuil_jours_connexion
-        interactions_ok = self.nb_interactions_mois >= p.seuil_articles_mois
+        articles_ok = self.nb_articles_vus_mois >= p.seuil_articles_mois
         temps_ok = self.temps_cumule_secondes_mois >= p.seuil_minutes_mois * 60
-        return recence_ok and interactions_ok and temps_ok
+        return recence_ok and articles_ok and temps_ok
 
 
 class ParametresAnalytics(ModeleBase):
