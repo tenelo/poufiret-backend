@@ -30,8 +30,15 @@ def enregistrer_visite_categorie(utilisateur, slug_categorie):
     profil.save()
 
 
-def enregistrer_vue_vitrine(utilisateur, partenaire, source='autre'):
-    """Consultation de la vitrine d'un partenaire (compteur public + catalogue)."""
+def enregistrer_vue_vitrine(utilisateur, partenaire, source='autre', avec_catalogue=True):
+    """Consultation de la page d'un partenaire.
+
+    Dans tous les cas : +1 sur le compteur public nb_vues du partenaire.
+    Puis selon le type de la categorie d'origine :
+      - avec catalogue (restaurant, hotel...) -> +1 nb_vues_catalogue_mois
+      - sans catalogue (plombier, service...) -> +1 nb_articles_vus_mois
+        (la fiche de service est comptee comme un article).
+    """
     from django.db.models import F
     from apps.users.models import ProfilPartenaire
     from .models import VueVitrine
@@ -49,6 +56,9 @@ def enregistrer_vue_vitrine(utilisateur, partenaire, source='autre'):
     profil = _profil_utilisateur(utilisateur_reel)
     if profil is None:
         return
-    profil.nb_vues_catalogue_mois += 1
+    if avec_catalogue:
+        profil.nb_vues_catalogue_mois += 1
+    else:
+        profil.nb_articles_vus_mois += 1
     profil.derniere_activite = timezone.now()
     profil.save()

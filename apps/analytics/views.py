@@ -146,6 +146,7 @@ class VueVitrineView(APIView):
         enregistrer_vue_vitrine(
             request.user, partenaire,
             source=request.data.get('source', 'autre'),
+            avec_catalogue=bool(request.data.get('avec_catalogue', True)),
         )
         return Response({'message': 'Vue enregistrée.'},
                         status=status.HTTP_201_CREATED)
