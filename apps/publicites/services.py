@@ -179,3 +179,89 @@ def selectionner_pubs(type_affichage, utilisateur=None, minute_session=None, lim
     resultat.sort(key=lambda p: (
         _taux_consommation(p, vues), -p.formule.priorite, p.cree_le))
     return resultat[:limite] if limite else resultat
+
+
+# ── Transitions de statut (source unique : API, admin, Angular) ───────
+
+TRANSITIONS = {
+    'soumettre': {
+        'depuis': [Publicite.Statut.BROUILLON],
+        'vers': Publicite.Statut.EN_ATTENTE_PAIEMENT,
+        'admin': False,
+        'libelle': 'Soumettre',
+    },
+    'confirmer_paiement': {
+        'depuis': [Publicite.Statut.EN_ATTENTE_PAIEMENT],
+        'vers': Publicite.Statut.EN_ATTENTE_VALIDATION,
+        'admin': True,
+        'libelle': 'Confirmer le paiement',
+    },
+    'valider': {
+        'depuis': [Publicite.Statut.EN_ATTENTE_VALIDATION],
+        'vers': Publicite.Statut.ACTIVE,
+        'admin': True,
+        'libelle': 'Valider et lancer la diffusion',
+    },
+    'rejeter': {
+        'depuis': [Publicite.Statut.EN_ATTENTE_VALIDATION,
+                   Publicite.Statut.EN_ATTENTE_PAIEMENT],
+        'vers': Publicite.Statut.REJETEE,
+        'admin': True,
+        'libelle': 'Rejeter',
+    },
+    'terminer': {
+        'depuis': [Publicite.Statut.ACTIVE],
+        'vers': Publicite.Statut.TERMINEE,
+        'admin': True,
+        'libelle': 'Terminer la diffusion',
+    },
+}
+
+
+def quota_formule_disponible(pub):
+    """Vrai si la formule n'a pas atteint son quota d'annonceurs simultanes."""
+    nb_actives = Publicite.objects.filter(
+        formule=pub.formule, statut=Publicite.Statut.ACTIVE,
+    ).exclude(pk=pub.pk).count()
+    return nb_actives < pub.formule.quota_partenaires
+
+
+def activer_publicite(pub):
+    """Passe la pub en diffusion et calcule ses dates."""
+    from datetime import timedelta
+    pub.statut = Publicite.Statut.ACTIVE
+    pub.debut_diffusion = timezone.now()
+    pub.fin_diffusion = pub.debut_diffusion + timedelta(
+        days=pub.formule.duree_jours)
+    pub.save(update_fields=['statut', 'debut_diffusion', 'fin_diffusion',
+                            'modifie_le'])
+
+
+def appliquer_transition(pub, action):
+    """Applique une transition de statut.
+
+    Retourne (ok: bool, message: str). Ne verifie PAS les droits :
+    l'appelant (vue API ou admin) s'en charge.
+    """
+    regle = TRANSITIONS.get(action)
+    if regle is None:
+        return False, 'Action inconnue.'
+    if pub.statut not in regle['depuis']:
+        return False, (f'Transition impossible depuis '
+                       f'"{pub.get_statut_display()}".')
+
+    vers = regle['vers']
+    activation = vers == Publicite.Statut.ACTIVE or (
+        action == 'confirmer_paiement'
+        and ParametresPublicite.obtenir().validation_auto
+    )
+    if activation:
+        if not quota_formule_disponible(pub):
+            return False, ('Quota de la formule atteint : '
+                           'activation impossible pour le moment.')
+        activer_publicite(pub)
+        return True, 'Publicite activee, diffusion lancee.'
+
+    pub.statut = vers
+    pub.save(update_fields=['statut', 'modifie_le'])
+    return True, f'Statut : {pub.get_statut_display()}.'
