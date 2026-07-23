@@ -131,6 +131,20 @@ class PartenaireCategorie(models.Model):
         verbose_name=_('catégorie'),
     )
     est_principale = models.BooleanField(_('catégorie principale'), default=False)
+    image_couverture = models.ImageField(
+        _('photo de couverture (dans cette catégorie)'),
+        upload_to='partenaires/couvertures_categories/',
+        blank=True, null=True,
+        help_text=_(
+            "Facultatif. Permet d'afficher une image differente selon la "
+            "categorie. Si vide, la photo de couverture du profil est utilisee."
+        ),
+    )
+
+    @property
+    def couverture_effective(self):
+        """Image a afficher : celle du lien, sinon celle du profil."""
+        return self.image_couverture or self.partenaire.photo_couverture
 
     class Meta:
         verbose_name = _('catégorie d\'un commerçant')

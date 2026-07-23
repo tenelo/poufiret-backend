@@ -215,12 +215,20 @@ class PartenairesParCategorieView(_APIView):
                 return request.build_absolute_uri(champ.url)
             except Exception:
                 return ''
+        # Couverture specifique a cette categorie, si le partenaire en a
+        # defini une (sinon on retombe sur celle du profil).
+        couvertures = {
+            l.partenaire_id: l.image_couverture
+            for l in PartenaireCategorie.objects.filter(
+                categorie=cat, partenaire_id__in=list(ids))
+            if l.image_couverture
+        }
         donnees = [{
             'id': p.id,
             'nom_commerce': p.nom_commerce,
             'description': p.description,
             'logo': _url(p.logo),
-            'photo_couverture': _url(p.photo_couverture),
+            'photo_couverture': _url(couvertures.get(p.id) or p.photo_couverture),
         } for p in partenaires]
         return _Response(donnees)
 

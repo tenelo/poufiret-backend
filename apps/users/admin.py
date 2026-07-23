@@ -90,6 +90,7 @@ class CategoriePartenaireInline(admin.TabularInline):
     model = _PC
     extra = 1
     autocomplete_fields = ('categorie',)
+    fields = ('categorie', 'est_principale', 'image_couverture')
     verbose_name = 'catégorie'
     verbose_name_plural = 'catégories du partenaire'
 
