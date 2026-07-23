@@ -71,7 +71,31 @@ class PubliciteAdmin(admin.ModelAdmin):
     def get_list_display(self, request):
         return ('titre', 'partenaire', 'formule', 'statut', 'boutons',
                 'nb_personnes_touchees', 'nb_impressions', 'nb_clics',
-                'debut_diffusion', 'fin_diffusion')
+                'personnes_ayant_clique', 'debut_diffusion', 'fin_diffusion')
+
+    @admin.display(description='personnes ayant cliqué')
+    def personnes_ayant_clique(self, obj):
+        """Cliqueurs distincts : un utilisateur qui reclique compte une fois.
+
+        Compare a nb_clics, cela distingue un interet reel et large d'un
+        seul utilisateur insistant. Les visiteurs non connectes ne sont
+        pas comptes ici (pas d'identite a dedupliquer).
+        """
+        from django.utils.html import format_html
+        from .models import ImpressionPublicite
+        if not obj.nb_clics:
+            return '—'
+        distincts = (ImpressionPublicite.objects
+                     .filter(publicite=obj, cliquee=True,
+                             utilisateur__isnull=False)
+                     .values('utilisateur').distinct().count())
+        # round() avant format_html : les arguments deviennent des
+        # SafeString, que les codes de format numeriques rejettent.
+        taux = (round(distincts / obj.nb_personnes_touchees * 100)
+                if obj.nb_personnes_touchees else 0)
+        return format_html(
+            '<b>{}</b> <span style="font-size:11px;color:#868e96">'
+            '({}% des touchés)</span>', distincts, taux)
 
     def get_urls(self):
         from django.urls import path
