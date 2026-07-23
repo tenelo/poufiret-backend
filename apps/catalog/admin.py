@@ -27,7 +27,8 @@ class CategorieAdmin(admin.ModelAdmin):
 
     fieldsets = (
         (None, {
-            'fields': ('nom', 'slug', 'description', 'icone', 'image_couverture'),
+            'fields': ('nom', 'slug', 'description', 'icone', 'image_couverture',
+                       'types_partenaire'),
         }),
         (_('Hiérarchie & comportement'), {
             'fields': ('parent', 'mode_transaction', 'types_articles', 'module_flutter'),

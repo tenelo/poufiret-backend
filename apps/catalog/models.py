@@ -45,6 +45,16 @@ class Categorie(models.Model):
         blank=True, null=True,
     )
 
+    types_partenaire = models.JSONField(
+        _('types de partenaire rattachés'),
+        default=list,
+        blank=True,
+        help_text=_(
+            "Liste de types (ex. ['plombier']). Un nouveau partenaire de ce "
+            "type est automatiquement rattaché à cette catégorie."
+        ),
+    )
+
     parent = models.ForeignKey(
         'self',
         on_delete=models.CASCADE,

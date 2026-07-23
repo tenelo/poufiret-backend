@@ -78,13 +78,33 @@ class SessionAppareilSerializer(serializers.ModelSerializer):
 class DevenirPartenaireSerializer(serializers.ModelSerializer):
     """Crée le ProfilPartenaire d'un client. Rôle partenaire immédiat,
     mais profil EN_ATTENTE + invisible jusqu'à validation admin."""
+    categories = serializers.ListField(
+        child=serializers.IntegerField(), required=False, write_only=True,
+        help_text="IDs des categories. La premiere devient la principale. "
+                  "Si vide, deduite du type_partenaire.",
+    )
+
     class Meta:
         model = ProfilPartenaire
         fields = ['type_partenaire', 'nom_commerce', 'description', 'adresse',
-                  'quartier', 'secteur', 'ville', 'telephone_pro', 'whatsapp', 'email_pro']
+                  'quartier', 'secteur', 'ville', 'telephone_pro', 'whatsapp',
+                  'email_pro', 'categories']
+
+    def validate_categories(self, ids):
+        from apps.catalog.models import Categorie
+        if not ids:
+            return ids
+        existantes = set(Categorie.objects.filter(
+            id__in=ids, est_active=True).values_list('id', flat=True))
+        inconnues = [i for i in ids if i not in existantes]
+        if inconnues:
+            raise serializers.ValidationError(
+                f'Categories inconnues ou inactives : {inconnues}')
+        return ids
 
     def create(self, validated_data):
         from .models import PlanAbonnement
+        categories = validated_data.pop('categories', [])
         user = self.context['request'].user
         if hasattr(user, 'profil_partenaire'):
             raise serializers.ValidationError("Vous avez déjà un profil partenaire.")
@@ -98,7 +118,29 @@ class DevenirPartenaireSerializer(serializers.ModelSerializer):
             est_visible=False, **validated_data)
         user.role = User.Role.PARTENAIRE
         user.save(update_fields=['role'])
+        self._rattacher_categories(profil, categories)
         return profil
+
+    @staticmethod
+    def _rattacher_categories(profil, ids):
+        """Cree les liens PartenaireCategorie.
+
+        Si aucune categorie choisie, on deduit celle qui declare ce
+        type_partenaire (champ Categorie.types_partenaire).
+        """
+        from apps.catalog.models import Categorie, PartenaireCategorie
+        if not ids:
+            ids = list(
+                Categorie.objects.filter(
+                    est_active=True,
+                    types_partenaire__contains=profil.type_partenaire,
+                ).values_list('id', flat=True)[:1]
+            )
+        for rang, cid in enumerate(ids):
+            PartenaireCategorie.objects.get_or_create(
+                partenaire=profil, categorie_id=cid,
+                defaults={'est_principale': rang == 0},
+            )
 
 
 class VitrinePartenaireSerializer(serializers.ModelSerializer):

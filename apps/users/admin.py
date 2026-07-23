@@ -84,19 +84,41 @@ class HoraireOuvertureInline(admin.TabularInline):
 
 
 
+class CategoriePartenaireInline(admin.TabularInline):
+    """Categories du partenaire, gerables depuis sa fiche."""
+    from apps.catalog.models import PartenaireCategorie as _PC
+    model = _PC
+    extra = 1
+    autocomplete_fields = ('categorie',)
+    verbose_name = 'catégorie'
+    verbose_name_plural = 'catégories du partenaire'
+
+
 @admin.register(ProfilPartenaire)
 class ProfilPartenaireAdmin(admin.ModelAdmin):
     """Admin pour les profils commerçants — point de contrôle central."""
 
     
-    inlines = [HoraireOuvertureInline]
+    inlines = [CategoriePartenaireInline, HoraireOuvertureInline]
     list_display = (
-        'nom_commerce', 'telephone_user', 'plan', 'statut',
+        'nom_commerce', 'categories_affichees', 'telephone_user', 'plan', 'statut',
         'est_visible', 'badge_certifie', 'est_faveur', 'created_at',
     )
+
+    @admin.display(description='catégories')
+    def categories_affichees(self, obj):
+        """Categories du partenaire, la principale marquee d'une etoile."""
+        liens = obj.liens_categories.select_related('categorie').all()
+        if not liens:
+            return '—'
+        return ', '.join(
+            f'{l.categorie.nom}★' if l.est_principale else l.categorie.nom
+            for l in liens
+        )
     list_filter = (
         'statut', 'est_visible', 'badge_certifie', 'taxes_communales_ok',
         'est_faveur', 'paye_publicite', 'plan', 'ville', 'source_inscription',
+        'liens_categories__categorie',
     )
     search_fields = (
         'nom_commerce', 'user__telephone', 'user__username',
