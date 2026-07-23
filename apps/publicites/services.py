@@ -108,6 +108,34 @@ def _passages_restants(pub, utilisateur):
     return vues_aujourdhui < pub.formule.passages_par_jour
 
 
+def _vues_du_jour(utilisateur, pubs):
+    """Impressions du jour par publicite, pour cet utilisateur (1 requete)."""
+    if utilisateur is None or not utilisateur.is_authenticated or not pubs:
+        return {}
+    debut_jour = timezone.localtime().replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    lignes = (
+        ImpressionPublicite.objects
+        .filter(utilisateur=utilisateur, cree_le__gte=debut_jour,
+                publicite__in=[p.pk for p in pubs])
+        .values('publicite')
+        .annotate(n=Count('id'))
+    )
+    return {l['publicite']: l['n'] for l in lignes}
+
+
+def _taux_consommation(pub, vues):
+    """Part du quota journalier deja consommee (0 = intacte, 1 = epuisee).
+
+    Sert a faire tourner les pubs au lieu d'epuiser la plus prioritaire
+    d'un seul bloc : celle qui a le moins entame son quota passe en premier.
+    Le forfait reste respecte, puisqu'un quota plus eleve se consomme
+    plus lentement en proportion.
+    """
+    quota = max(1, pub.formule.passages_par_jour)
+    return vues.get(pub.pk, 0) / quota
+
+
 def _interstitiel_autorise(utilisateur, params):
     """Respecte l'intervalle minimum entre deux interstitiels."""
     if utilisateur is None or not utilisateur.is_authenticated:
@@ -145,5 +173,9 @@ def selectionner_pubs(type_affichage, utilisateur=None, minute_session=None, lim
             continue
         resultat.append(pub)
 
-    resultat.sort(key=lambda p: (-p.formule.priorite, p.cree_le))
+    # Rotation : la moins servie (en proportion de son quota) d'abord.
+    # La priorite ne departage plus que les egalites.
+    vues = _vues_du_jour(utilisateur, resultat)
+    resultat.sort(key=lambda p: (
+        _taux_consommation(p, vues), -p.formule.priorite, p.cree_le))
     return resultat[:limite] if limite else resultat
