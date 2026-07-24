@@ -3,6 +3,7 @@ from django.db import models
 from django.utils import timezone
 
 from apps.core.models import ModeleBase
+from apps.core.images import ImagesOptimiseesMixin
 
 
 class TypeAffichage(models.TextChoices):
@@ -69,8 +70,9 @@ class FormulePublicite(ModeleBase):
         return f'{self.nom} — {self.prix} FCFA'
 
 
-class Publicite(ModeleBase):
+class Publicite(ImagesOptimiseesMixin, ModeleBase):
     """Campagne publicitaire d'un partenaire."""
+    champs_images = ('image_couverture',)
 
     class Statut(models.TextChoices):
         BROUILLON = 'brouillon', 'Brouillon'
@@ -119,6 +121,11 @@ class Publicite(ModeleBase):
         verbose_name = 'publicité'
         verbose_name_plural = 'publicités'
         ordering = ['-cree_le']
+        indexes = [
+            # _pubs_diffusables() filtre sur ces deux champs a chaque
+            # affichage : c'est la requete la plus frequente de l'app.
+            models.Index(fields=['statut', 'debut_diffusion']),
+        ]
 
     @property
     def cible_atteinte(self):
@@ -137,7 +144,8 @@ class Publicite(ModeleBase):
         return f'{self.titre} ({self.partenaire}) — {self.get_statut_display()}'
 
 
-class ImagePublicite(ModeleBase):
+class ImagePublicite(ImagesOptimiseesMixin, ModeleBase):
+    champs_images = ('image',)
     publicite = models.ForeignKey(
         Publicite, on_delete=models.CASCADE,
         related_name='images', verbose_name='publicité',
@@ -186,6 +194,8 @@ class ImpressionPublicite(ModeleBase):
         indexes = [
             models.Index(fields=['publicite', 'utilisateur']),
             models.Index(fields=['session', 'publicite', 'type_affichage']),
+            # _passages_restants() compte les impressions du jour.
+            models.Index(fields=['utilisateur', 'cree_le']),
         ]
 
     def __str__(self):

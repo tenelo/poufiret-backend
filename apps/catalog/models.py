@@ -9,13 +9,14 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from apps.users.models import ProfilPartenaire, User
+from apps.core.images import ImagesOptimiseesMixin
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # CATÉGORIES
 # ═══════════════════════════════════════════════════════════════════════
 
-class Categorie(models.Model):
+class Categorie(ImagesOptimiseesMixin, models.Model):
     """
     Catégories hiérarchiques de l'application.
 
@@ -23,6 +24,7 @@ class Categorie(models.Model):
     Le mode_transaction définit comment les commerçants de cette catégorie
     vendent (vitrine + chat, panier, demande d'intervention, etc.).
     """
+    champs_images = ('image_couverture',)
 
     class ModeTransaction(models.TextChoices):
         VITRINE_CHAT = 'vitrine_chat', _('Vitrine + Chat')
@@ -123,11 +125,12 @@ class Categorie(models.Model):
         return self.nom
 
 
-class PartenaireCategorie(models.Model):
+class PartenaireCategorie(ImagesOptimiseesMixin, models.Model):
     """
     Lien plusieurs-à-plusieurs entre commerçants et catégories.
     Un commerçant peut être dans plusieurs catégories ; une seule est principale.
     """
+    champs_images = ('image_couverture',)
     partenaire = models.ForeignKey(
         ProfilPartenaire,
         on_delete=models.CASCADE,
@@ -414,8 +417,9 @@ class Vehicule(models.Model):
 # PHOTOS & PANORAMAS
 # ═══════════════════════════════════════════════════════════════════════
 
-class ArticleImage(models.Model):
+class ArticleImage(ImagesOptimiseesMixin, models.Model):
     """Photo d'un article. Le quota dépend du plan d'abonnement du commerçant."""
+    champs_images = ('image',)
 
     article = models.ForeignKey(
         Article,

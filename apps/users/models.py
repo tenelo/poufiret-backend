@@ -8,6 +8,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.contrib.gis.db import models as gis_models
 from apps.core.models import ModeleBase
+from apps.core.images import ImagesOptimiseesMixin
 
 
 class User(AbstractUser):
@@ -180,7 +181,7 @@ class PlanAbonnement(models.Model):
         return f"{self.libelle} — {self.prix:.0f} FCFA / {duree}"
     
 
-class ProfilPartenaire(models.Model):
+class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
     """
     Profil étendu pour les utilisateurs ayant le rôle partenaire.
 
@@ -189,6 +190,7 @@ class ProfilPartenaire(models.Model):
     plan, statut admin) et les champs de contrôle qui permettent à l'admin
     de gérer la plateforme.
     """
+    champs_images = ('logo', 'photo_couverture')
 
     class TypePartenaire(models.TextChoices):
         COMMERCANT = 'commercant', _('Commerçant')
