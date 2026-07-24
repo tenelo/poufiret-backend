@@ -70,6 +70,27 @@ class ArticleImageInline(admin.TabularInline):
     extra = 1
     fields = ('image', 'legende', 'ordre', 'est_principale', 'est_active')
 
+    @property
+    def verbose_name_plural(self):
+        return "images d'articles"
+
+    def get_formset(self, request, obj=None, **kwargs):
+        """Rappelle la limite du plan directement dans l'en-tete du bloc.
+
+        Le quota n'est pas applique ici : l'admin peut deliberement
+        depasser (faveur, correction). Mais il doit le savoir.
+        """
+        formset = super().get_formset(request, obj, **kwargs)
+        plan = getattr(getattr(obj, 'partenaire', None), 'plan', None) if obj else None
+        if plan is not None:
+            actuelles = obj.images.count()
+            formset.verbose_name_plural = (
+                f"images — plan {plan.libelle} : "
+                f"{plan.nb_photos_par_article} autorisée(s), "
+                f"{actuelles} enregistrée(s)"
+            )
+        return formset
+
 
 class PanoramaInline(admin.TabularInline):
     model = Panorama

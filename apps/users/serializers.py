@@ -186,6 +186,10 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
     en lecture seule : ils relevent de l'administration, pas du partenaire.
     """
     plan_libelle = serializers.CharField(source='plan.libelle', read_only=True)
+    nb_photos_par_article = serializers.IntegerField(
+        source='plan.nb_photos_par_article', read_only=True)
+    nb_articles_max = serializers.IntegerField(
+        source='plan.nb_articles_max', read_only=True)
     type_partenaire_libelle = serializers.CharField(
         source='get_type_partenaire_display', read_only=True)
     statut_libelle = serializers.CharField(
@@ -201,11 +205,13 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
             # Lecture seule : pilotes par l'administration
             'statut', 'statut_libelle', 'est_visible', 'badge_certifie',
             'est_faveur', 'plan_libelle', 'abonnement_fin', 'nb_vues',
+            'nb_photos_par_article', 'nb_articles_max',
         ]
         read_only_fields = [
             'id', 'statut', 'statut_libelle', 'est_visible', 'badge_certifie',
             'est_faveur', 'plan_libelle', 'abonnement_fin', 'nb_vues',
-            'type_partenaire_libelle',
+            'type_partenaire_libelle', 'nb_photos_par_article',
+            'nb_articles_max',
         ]
 
 
