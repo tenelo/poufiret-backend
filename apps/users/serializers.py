@@ -177,3 +177,47 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
         if not user.is_authenticated:
             return False
         return obj.favoris.filter(user=user).exists() if hasattr(obj, 'favoris') else False
+
+
+class MonProfilPartenaireSerializer(serializers.ModelSerializer):
+    """Profil du partenaire connecte : lecture et modification.
+
+    Les champs de controle (statut, visibilite, plan, faveur, badge) sont
+    en lecture seule : ils relevent de l'administration, pas du partenaire.
+    """
+    plan_libelle = serializers.CharField(source='plan.libelle', read_only=True)
+    type_partenaire_libelle = serializers.CharField(
+        source='get_type_partenaire_display', read_only=True)
+    statut_libelle = serializers.CharField(
+        source='get_statut_display', read_only=True)
+
+    class Meta:
+        model = ProfilPartenaire
+        fields = [
+            'id', 'nom_commerce', 'description', 'logo', 'photo_couverture',
+            'type_partenaire', 'type_partenaire_libelle',
+            'adresse', 'quartier', 'secteur', 'ville', 'description_acces',
+            'telephone_pro', 'whatsapp', 'email_pro',
+            # Lecture seule : pilotes par l'administration
+            'statut', 'statut_libelle', 'est_visible', 'badge_certifie',
+            'est_faveur', 'plan_libelle', 'abonnement_fin', 'nb_vues',
+        ]
+        read_only_fields = [
+            'id', 'statut', 'statut_libelle', 'est_visible', 'badge_certifie',
+            'est_faveur', 'plan_libelle', 'abonnement_fin', 'nb_vues',
+            'type_partenaire_libelle',
+        ]
+
+
+class MaCategorieSerializer(serializers.ModelSerializer):
+    """Rattachement du partenaire a une categorie, avec son image dediee."""
+    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
+    categorie_slug = serializers.CharField(source='categorie.slug', read_only=True)
+    categorie_icone = serializers.CharField(source='categorie.icone', read_only=True)
+
+    class Meta:
+        from apps.catalog.models import PartenaireCategorie as _PC
+        model = _PC
+        fields = ['id', 'categorie', 'categorie_nom', 'categorie_slug',
+                  'categorie_icone', 'est_principale', 'image_couverture']
+        read_only_fields = ['id', 'categorie', 'est_principale']

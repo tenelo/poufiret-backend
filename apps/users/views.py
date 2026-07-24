@@ -140,3 +140,53 @@ class VitrinePartenaireView(generics.RetrieveAPIView):
             statut=ProfilPartenaire.Statut.ACTIF,
             est_visible=True,
         )
+
+
+class MonProfilPartenaireView(generics.RetrieveUpdateAPIView):
+    """GET/PATCH /auth/mon-profil-partenaire/ — le partenaire gere sa vitrine."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        from .serializers import MonProfilPartenaireSerializer
+        return MonProfilPartenaireSerializer
+
+    def get_object(self):
+        profil = getattr(self.request.user, 'profil_partenaire', None)
+        if profil is None:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Réservé aux partenaires.')
+        return profil
+
+
+class MesCategoriesView(generics.ListAPIView):
+    """GET /auth/mes-categories/ — categories du partenaire connecte."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        from .serializers import MaCategorieSerializer
+        return MaCategorieSerializer
+
+    def get_queryset(self):
+        from apps.catalog.models import PartenaireCategorie
+        profil = getattr(self.request.user, 'profil_partenaire', None)
+        if profil is None:
+            return PartenaireCategorie.objects.none()
+        return (PartenaireCategorie.objects.filter(partenaire=profil)
+                .select_related('categorie')
+                .order_by('-est_principale', 'categorie__nom'))
+
+
+class MaCategorieDetailView(generics.RetrieveUpdateAPIView):
+    """PATCH /auth/mes-categories/<pk>/ — image de couverture par categorie."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_serializer_class(self):
+        from .serializers import MaCategorieSerializer
+        return MaCategorieSerializer
+
+    def get_queryset(self):
+        from apps.catalog.models import PartenaireCategorie
+        profil = getattr(self.request.user, 'profil_partenaire', None)
+        if profil is None:
+            return PartenaireCategorie.objects.none()
+        return PartenaireCategorie.objects.filter(partenaire=profil)
