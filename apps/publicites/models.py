@@ -168,6 +168,16 @@ class ImpressionPublicite(ModeleBase):
         choices=TypeAffichage.choices, default=TypeAffichage.CARROUSEL,
     )
     minute_session = models.PositiveIntegerField('minute de session', null=True, blank=True)
+    session = models.ForeignKey(
+        'analytics.TempsSessionUtilisateur', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='impressions_publicites',
+        verbose_name='session',
+        help_text=(
+            "Permet de ne compter qu'une impression par session et par "
+            "emplacement : sans cela, un simple retour sur l'accueil "
+            "regonfle artificiellement les compteurs."
+        ),
+    )
     cliquee = models.BooleanField('cliquée', default=False)
 
     class Meta:
@@ -175,6 +185,7 @@ class ImpressionPublicite(ModeleBase):
         verbose_name_plural = 'impressions de publicité'
         indexes = [
             models.Index(fields=['publicite', 'utilisateur']),
+            models.Index(fields=['session', 'publicite', 'type_affichage']),
         ]
 
     def __str__(self):

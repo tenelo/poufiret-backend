@@ -126,14 +126,38 @@ class EnregistrerImpressionView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
         utilisateur = request.user if request.user.is_authenticated else None
         cliquee = bool(request.data.get('cliquee', False))
-        deja_vue = utilisateur and ImpressionPublicite.objects.filter(
+        type_affichage = request.data.get('type_affichage',
+                                          TypeAffichage.CARROUSEL)
+        # Personne deja touchee ? On regarde AVANT d'inserer, tous
+        # emplacements confondus : la meme personne vue au carrousel puis
+        # en bandeau reste une seule personne touchee.
+        deja_vue = bool(utilisateur) and ImpressionPublicite.objects.filter(
             publicite=pub, utilisateur=utilisateur).exists()
+
+        # Deduplication par session : un aller-retour vers l'accueil ne
+        # doit pas regonfler les compteurs ni bruler un passage. Un clic
+        # est toujours enregistre, c'est un acte volontaire distinct.
+        session = None
+        session_id = request.data.get('session_id')
+        if session_id:
+            from apps.analytics.models import TempsSessionUtilisateur
+            session = TempsSessionUtilisateur.objects.filter(
+                pk=session_id).first()
+        if session is not None and not cliquee:
+            deja = ImpressionPublicite.objects.filter(
+                publicite=pub, session=session,
+                type_affichage=type_affichage, cliquee=False,
+            ).exists()
+            if deja:
+                return Response({'message': 'Impression déjà comptée.'},
+                                status=status.HTTP_200_OK)
 
         ImpressionPublicite.objects.create(
             publicite=pub,
             utilisateur=utilisateur,
-            type_affichage=request.data.get('type_affichage', TypeAffichage.CARROUSEL),
+            type_affichage=type_affichage,
             minute_session=request.data.get('minute_session'),
+            session=session,
             cliquee=cliquee,
         )
         maj = {'nb_impressions': F('nb_impressions') + 1}
