@@ -45,6 +45,16 @@ class Categorie(models.Model):
         blank=True, null=True,
     )
 
+    mots_cles = models.JSONField(
+        _('mots-clés de recherche'),
+        default=list,
+        blank=True,
+        help_text=_(
+            "Synonymes que les clients tapent réellement, ex. "
+            "['chaussure', 'basket', 'sandale']. Sans cela, seul le nom "
+            "exact de la catégorie est trouvé."
+        ),
+    )
     types_partenaire = models.JSONField(
         _('types de partenaire rattachés'),
         default=list,
@@ -602,3 +612,32 @@ class VueArticle(models.Model):
     def __str__(self):
         qui = self.user.telephone if self.user else 'anonyme'
         return f"{qui} a vu {self.article.nom} le {self.date_vue:%d/%m/%Y %H:%M}"
+
+class RechercheSansResultat(models.Model):
+    """Terme cherché qui n'a rien renvoyé.
+
+    Sert à enrichir les mots-clés des catégories avec le vocabulaire réel
+    de Ferké (dioula, français ivoirien, marques locales). Boucle
+    d'amélioration manuelle : on relit ce journal, on complète mots_cles.
+    """
+    terme = models.CharField(_('terme recherché'), max_length=200, db_index=True)
+    utilisateur = models.ForeignKey(
+        'users.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='recherches_vides',
+        verbose_name=_('utilisateur'),
+    )
+    nb_occurrences = models.PositiveIntegerField(_('nombre de fois'), default=1)
+    cree_le = models.DateTimeField(_('première fois'), auto_now_add=True)
+    vu_le = models.DateTimeField(_('dernière fois'), auto_now=True)
+    traite = models.BooleanField(
+        _('traité'), default=False,
+        help_text=_('Cocher une fois les mots-clés enrichis.'),
+    )
+
+    class Meta:
+        verbose_name = _('recherche sans résultat')
+        verbose_name_plural = _('recherches sans résultat')
+        ordering = ['-nb_occurrences', '-vu_le']
+
+    def __str__(self):
+        return f'{self.terme} ({self.nb_occurrences}x)'

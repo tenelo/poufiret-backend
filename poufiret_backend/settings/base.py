@@ -28,6 +28,7 @@ DJANGO_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.gis',           # support PostGIS / géolocalisation
+    'django.contrib.postgres',      # lookups PostgreSQL (unaccent, recherche)
 ]
 
 THIRD_PARTY_APPS = [

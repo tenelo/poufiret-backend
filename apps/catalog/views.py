@@ -273,3 +273,97 @@ class StatsVuesPartenaireView(_APIView):
             'total_vues': sum(d['total'] for d in donnees),
             'articles': donnees,
         })
+
+
+class RechercheUnifieeView(_APIView):
+    """GET /catalogue/recherche/?q= — recherche en 3 sections.
+
+    Poufiret est un annuaire avant d'etre un catalogue : un terme
+    generique ("chaussure", "plombier") exprime une intention d'annuaire,
+    un terme precis ("doliprane") une intention produit. On renvoie donc
+    les trois, dans l'ordre categories > partenaires > articles, et le
+    client choisit son chemin.
+    """
+    permission_classes = []
+
+    def get(self, request):
+        from django.db.models import Q
+        from .models import (Article, Categorie, PartenaireCategorie,
+                             RechercheSansResultat)
+
+        terme = (request.query_params.get('q') or '').strip()
+        if len(terme) < 2:
+            return _Response({'categories': [], 'partenaires': [],
+                              'articles': []})
+
+        def _url(champ):
+            if not champ:
+                return ''
+            try:
+                return request.build_absolute_uri(champ.url)
+            except Exception:
+                return ''
+
+        # 1) Categories : nom, description, ou mots-cles (synonymes).
+        categories = (Categorie.objects
+                      .filter(est_active=True)
+                      .filter(Q(nom__unaccent__icontains=terme)
+                              | Q(description__unaccent__icontains=terme)
+                              | Q(mots_cles__icontains=terme))
+                      .order_by('ordre', 'nom')[:10])
+        donnees_cat = [{
+            'id': c.id, 'nom': c.nom, 'slug': c.slug, 'icone': c.icone,
+            'mode_transaction': c.mode_transaction,
+            'affiche_catalogue': c.affiche_catalogue,
+        } for c in categories]
+
+        # 2) Partenaires visibles, par nom d'enseigne ou description.
+        partenaires = (_ProfilPartenaire.objects
+                       .filter(est_visible=True)
+                       .filter(Q(nom_commerce__unaccent__icontains=terme)
+                               | Q(description__unaccent__icontains=terme))
+                       .order_by('-est_faveur', 'nom_commerce')[:15])
+        donnees_part = [{
+            'id': p.id, 'nom_commerce': p.nom_commerce,
+            'description': p.description,
+            'logo': _url(p.logo),
+            'photo_couverture': _url(p.photo_couverture),
+            'type_partenaire': p.get_type_partenaire_display(),
+        } for p in partenaires]
+
+        # 3) Articles actifs de partenaires visibles.
+        articles = (Article.objects
+                    .filter(est_actif=True, partenaire__est_visible=True)
+                    .filter(Q(nom__unaccent__icontains=terme)
+                            | Q(description__unaccent__icontains=terme))
+                    .select_related('partenaire')
+                    .order_by('-nb_vues')[:20])
+        donnees_art = [{
+            'id': a.id, 'nom': a.nom, 'slug': a.slug,
+            'prix': str(a.prix),
+            'partenaire_nom': a.partenaire.nom_commerce,
+            'image_principale': _url(
+                a.images.filter(est_principale=True).first().image
+                if a.images.filter(est_principale=True).exists()
+                else (a.images.first().image if a.images.exists() else None)
+            ),
+        } for a in articles]
+
+        # Journal : un terme sans aucun resultat revele le vocabulaire
+        # reel des clients, a reinjecter dans mots_cles.
+        if not (donnees_cat or donnees_part or donnees_art):
+            ligne, cree = RechercheSansResultat.objects.get_or_create(
+                terme=terme.lower(),
+                defaults={'utilisateur': request.user
+                          if request.user.is_authenticated else None},
+            )
+            if not cree:
+                from django.db.models import F
+                RechercheSansResultat.objects.filter(pk=ligne.pk).update(
+                    nb_occurrences=F('nb_occurrences') + 1)
+
+        return _Response({
+            'categories': donnees_cat,
+            'partenaires': donnees_part,
+            'articles': donnees_art,
+        })

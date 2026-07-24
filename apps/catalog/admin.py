@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _
 from .models import (
     Categorie, PartenaireCategorie, SectionMenu, Article,
     Logement, Vehicule, ArticleImage, Panorama,
-    Variante, Supplement, VueArticle,
+    Variante, Supplement, VueArticle, RechercheSansResultat,
 )
 
 
@@ -28,7 +28,7 @@ class CategorieAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {
             'fields': ('nom', 'slug', 'description', 'icone', 'image_couverture',
-                       'types_partenaire'),
+                       'types_partenaire', 'mots_cles'),
         }),
         (_('Hiérarchie & comportement'), {
             'fields': ('parent', 'mode_transaction', 'types_articles', 'module_flutter'),
@@ -221,3 +221,27 @@ class VueArticleAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         # Pas de création manuelle, les vues sont enregistrées par l'app
         return False
+
+@admin.register(RechercheSansResultat)
+class RechercheSansResultatAdmin(admin.ModelAdmin):
+    """Journal des recherches infructueuses.
+
+    A relire regulierement : chaque terme frequent revele un mot que les
+    clients de Ferke utilisent et que l'application ne comprend pas
+    encore. Le corriger = ajouter ce mot aux mots_cles de la bonne
+    categorie, puis cocher "traite".
+    """
+    list_display = ('terme', 'nb_occurrences', 'utilisateur', 'cree_le',
+                    'vu_le', 'traite')
+    list_filter = ('traite',)
+    search_fields = ('terme',)
+    list_editable = ('traite',)
+    readonly_fields = ('terme', 'utilisateur', 'nb_occurrences',
+                       'cree_le', 'vu_le')
+    ordering = ('-nb_occurrences', '-vu_le')
+    actions = ('marquer_traite',)
+
+    @admin.action(description='Marquer comme traité')
+    def marquer_traite(self, request, queryset):
+        n = queryset.update(traite=True)
+        self.message_user(request, f'{n} terme(s) marqué(s) traité(s).')
