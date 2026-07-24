@@ -332,15 +332,20 @@ class RechercheUnifieeView(_APIView):
         } for p in partenaires]
 
         # 3) Articles actifs de partenaires visibles.
+        # On exclut les categories qui ne fonctionnent pas par catalogue
+        # (plomberie, maconnerie...) : leurs "articles" sont des
+        # prestations, pas des produits achetables. Le client doit y
+        # arriver par la categorie, qui mene a la demande d'intervention.
         articles = (Article.objects
-                    .filter(est_actif=True, partenaire__est_visible=True)
+                    .filter(est_actif=True, partenaire__est_visible=True,
+                            categorie__affiche_catalogue=True)
                     .filter(Q(nom__unaccent__icontains=terme)
                             | Q(description__unaccent__icontains=terme))
                     .select_related('partenaire')
                     .order_by('-nb_vues')[:20])
         donnees_art = [{
             'id': a.id, 'nom': a.nom, 'slug': a.slug,
-            'prix': str(a.prix),
+            'prix': str(a.prix) if a.prix is not None else '0',
             'partenaire_nom': a.partenaire.nom_commerce,
             'image_principale': _url(
                 a.images.filter(est_principale=True).first().image
