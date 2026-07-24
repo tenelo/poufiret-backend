@@ -28,6 +28,15 @@ class FormulePublicite(ModeleBase):
     duree_affichage_secondes = models.PositiveIntegerField(
         'durée d\'un passage (s)', default=5,
     )
+    passages_par_type = models.JSONField(
+        'passages par jour et par emplacement', default=dict, blank=True,
+        help_text=(
+            'Facultatif. Ex. {"carrousel": 6, "interstitiel": 3, '
+            '"bandeau_bas": 4}. Vide = le quota global "passages par jour" '
+            "s'applique à tous les emplacements confondus, et le carrousel "
+            "peut alors épuiser la place réservée à l'interstitiel."
+        ),
+    )
     quota_partenaires = models.PositiveIntegerField(
         'quota de partenaires simultanés', default=50,
         help_text='1 = exclusivité totale',

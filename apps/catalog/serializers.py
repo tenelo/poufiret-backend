@@ -14,7 +14,8 @@ class CategorieSerializer(serializers.ModelSerializer):
         model = Categorie
         fields = ['id', 'nom', 'slug', 'description', 'icone', 'image_couverture',
                   'parent', 'mode_transaction', 'types_articles', 'affiche_catalogue', 'module_flutter', 'ordre',
-                  'est_active', 'nb_partenaires', 'enfants']
+                  'est_active', 'nb_partenaires', 'enfants',
+                  'types_partenaire']
 
     def get_nb_partenaires(self, obj):
         a = getattr(obj, 'nb_via_liaison', None)

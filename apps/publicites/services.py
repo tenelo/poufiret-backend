@@ -97,34 +97,60 @@ def _pubs_diffusables():
     ]
 
 
-def _passages_restants(pub, utilisateur):
-    """Vrai si l'utilisateur n'a pas epuise les passages du jour pour cette pub."""
+def quota_du_type(formule, type_affichage):
+    """Nombre de passages autorises par jour pour un emplacement donne.
+
+    Si la formule definit passages_par_type, chaque emplacement a son
+    propre quota : le carrousel ne peut plus consommer la place vendue
+    pour l'interstitiel. Sinon, on retombe sur le quota global.
+    """
+    par_type = formule.passages_par_type or {}
+    valeur = par_type.get(type_affichage)
+    if isinstance(valeur, int) and valeur >= 0:
+        return valeur
+    return formule.passages_par_jour
+
+
+def _passages_restants(pub, utilisateur, type_affichage=None):
+    """Vrai si l'utilisateur n'a pas epuise les passages du jour.
+
+    Quand la formule detaille ses quotas par emplacement, le decompte se
+    fait sur le seul emplacement demande ; sinon sur tous confondus.
+    """
     if utilisateur is None or not utilisateur.is_authenticated:
         return True
-    debut_jour = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
-    vues_aujourdhui = ImpressionPublicite.objects.filter(
-        publicite=pub, utilisateur=utilisateur, cree_le__gte=debut_jour,
-    ).count()
-    return vues_aujourdhui < pub.formule.passages_par_jour
+    debut_jour = timezone.localtime().replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    filtres = {'publicite': pub, 'utilisateur': utilisateur,
+               'cree_le__gte': debut_jour}
+    detaille = bool(pub.formule.passages_par_type) and type_affichage
+    if detaille:
+        filtres['type_affichage'] = type_affichage
+        quota = quota_du_type(pub.formule, type_affichage)
+    else:
+        quota = pub.formule.passages_par_jour
+    return ImpressionPublicite.objects.filter(**filtres).count() < quota
 
 
-def _vues_du_jour(utilisateur, pubs):
+def _vues_du_jour(utilisateur, pubs, type_affichage=None):
     """Impressions du jour par publicite, pour cet utilisateur (1 requete)."""
     if utilisateur is None or not utilisateur.is_authenticated or not pubs:
         return {}
     debut_jour = timezone.localtime().replace(
         hour=0, minute=0, second=0, microsecond=0)
+    filtres = {'utilisateur': utilisateur, 'cree_le__gte': debut_jour,
+               'publicite__in': [p.pk for p in pubs]}
+    # Si au moins une formule detaille ses quotas, on compte par emplacement.
+    if type_affichage and any(p.formule.passages_par_type for p in pubs):
+        filtres['type_affichage'] = type_affichage
     lignes = (
-        ImpressionPublicite.objects
-        .filter(utilisateur=utilisateur, cree_le__gte=debut_jour,
-                publicite__in=[p.pk for p in pubs])
-        .values('publicite')
-        .annotate(n=Count('id'))
+        ImpressionPublicite.objects.filter(**filtres)
+        .values('publicite').annotate(n=Count('id'))
     )
     return {l['publicite']: l['n'] for l in lignes}
 
 
-def _taux_consommation(pub, vues):
+def _taux_consommation(pub, vues, type_affichage=None):
     """Part du quota journalier deja consommee (0 = intacte, 1 = epuisee).
 
     Sert a faire tourner les pubs au lieu d'epuiser la plus prioritaire
@@ -132,7 +158,8 @@ def _taux_consommation(pub, vues):
     Le forfait reste respecte, puisqu'un quota plus eleve se consomme
     plus lentement en proportion.
     """
-    quota = max(1, pub.formule.passages_par_jour)
+    quota = max(1, quota_du_type(pub.formule, type_affichage)
+                if type_affichage else pub.formule.passages_par_jour)
     return vues.get(pub.pk, 0) / quota
 
 
@@ -169,15 +196,16 @@ def selectionner_pubs(type_affichage, utilisateur=None, minute_session=None, lim
             continue
         if affluence and not formule.acces_heures_affluence:
             continue
-        if not _passages_restants(pub, utilisateur):
+        if not _passages_restants(pub, utilisateur, type_affichage):
             continue
         resultat.append(pub)
 
     # Rotation : la moins servie (en proportion de son quota) d'abord.
     # La priorite ne departage plus que les egalites.
-    vues = _vues_du_jour(utilisateur, resultat)
+    vues = _vues_du_jour(utilisateur, resultat, type_affichage)
     resultat.sort(key=lambda p: (
-        _taux_consommation(p, vues), -p.formule.priorite, p.cree_le))
+        _taux_consommation(p, vues, type_affichage),
+        -p.formule.priorite, p.cree_le))
     return resultat[:limite] if limite else resultat
 
 

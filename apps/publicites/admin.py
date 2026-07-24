@@ -10,10 +10,26 @@ from .models import (
 class FormuleAdmin(admin.ModelAdmin):
     def get_list_display(self, request):
         base = list(super().get_list_display(request))
-        for colonne in ('occupation', 'detail_statuts'):
+        for colonne in ('occupation', 'quotas_par_emplacement', 'detail_statuts'):
             if colonne not in base:
                 base.insert(1, colonne)
         return base
+
+    @admin.display(description='passages / jour')
+    def quotas_par_emplacement(self, obj):
+        """Detail des passages par emplacement, ou quota global si vide."""
+        from django.utils.html import format_html
+        par_type = obj.passages_par_type or {}
+        if not par_type:
+            return format_html(
+                '<span style="font-size:11px;color:#e8590c">{} '
+                '(tous emplacements confondus)</span>',
+                obj.passages_par_jour)
+        libelles = {'carrousel': 'Carrousel', 'interstitiel': 'Plein écran',
+                    'bandeau_bas': 'Bandeau', 'page_publicites': 'Page pubs'}
+        texte = ' · '.join(
+            f'{libelles.get(k, k)} : {v}' for k, v in par_type.items())
+        return format_html('<span style="font-size:11px">{}</span>', texte)
 
     @admin.display(description='places occupées')
     def occupation(self, obj):
