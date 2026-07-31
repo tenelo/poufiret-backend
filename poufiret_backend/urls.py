@@ -18,6 +18,7 @@ urlpatterns = [
     path('api/v1/notifications/', include('apps.notifications.urls')),
     path('api/v1/analytics/', include('apps.analytics.urls')),
     path('api/v1/publicites/', include('apps.publicites.urls')),
+    path('api/v1/geo/', include('apps.geo.urls')),
 ]
 
 # Service des fichiers médias en développement uniquement
