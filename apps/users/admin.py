@@ -118,8 +118,8 @@ class ProfilPartenaireAdmin(admin.ModelAdmin):
         )
     list_filter = (
         'statut', 'est_visible', 'badge_certifie', 'taxes_communales_ok',
-        'est_faveur', 'paye_publicite', 'plan', 'ville', 'source_inscription',
-        'liens_categories__categorie',
+        'est_faveur', 'paye_publicite', 'plan', 'departement', 'ville',
+        'source_inscription', 'liens_categories__categorie',
     )
     search_fields = (
         'nom_commerce', 'user__telephone', 'user__username',
@@ -135,7 +135,7 @@ class ProfilPartenaireAdmin(admin.ModelAdmin):
             'fields': ('user', 'nom_commerce', 'description', 'logo', 'photo_couverture'),
         }),
         (_('Localisation'), {
-            'fields': ('adresse', 'quartier', 'secteur', 'ville',
+            'fields': ('adresse', 'quartier', 'secteur', 'departement', 'ville',
                        'description_acces', 'localisation'),
         }),
         (_('Contact professionnel'), {

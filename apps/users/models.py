@@ -11,6 +11,21 @@ from apps.core.models import ModeleBase
 from apps.core.images import ImagesOptimiseesMixin
 
 
+class TrancheAge(models.TextChoices):
+    MOINS_18 = 'moins_18', 'Moins de 18 ans'
+    DE_18_24 = '18_24', '18 - 24 ans'
+    DE_25_34 = '25_34', '25 - 34 ans'
+    DE_35_44 = '35_44', '35 - 44 ans'
+    DE_45_54 = '45_54', '45 - 54 ans'
+    PLUS_55 = '55_plus', '55 ans et plus'
+
+
+class Sexe(models.TextChoices):
+    HOMME = 'homme', 'Homme'
+    FEMME = 'femme', 'Femme'
+    NON_PRECISE = 'non_precise', 'Préfère ne pas préciser'
+
+
 class User(AbstractUser):
     """
     Utilisateur de la plateforme Poufiret.
@@ -62,6 +77,21 @@ class User(AbstractUser):
         _('langue préférée'),
         max_length=10,
         default='fr',
+    )
+    # Donnees pour le referencement et l'analyse (facultatives),
+    # demandees dans un bloc separe a l'inscription.
+    departement = models.ForeignKey(
+        'geo.Departement', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='utilisateurs',
+        verbose_name='departement',
+    )
+    tranche_age = models.CharField(
+        'tranche age', max_length=10,
+        choices=TrancheAge.choices, blank=True,
+    )
+    sexe = models.CharField(
+        'sexe', max_length=12,
+        choices=Sexe.choices, blank=True,
     )
 
     # On utilise le téléphone pour la connexion, plus le username
@@ -253,6 +283,13 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
     quartier = models.CharField(_('quartier'), max_length=100, blank=True)
     secteur = models.CharField(_('secteur'), max_length=100, blank=True)
     ville = models.CharField(_('ville'), max_length=100, default='Ferkessédougou')
+    departement = models.ForeignKey(
+        'geo.Departement', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='partenaires',
+        verbose_name=_('département'),
+        help_text=_('Département du commerce. Remplace progressivement le '
+                    'champ texte « ville ».'),
+    )
     description_acces = models.TextField(
         _('comment trouver le partenaire'),
         blank=True,

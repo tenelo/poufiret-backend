@@ -51,7 +51,12 @@ class InscriptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['telephone', 'username', 'first_name', 'last_name', 'password']
+        fields = ['telephone', 'username', 'first_name', 'last_name', 'password', 'departement', 'tranche_age', 'sexe']
+        extra_kwargs = {
+            'departement': {'required': False},
+            'tranche_age': {'required': False},
+            'sexe': {'required': False},
+        }
 
     def validate_password(self, value):
         from django.contrib.auth.password_validation import validate_password
@@ -87,8 +92,8 @@ class DevenirPartenaireSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProfilPartenaire
         fields = ['type_partenaire', 'nom_commerce', 'description', 'adresse',
-                  'quartier', 'secteur', 'ville', 'telephone_pro', 'whatsapp',
-                  'email_pro', 'categories']
+                  'quartier', 'secteur', 'ville', 'departement',
+                  'telephone_pro', 'whatsapp', 'email_pro', 'categories']
 
     def validate_categories(self, ids):
         from apps.catalog.models import Categorie
