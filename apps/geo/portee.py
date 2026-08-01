@@ -5,8 +5,7 @@ Regle : un utilisateur situe dans le departement D voit un partenaire P si
   - P a portee 'region' et P est dans la meme region que D, ou
   - P a portee 'district' (visible partout).
 
-Cette logique est centralisee ici pour rester coherente entre l'annuaire,
-le catalogue et la recherche.
+Centralise ici pour rester coherent entre annuaire, catalogue et recherche.
 """
 from django.db.models import Q
 
@@ -15,20 +14,22 @@ def filtre_visibilite(departement=None, localites_choisies=None):
     """Construit un Q() de visibilite pour un queryset de ProfilPartenaire.
 
     departement : l'objet Departement de l'utilisateur (ou None si inconnu).
-    localites_choisies : liste optionnelle d'ids de departements que
-        l'utilisateur a explicitement coches pour elargir sa vue. Si
-        'all' est present, aucun filtre (il veut tout voir).
+    localites_choisies : liste optionnelle d'ids de departements coches par
+        l'utilisateur pour elargir sa vue ('all' = tout voir).
 
-    Sans departement ni choix, on ne filtre que sur la portee district et
-    region-visible-partout serait faux : on retombe sur "tout ce qui est
-    au moins district", ce qui est le comportement le plus sur pour un
-    visiteur non localise.
+    Choix produit : un utilisateur NON localise (anonyme, ou departement
+    non renseigne, sans localite cochee) voit TOUT. On donne envie d'abord ;
+    l'app invite ensuite a s'enregistrer pour une vue localisee. Le filtre
+    n'a de sens qu'une fois la localisation connue.
     """
-    # Un partenaire est TOUJOURS visible partout s'il a portee district.
-    q = Q(plan__portee='district')
+    if departement is None and not localites_choisies:
+        return Q()
 
     if localites_choisies and 'all' in localites_choisies:
-        return Q()  # l'utilisateur veut tout voir
+        return Q()
+
+    # Un partenaire est TOUJOURS visible partout s'il a portee district.
+    q = Q(plan__portee='district')
 
     if departement is not None:
         # Meme departement : visible quel que soit le plan.
@@ -38,9 +39,6 @@ def filtre_visibilite(departement=None, localites_choisies=None):
                plan__portee__in=['region', 'district'])
 
     if localites_choisies:
-        # Departements explicitement coches : on applique la meme regle
-        # de portee pour chacun (un partenaire n'apparait dans une localite
-        # cochee que si sa portee l'y autorise).
         from apps.geo.models import Departement
         deps = Departement.objects.filter(
             id__in=[d for d in localites_choisies if str(d).isdigit()]

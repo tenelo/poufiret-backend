@@ -66,6 +66,38 @@ class ArticleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(type=p['type'])
         if p.get('recherche'):
             qs = qs.filter(nom__icontains=p['recherche'])
+
+        # Portee geographique : un client ne voit un article que si la
+        # portee de son partenaire le rend visible chez lui. On n'applique
+        # pas ce filtre quand :
+        #  - on cible deja un partenaire precis (?partenaire=, vitrine) ;
+        #  - l'utilisateur est le partenaire proprietaire (il voit tout).
+        est_partenaire = (u.is_authenticated
+                          and u.role == u.Role.PARTENAIRE)
+        if not p.get('partenaire') and not est_partenaire:
+            from apps.geo.portee import filtre_visibilite
+            from django.db.models import Q as _Q
+            dep_user = getattr(u, 'departement', None) \
+                if u.is_authenticated else None
+            localites = self.request.query_params.get('localites', '')
+            localites = [x for x in localites.split(',') if x] or None
+
+            def _prefixer(q, prefixe):
+                nouveau = _Q()
+                nouveau.connector = q.connector
+                nouveau.negated = q.negated
+                for enfant in q.children:
+                    if isinstance(enfant, _Q):
+                        nouveau.children.append(_prefixer(enfant, prefixe))
+                    else:
+                        cle, val = enfant
+                        nouveau.children.append((prefixe + cle, val))
+                return nouveau
+
+            qs = qs.filter(
+                _prefixer(filtre_visibilite(dep_user, localites),
+                          'partenaire__'))
+
         return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
@@ -357,6 +389,13 @@ class RechercheUnifieeView(_APIView):
             except Exception:
                 return ''
 
+        from apps.geo.portee import filtre_visibilite
+        dep_user = getattr(request.user, 'departement', None) \
+            if request.user.is_authenticated else None
+        localites = request.query_params.get('localites', '')
+        localites = [x for x in localites.split(',') if x] or None
+        visibilite = filtre_visibilite(dep_user, localites)
+
         # 1) Categories : nom, description, ou mots-cles (synonymes).
         categories = (Categorie.objects
                       .filter(est_active=True)
@@ -373,8 +412,10 @@ class RechercheUnifieeView(_APIView):
         # 2) Partenaires visibles, par nom d'enseigne ou description.
         partenaires = (_ProfilPartenaire.objects
                        .filter(est_visible=True)
+                       .filter(visibilite)
                        .filter(Q(nom_commerce__unaccent__icontains=terme)
                                | Q(description__unaccent__icontains=terme))
+                       .select_related('departement__region')
                        .order_by('-est_faveur', 'nom_commerce')[:15])
         donnees_part = [{
             'id': p.id, 'nom_commerce': p.nom_commerce,
@@ -382,6 +423,7 @@ class RechercheUnifieeView(_APIView):
             'logo': _url(p.logo),
             'photo_couverture': _url(p.photo_couverture),
             'type_partenaire': p.get_type_partenaire_display(),
+            'departement': p.departement.nom if p.departement_id else '',
         } for p in partenaires]
 
         # 3) Articles actifs de partenaires visibles.
@@ -389,9 +431,28 @@ class RechercheUnifieeView(_APIView):
         # (plomberie, maconnerie...) : leurs "articles" sont des
         # prestations, pas des produits achetables. Le client doit y
         # arriver par la categorie, qui mene a la demande d'intervention.
+        # Meme regle de portee, mais appliquee au partenaire proprietaire
+        # de l'article (prefixe 'partenaire__').
+        visibilite_art = filtre_visibilite(dep_user, localites)
+        from django.db.models import Q as _Q
+        def _prefixer(q, prefixe):
+            """Recree un Q en prefixant chaque cle (ex. plan__portee ->
+            partenaire__plan__portee), pour filtrer les articles via leur
+            partenaire."""
+            nouveau = _Q()
+            nouveau.connector = q.connector
+            nouveau.negated = q.negated
+            for enfant in q.children:
+                if isinstance(enfant, _Q):
+                    nouveau.children.append(_prefixer(enfant, prefixe))
+                else:
+                    cle, val = enfant
+                    nouveau.children.append((prefixe + cle, val))
+            return nouveau
         articles = (Article.objects
                     .filter(est_actif=True, partenaire__est_visible=True,
                             categorie__affiche_catalogue=True)
+                    .filter(_prefixer(visibilite_art, 'partenaire__'))
                     .filter(Q(nom__unaccent__icontains=terme)
                             | Q(description__unaccent__icontains=terme))
                     .select_related('partenaire')
