@@ -110,6 +110,24 @@ class User(AbstractUser):
 
 
 
+class Portee(models.TextChoices):
+    """Etendue geographique de visibilite d'un partenaire.
+
+    Ordonnee du plus restreint au plus large. Sert a la fois a la
+    visibilite organique (liee au forfait) et, cote publicite, de socle
+    minimum qu'une campagne peut etendre mais jamais reduire.
+    """
+    DEPARTEMENT = 'departement', 'Departement seulement'
+    REGION = 'region', 'Toute la region'
+    DISTRICT = 'district', 'Tout le district'
+
+    @staticmethod
+    def rang(valeur):
+        """Rang numerique pour comparer deux portees (max = la plus large)."""
+        ordre = {'departement': 0, 'region': 1, 'district': 2}
+        return ordre.get(valeur, 0)
+
+
 class PlanAbonnement(models.Model):
     """
     Paliers d'abonnement pour les commerçants.
@@ -180,6 +198,14 @@ class PlanAbonnement(models.Model):
         _('éligible mise en avant'),
         default=False,
         help_text=_('Le commerçant peut apparaître dans les carrousels d\'accueil.'),
+    )
+    portee = models.CharField(
+        _('portee geographique'),
+        max_length=12,
+        choices=Portee.choices,
+        default=Portee.DEPARTEMENT,
+        help_text=_('Jusqu\'ou les partenaires de ce plan sont visibles : '
+                    'leur departement, leur region, ou tout le district.'),
     )
     boost_visibilite = models.IntegerField(
         _('boost de visibilité'),
@@ -417,6 +443,16 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
 
     def __str__(self):
         return f"{self.nom_commerce} — {self.user.telephone}"
+
+    @property
+    def portee(self):
+        """Portee organique effective du partenaire.
+
+        Vient du plan. Un partenaire en faveur peut se voir accorder une
+        portee superieure en changeant simplement son plan cote admin, la
+        logique reste donc centralisee ici.
+        """
+        return self.plan.portee if self.plan_id else 'departement'
 
 class HoraireOuverture(models.Model):
     """

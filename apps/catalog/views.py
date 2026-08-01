@@ -246,8 +246,17 @@ class PartenairesParCategorieView(_APIView):
                   .values_list('partenaire_id', flat=True))
         ids |= set(PartenaireCategorie.objects.filter(categorie=cat)
                    .values_list('partenaire_id', flat=True))
+        from apps.geo.portee import filtre_visibilite
+        # Departement de l'utilisateur connecte (None si anonyme/non renseigne).
+        dep_user = getattr(request.user, 'departement', None) \
+            if request.user.is_authenticated else None
+        # Localites explicitement cochees pour elargir la vue (?localites=1,2,all).
+        localites = request.query_params.get('localites', '')
+        localites = [x for x in localites.split(',') if x] or None
         partenaires = (_ProfilPartenaire.objects
                        .filter(id__in=list(ids), est_visible=True)
+                       .filter(filtre_visibilite(dep_user, localites))
+                       .select_related('departement__region')
                        .order_by('-est_faveur', 'nom_commerce'))
         def _url(champ):
             if not champ:
@@ -270,6 +279,9 @@ class PartenairesParCategorieView(_APIView):
             'description': p.description,
             'logo': _url(p.logo),
             'photo_couverture': _url(couvertures.get(p.id) or p.photo_couverture),
+            'departement': p.departement.nom if p.departement_id else '',
+            'region': (p.departement.region.nom
+                       if p.departement_id else ''),
         } for p in partenaires]
         return _Response(donnees)
 
