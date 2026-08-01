@@ -5,13 +5,14 @@ from .views import (
     PartenairesParCategorieView, StatsVuesPartenaireView, RechercheUnifieeView,
     CategorieViewSet, ArticleViewSet, EnregistrerVueView,
     ArticleImageViewSet, VarianteViewSet, SupplementViewSet,
-    PanoramaViewSet, LogementView, VehiculeView,
+    PanoramaViewSet, LogementView, VehiculeView, ArticleVideoViewSet,
 )
 
 router = DefaultRouter()
 router.register(r'categories', CategorieViewSet, basename='categorie')
 router.register(r'articles', ArticleViewSet, basename='article')
 router.register(r'images', ArticleImageViewSet, basename='image')
+router.register(r'videos', ArticleVideoViewSet, basename='video')
 router.register(r'variantes', VarianteViewSet, basename='variante')
 router.register(r'supplements', SupplementViewSet, basename='supplement')
 router.register(r'panoramas', PanoramaViewSet, basename='panorama')

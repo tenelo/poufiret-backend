@@ -1,7 +1,7 @@
 """Serializers du module Catalogue."""
 from rest_framework import serializers
 from .models import (
-    Categorie, Article, ArticleImage, Variante, Supplement,
+    Categorie, Article, ArticleImage, ArticleVideo, Variante, Supplement,
     Panorama, Logement, Vehicule,
 )
 
@@ -88,8 +88,17 @@ class ArticleListeSerializer(serializers.ModelSerializer):
             return req.build_absolute_uri(img.image.url) if req else img.image.url
         return None
 
+class ArticleVideoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ArticleVideo
+        fields = ['id', 'article', 'video', 'titre', 'miniature',
+                  'ordre', 'est_active']
+        read_only_fields = ['id']
+
+
 class ArticleDetailSerializer(serializers.ModelSerializer):
     images = ArticleImageSerializer(many=True, read_only=True)
+    videos = ArticleVideoSerializer(many=True, read_only=True)
     variantes = VarianteSerializer(many=True, read_only=True)
     supplements = SupplementSerializer(many=True, read_only=True)
     panoramas = PanoramaSerializer(many=True, read_only=True)
@@ -105,7 +114,7 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
                   'unite', 'details', 'est_actif', 'est_disponible', 'est_en_promotion',
                   'temps_preparation_min', 'nb_vues', 'nb_likes', 'nb_commentaires',
                   'nb_favoris', 'partenaire', 'partenaire_nom', 'categorie', 'section_menu',
-                  'images', 'variantes', 'supplements', 'panoramas', 'logement', 'vehicule',
+                  'images', 'videos', 'variantes', 'supplements', 'panoramas', 'logement', 'vehicule',
                   'est_like_par_moi', 'est_favori_par_moi',
                   'created_at', 'updated_at']
         read_only_fields = ['slug', 'nb_vues', 'nb_likes', 'nb_commentaires',

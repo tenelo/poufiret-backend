@@ -452,6 +452,39 @@ class ArticleImage(ImagesOptimiseesMixin, models.Model):
         return f"Image {self.ordre} de {self.article.nom}"
 
 
+
+class ArticleVideo(models.Model):
+    """Video d'un article. Reservee aux plans qui l'autorisent
+    (PlanAbonnement.peut_publier_video) et limitee par nb_videos_par_article.
+
+    Stocke un fichier video ; pas d'optimisation Pillow (ce n'est pas une
+    image). La compression cote client reste conseillee a l'upload.
+    """
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.CASCADE,
+        related_name='videos',
+        verbose_name=_('article'),
+    )
+    video = models.FileField(_('vidéo'), upload_to='articles/videos/')
+    titre = models.CharField(_('titre'), max_length=200, blank=True)
+    miniature = models.ImageField(
+        _('miniature'), upload_to='articles/videos/miniatures/',
+        blank=True, null=True,
+        help_text=_('Image d\'aperçu affichée avant lecture (facultatif).'),
+    )
+    ordre = models.IntegerField(_('ordre'), default=0)
+    est_active = models.BooleanField(_('vidéo active'), default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('vidéo d\'article')
+        verbose_name_plural = _('vidéos d\'articles')
+        ordering = ['article', 'ordre']
+
+    def __str__(self):
+        return f'Vidéo de {self.article.nom}'
+
 class Panorama(models.Model):
     """
     Vue panoramique 360° d'un article (typiquement un logement / hôtel).

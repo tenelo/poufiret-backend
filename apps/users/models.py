@@ -171,6 +171,11 @@ class PlanAbonnement(models.Model):
         _('peut publier des vidéos'),
         default=False,
     )
+    nb_videos_par_article = models.IntegerField(
+        _('vidéos par article'),
+        default=0,
+        help_text=_('0 = aucune vidéo autorisée pour ce plan.'),
+    )
     peut_etre_mis_en_avant = models.BooleanField(
         _('éligible mise en avant'),
         default=False,

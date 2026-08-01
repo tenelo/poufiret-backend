@@ -19,8 +19,8 @@ Cycle de vie d'une commande :
                           │
                         livree
 """
-from django.db import models
-from django.utils.translation import gettext_lazy as _
+from django.db import models # type: ignore
+from django.utils.translation import gettext_lazy as _ # type: ignore
 
 from apps.catalog.models import Article
 from apps.users.models import AdresseClient, ProfilPartenaire, User

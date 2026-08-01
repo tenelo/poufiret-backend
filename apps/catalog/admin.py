@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _
 from .models import (
     Categorie, PartenaireCategorie, SectionMenu, Article,
     Logement, Vehicule, ArticleImage, Panorama,
-    Variante, Supplement, VueArticle, RechercheSansResultat,
+    Variante, Supplement, VueArticle, RechercheSansResultat, ArticleVideo,
 )
 
 
@@ -92,6 +92,27 @@ class ArticleImageInline(admin.TabularInline):
         return formset
 
 
+class ArticleVideoInline(admin.TabularInline):
+    model = ArticleVideo
+    extra = 0
+    fields = ('video', 'titre', 'miniature', 'ordre', 'est_active')
+
+    def get_formset(self, request, obj=None, **kwargs):
+        formset = super().get_formset(request, obj, **kwargs)
+        plan = getattr(getattr(obj, 'partenaire', None), 'plan', None) if obj else None
+        if plan is not None:
+            actuelles = obj.videos.count()
+            if plan.nb_videos_par_article <= 0:
+                formset.verbose_name_plural = (
+                    f"vidéos — plan {plan.libelle} : non autorisées")
+            else:
+                formset.verbose_name_plural = (
+                    f"vidéos — plan {plan.libelle} : "
+                    f"{plan.nb_videos_par_article} autorisée(s), "
+                    f"{actuelles} enregistrée(s)")
+        return formset
+
+
 class PanoramaInline(admin.TabularInline):
     model = Panorama
     extra = 0
@@ -139,7 +160,7 @@ class ArticleAdmin(admin.ModelAdmin):
     prepopulated_fields = {'slug': ('nom',)}
     readonly_fields = ('nb_vues', 'nb_likes', 'nb_commentaires', 'nb_favoris',
                        'created_at', 'updated_at')
-    inlines = [ArticleImageInline, PanoramaInline, VarianteInline, SupplementInline]
+    inlines = [ArticleImageInline, PanoramaInline, VarianteInline, SupplementInline, ArticleVideoInline]
     ordering = ('-created_at',)
 
     fieldsets = (

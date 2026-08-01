@@ -6,12 +6,12 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from apps.core.permissions import EstPartenaireProprietaireOuLectureSeule
 from .models import (
-    Categorie, Article, VueArticle, ArticleImage, Variante,
+    Categorie, Article, VueArticle, ArticleImage, ArticleVideo, Variante,
     Supplement, Panorama, Logement, Vehicule,
 )
 from .serializers import (
     CategorieSerializer, ArticleListeSerializer, ArticleDetailSerializer,
-    ArticleImageSerializer, VarianteSerializer, SupplementSerializer,
+    ArticleImageSerializer, ArticleVideoSerializer, VarianteSerializer, SupplementSerializer,
     PanoramaSerializer, LogementSerializer, VehiculeSerializer,
 )
 
@@ -119,6 +119,27 @@ class ArticleImageViewSet(_SousRessourceViewSet):
             raise PermissionDenied(
                 f"Quota photos atteint ({maxi}/article pour le plan "
                 f"{article.partenaire.plan.libelle})."
+            )
+        serializer.save(est_active=True)
+
+
+class ArticleVideoViewSet(_SousRessourceViewSet):
+    model = ArticleVideo
+    serializer_class = ArticleVideoSerializer
+
+    def perform_create(self, serializer):
+        article = self._verifier_proprietaire(serializer)
+        plan = article.partenaire.plan
+        if not plan.peut_publier_video or plan.nb_videos_par_article <= 0:
+            raise PermissionDenied(
+                f"Le plan {plan.libelle} ne permet pas de publier des "
+                f"vidéos. Passez à un plan supérieur."
+            )
+        maxi = plan.nb_videos_par_article
+        if article.videos.count() >= maxi:
+            raise PermissionDenied(
+                f"Quota vidéos atteint ({maxi}/article pour le plan "
+                f"{plan.libelle})."
             )
         serializer.save(est_active=True)
 
