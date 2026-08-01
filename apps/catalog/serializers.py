@@ -89,10 +89,12 @@ class ArticleListeSerializer(serializers.ModelSerializer):
         return None
 
 class ArticleVideoSerializer(serializers.ModelSerializer):
+    article_nom = serializers.CharField(source='article.nom', read_only=True)
+    article_slug = serializers.CharField(source='article.slug', read_only=True)
     class Meta:
         model = ArticleVideo
-        fields = ['id', 'article', 'video', 'titre', 'miniature',
-                  'ordre', 'est_active']
+        fields = ['id', 'article', 'article_nom', 'article_slug', 'video',
+                  'titre', 'miniature', 'ordre', 'est_active']
         read_only_fields = ['id']
 
 

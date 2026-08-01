@@ -6,6 +6,7 @@ from .views import (
     CategorieViewSet, ArticleViewSet, EnregistrerVueView,
     ArticleImageViewSet, VarianteViewSet, SupplementViewSet,
     PanoramaViewSet, LogementView, VehiculeView, ArticleVideoViewSet,
+    VideosPartenaireView,
 )
 
 router = DefaultRouter()
@@ -18,6 +19,8 @@ router.register(r'supplements', SupplementViewSet, basename='supplement')
 router.register(r'panoramas', PanoramaViewSet, basename='panorama')
 
 urlpatterns = [
+    path('partenaire/<int:partenaire_id>/videos/',
+         VideosPartenaireView.as_view(), name='partenaire-videos'),
     path('recherche/', RechercheUnifieeView.as_view(), name='recherche-unifiee'),
     path('partenaire/stats-vues/', StatsVuesPartenaireView.as_view(), name='partenaire-stats-vues'),
     path('categories/<slug:slug>/partenaires/', PartenairesParCategorieView.as_view(), name='categorie-partenaires'),

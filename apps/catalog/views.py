@@ -123,6 +123,26 @@ class ArticleImageViewSet(_SousRessourceViewSet):
         serializer.save(est_active=True)
 
 
+class VideosPartenaireView(generics.ListAPIView):
+    """GET /catalogue/partenaire/<id>/videos/ — toutes les videos d'un
+    partenaire, pour l'onglet Videos de sa vitrine.
+
+    Regroupe les videos de tous ses articles actifs en une seule reponse,
+    avec le nom et le slug de l'article parent pour la navigation.
+    """
+    serializer_class = ArticleVideoSerializer
+    permission_classes = []
+    pagination_class = None
+
+    def get_queryset(self):
+        return (ArticleVideo.objects
+                .filter(article__partenaire_id=self.kwargs['partenaire_id'],
+                        est_active=True,
+                        article__est_actif=True)
+                .select_related('article')
+                .order_by('article', 'ordre'))
+
+
 class ArticleVideoViewSet(_SousRessourceViewSet):
     model = ArticleVideo
     serializer_class = ArticleVideoSerializer
