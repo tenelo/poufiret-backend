@@ -31,7 +31,11 @@ def filtre_visibilite(departement=None, localites_choisies=None):
     # Un partenaire est TOUJOURS visible partout s'il a portee district.
     q = Q(plan__portee='district')
 
-    if departement is not None:
+    # Le departement de l'utilisateur n'est pris en compte que s'il n'a
+    # PAS coche de localites : un choix explicite remplace la vue par
+    # defaut. Sinon, cocher "Poro" afficherait aussi son propre
+    # departement, ce qui n'est pas ce que l'utilisateur demande.
+    if departement is not None and not localites_choisies:
         # Meme departement : visible quel que soit le plan.
         q |= Q(departement=departement)
         # Meme region + portee au moins region.
