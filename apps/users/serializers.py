@@ -156,13 +156,17 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
     est_favori_par_moi = serializers.SerializerMethodField()
     type_partenaire_libelle = serializers.CharField(
         source='get_type_partenaire_display', read_only=True)
+    departement = serializers.CharField(
+        source='departement.nom', read_only=True, default='')
+    region = serializers.CharField(
+        source='departement.region.nom', read_only=True, default='')
 
     class Meta:
         model = ProfilPartenaire
         fields = [
             'id', 'nom_commerce', 'type_partenaire', 'type_partenaire_libelle',
             'description', 'logo', 'photo_couverture',
-            'adresse', 'quartier', 'secteur', 'ville', 'description_acces',
+            'adresse', 'quartier', 'secteur', 'ville', 'departement', 'region', 'description_acces',
             'telephone_pro', 'whatsapp', 'email_pro',
             'nombre_likes', 'nb_vues', 'est_like_par_moi', 'est_favori_par_moi',
         ]
