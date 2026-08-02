@@ -9,13 +9,21 @@ from .models import User, SessionAppareil, ProfilPartenaire
 
 class UtilisateurSerializer(serializers.ModelSerializer):
     """Représentation publique d'un utilisateur (lecture/édition profil)."""
+    departement_nom = serializers.CharField(
+        source='departement.nom', read_only=True, default='')
+    region_nom = serializers.CharField(
+        source='departement.region.nom', read_only=True, default='')
+
     class Meta:
         model = User
         fields = [
             'id', 'telephone', 'username', 'first_name', 'last_name',
             'role', 'est_verifie', 'langue_preferee', 'token_fcm',
+            'departement', 'departement_nom', 'region_nom',
+            'tranche_age', 'sexe',
         ]
-        read_only_fields = ['id', 'telephone', 'role', 'est_verifie']
+        read_only_fields = ['id', 'telephone', 'role', 'est_verifie',
+                            'departement_nom', 'region_nom']
 
 
 class ConnexionSerializer(TokenObtainPairSerializer):

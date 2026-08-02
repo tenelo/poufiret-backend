@@ -455,12 +455,14 @@ class RechercheUnifieeView(_APIView):
                     .filter(_prefixer(visibilite_art, 'partenaire__'))
                     .filter(Q(nom__unaccent__icontains=terme)
                             | Q(description__unaccent__icontains=terme))
-                    .select_related('partenaire')
+                    .select_related('partenaire__departement__region')
                     .order_by('-nb_vues')[:20])
         donnees_art = [{
             'id': a.id, 'nom': a.nom, 'slug': a.slug,
             'prix': str(a.prix) if a.prix is not None else '0',
             'partenaire_nom': a.partenaire.nom_commerce,
+            'departement': (a.partenaire.departement.nom
+                            if a.partenaire.departement_id else ''),
             'image_principale': _url(
                 a.images.filter(est_principale=True).first().image
                 if a.images.filter(est_principale=True).exists()
