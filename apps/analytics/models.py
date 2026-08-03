@@ -114,6 +114,14 @@ class ParametresAnalytics(ModeleBase):
     seuil_minutes_mois = models.PositiveIntegerField(
         'seuil minutes cumulées par mois', default=15,
     )
+    seuil_en_ligne_secondes = models.PositiveIntegerField(
+        'seuil "en ligne maintenant" (secondes)', default=120,
+        help_text=(
+            'Un utilisateur est compté "en ligne" si son dernier ping '
+            'date de moins de N secondes. Le ping est envoyé toutes les '
+            '60 s ; garder ce seuil >= 60 (120 = 2 pings de marge).'
+        ),
+    )
 
     class Meta:
         verbose_name = 'paramètres analytics'

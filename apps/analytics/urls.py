@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import (DemarrerSessionView, EngagementAdminView, OuvertureDemandeInterventionView, PingSessionView, VisiteCategorieView, VueVitrineView)
+from .views import (DemarrerSessionView, EngagementAdminView, OuvertureDemandeInterventionView, PingSessionView, StatsConnexionAdminView, VisiteCategorieView, VueVitrineView)
 
 app_name = 'analytics'
 
@@ -11,4 +11,5 @@ urlpatterns = [
     path('vitrine/vue/', VueVitrineView.as_view(), name='vitrine-vue'),
     path('intervention/ouverture/', OuvertureDemandeInterventionView.as_view(), name='intervention-ouverture'),
     path('admin/engagement/', EngagementAdminView.as_view(), name='admin-engagement'),
+    path('admin/stats-connexion/', StatsConnexionAdminView.as_view(), name='admin-stats-connexion'),
 ]

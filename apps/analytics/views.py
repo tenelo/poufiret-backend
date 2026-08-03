@@ -167,3 +167,20 @@ class OuvertureDemandeInterventionView(APIView):
         enregistrer_demande_intervention(request.user)
         return Response({'message': 'Ouverture enregistrée.'},
                         status=status.HTTP_201_CREATED)
+
+
+class StatsConnexionAdminView(APIView):
+    """Tableau de bord des stats de connexion (admin/Angular G5).
+
+    En ligne à l'instant t (ventilé par rôle), comptes créés, connexions
+    distinctes et nombre d'ouvertures sur aujourd'hui / 7 jours / 30 jours.
+    Lecture seule, dérivée de TempsSessionUtilisateur et User.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response({'detail': 'Réservé aux administrateurs.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        from .stats_connexion import tableau_de_bord
+        return Response(tableau_de_bord())
