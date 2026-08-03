@@ -39,10 +39,12 @@ class PubliciteDetailSerializer(serializers.ModelSerializer):
     partenaire_id = serializers.IntegerField(read_only=True)
     nom_partenaire = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
 
+    portee_effective = serializers.CharField(read_only=True)
     class Meta:
         model = Publicite
         fields = ['id', 'titre', 'description', 'image_couverture', 'video',
-                  'images', 'partenaire_id', 'nom_partenaire']
+                  'images', 'partenaire_id', 'nom_partenaire',
+                  'portee', 'portee_effective']
 
 
 class PubliciteCreationSerializer(serializers.ModelSerializer):
@@ -51,7 +53,7 @@ class PubliciteCreationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Publicite
         fields = ['id', 'formule', 'titre', 'description', 'image_couverture',
-                  'video', 'statut']
+                  'video', 'portee', 'statut']
         read_only_fields = ['statut']
 
     def validate(self, donnees):
@@ -60,4 +62,19 @@ class PubliciteCreationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Cette formule n\'est plus disponible.')
         if donnees.get('video') and formule and not formule.video_autorisee:
             raise serializers.ValidationError('Votre formule n\'autorise pas la vidéo.')
+        portee = donnees.get('portee')
+        if portee:
+            from apps.users.models import Portee
+            requete = self.context.get('request')
+            profil = getattr(getattr(requete, 'user', None),
+                             'profil_partenaire', None)
+            portee_forfait = getattr(profil, 'portee', Portee.DEPARTEMENT)
+            if Portee.rang(portee) < Portee.rang(portee_forfait):
+                raise serializers.ValidationError({
+                    'portee': (
+                        'La portée choisie est déjà couverte par votre '
+                        'forfait. Choisissez une portée supérieure ou '
+                        'laissez celle du forfait.'
+                    )
+                })
         return donnees
