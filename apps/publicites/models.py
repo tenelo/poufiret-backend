@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from apps.core.models import ModeleBase
 from apps.core.images import ImagesOptimiseesMixin
+from apps.users.models import Portee
 
 
 class TypeAffichage(models.TextChoices):
@@ -99,6 +100,16 @@ class Publicite(ImagesOptimiseesMixin, ModeleBase):
     video = models.FileField(
         'vidéo', upload_to='publicites/videos/', null=True, blank=True,
     )
+    portee = models.CharField(
+        'portée achetée', max_length=15,
+        choices=Portee.choices, default=Portee.DEPARTEMENT,
+        help_text=(
+            "Étendue géographique achetée pour cette campagne. "
+            "La portée réellement appliquée est le maximum entre "
+            "cette valeur et la portée du forfait du partenaire "
+            "(une pub ne descend jamais sous le forfait)."
+        ),
+    )
     statut = models.CharField(
         'statut', max_length=25,
         choices=Statut.choices, default=Statut.BROUILLON,
@@ -139,6 +150,21 @@ class Publicite(ImagesOptimiseesMixin, ModeleBase):
         if nb_actifs == 0:
             return False
         return (self.nb_personnes_touchees / nb_actifs) * 100 >= cible
+
+    @property
+    def portee_effective(self):
+        """Portée réellement appliquée : MAX(forfait, achetée).
+
+        Une campagne peut étendre la visibilité au-delà du forfait mais
+        jamais la réduire. Ex. un partenaire au forfait 'département' qui
+        achète 'district' touche tout le district ; l'inverse (forfait
+        'région', pub 'département') reste à 'région'.
+        """
+        plan = getattr(self.partenaire, 'plan', None)
+        portee_forfait = getattr(plan, 'portee', Portee.DEPARTEMENT)
+        if Portee.rang(self.portee) >= Portee.rang(portee_forfait):
+            return self.portee
+        return portee_forfait
 
     def __str__(self):
         return f'{self.titre} ({self.partenaire}) — {self.get_statut_display()}'

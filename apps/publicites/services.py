@@ -89,7 +89,7 @@ def _pubs_diffusables():
     candidates = (
         Publicite.objects
         .filter(statut=Publicite.Statut.ACTIVE, debut_diffusion__lte=maintenant)
-        .select_related('formule', 'partenaire')
+        .select_related('formule', 'partenaire', 'partenaire__departement__region')
     )
     return [
         p for p in candidates
@@ -176,6 +176,37 @@ def _interstitiel_autorise(utilisateur, params):
     return ecoule >= params.intervalle_min_interstitiel_secondes
 
 
+def _pub_visible_pour(pub, utilisateur):
+    """Vrai si l'utilisateur est dans la portee EFFECTIVE de la pub.
+
+    Miroir de geo.portee.filtre_visibilite, cote publicite :
+      - utilisateur non localise (anonyme ou sans departement) -> voit TOUT
+        (coherent avec l'organique : on donne envie avant de localiser) ;
+      - portee 'district' -> visible partout ;
+      - portee 'region'   -> meme region que l'utilisateur ;
+      - portee 'departement' -> meme departement que le partenaire.
+    La portee utilisee est portee_effective = MAX(forfait, achetee).
+    """
+    dep_user = getattr(utilisateur, 'departement', None) if (
+        utilisateur is not None and utilisateur.is_authenticated) else None
+    if dep_user is None:
+        return True
+
+    portee = pub.portee_effective
+    if portee == 'district':
+        return True
+
+    dep_pub = getattr(pub.partenaire, 'departement', None)
+    if dep_pub is None:
+        # Partenaire sans departement renseigne : on ne le cache pas.
+        return True
+
+    if portee == 'region':
+        return dep_pub.region_id == dep_user.region_id
+    # portee 'departement'
+    return dep_pub.id == dep_user.id
+
+
 def selectionner_pubs(type_affichage, utilisateur=None, minute_session=None, limite=None):
     """Retourne les pubs a diffuser pour un emplacement donne, triees par priorite."""
     params = ParametresPublicite.obtenir()
@@ -197,6 +228,8 @@ def selectionner_pubs(type_affichage, utilisateur=None, minute_session=None, lim
         if affluence and not formule.acces_heures_affluence:
             continue
         if not _passages_restants(pub, utilisateur, type_affichage):
+            continue
+        if not _pub_visible_pour(pub, utilisateur):
             continue
         resultat.append(pub)
 
