@@ -460,6 +460,12 @@ class RechercheUnifieeView(_APIView):
         donnees_art = [{
             'id': a.id, 'nom': a.nom, 'slug': a.slug,
             'prix': str(a.prix) if a.prix is not None else '0',
+            'prix_promotion': (str(a.prix_promotion)
+                               if a.prix_promotion is not None else None),
+            'est_en_promotion': a.est_en_promotion,
+            'pourcentage_reduction': a.pourcentage_reduction,
+            'prix_effectif': (str(a.prix_effectif)
+                              if a.prix_effectif is not None else '0'),
             'partenaire_nom': a.partenaire.nom_commerce,
             'departement': (a.partenaire.departement.nom
                             if a.partenaire.departement_id else ''),
