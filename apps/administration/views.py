@@ -124,3 +124,26 @@ class JournalExportView(APIView):
                 j.motif,
             ])
         return reponse_csv('journal_moderation', entetes, lignes)
+
+
+class IndicateursPartenairesView(APIView):
+    """Tableau de bord des indicateurs partenaires (super-admin).
+
+    Répartition par plan/type/département/statut, certifiés, faveurs,
+    et abonnements expirant bientôt (tranches exclusives).
+    """
+    permission_classes = [IsAuthenticated, EstSuperAdmin]
+
+    def get(self, request):
+        from . import indicateurs_partenaires as ip
+        return Response(ip.tableau_de_bord())
+
+
+class PartenairesExportView(APIView):
+    """Export CSV détaillé des partenaires (super-admin)."""
+    permission_classes = [IsAuthenticated, EstSuperAdmin]
+
+    def get(self, request):
+        from . import indicateurs_partenaires as ip
+        entetes, lignes = ip.export_partenaires_lignes()
+        return reponse_csv('partenaires', entetes, lignes)
