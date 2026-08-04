@@ -73,10 +73,14 @@ class VehiculeSerializer(serializers.ModelSerializer):
 class ArticleListeSerializer(serializers.ModelSerializer):
     image_principale = serializers.SerializerMethodField()
     partenaire_nom = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
+    pourcentage_reduction = serializers.ReadOnlyField()
+    prix_effectif = serializers.ReadOnlyField()
+    promotion_valide = serializers.ReadOnlyField()
 
     class Meta:
         model = Article
         fields = ['id', 'nom', 'slug', 'type', 'prix', 'prix_promotion',
+                  'pourcentage_reduction', 'prix_effectif', 'promotion_valide',
                   'est_en_promotion', 'est_disponible', 'nb_vues', 'nb_likes',
                   'partenaire', 'partenaire_nom', 'categorie', 'image_principale']
 
@@ -109,11 +113,15 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
     partenaire_nom = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
     est_like_par_moi = serializers.SerializerMethodField()
     est_favori_par_moi = serializers.SerializerMethodField()
+    pourcentage_reduction = serializers.ReadOnlyField()
+    prix_effectif = serializers.ReadOnlyField()
+    promotion_valide = serializers.ReadOnlyField()
 
     class Meta:
         model = Article
         fields = ['id', 'nom', 'slug', 'description', 'type', 'prix', 'prix_promotion',
                   'unite', 'details', 'est_actif', 'est_disponible', 'est_en_promotion',
+                  'pourcentage_reduction', 'prix_effectif', 'promotion_valide',
                   'temps_preparation_min', 'nb_vues', 'nb_likes', 'nb_commentaires',
                   'nb_favoris', 'partenaire', 'partenaire_nom', 'categorie', 'section_menu',
                   'images', 'videos', 'variantes', 'supplements', 'panoramas', 'logement', 'vehicule',

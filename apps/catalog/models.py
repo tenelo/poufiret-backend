@@ -317,6 +317,40 @@ class Article(models.Model):
             models.Index(fields=['type']),
         ]
 
+    @property
+    def promotion_valide(self):
+        """True si une promo cohérente est active.
+
+        Exige : est_en_promotion coché, un prix normal et un prix promo
+        renseignés, et prix_promotion strictement inferieur au prix.
+        Evite d'afficher une fausse promo (prix promo >= prix, ou champs
+        manquants).
+        """
+        return bool(
+            self.est_en_promotion
+            and self.prix is not None
+            and self.prix_promotion is not None
+            and self.prix > 0
+            and self.prix_promotion < self.prix
+        )
+
+    @property
+    def pourcentage_reduction(self):
+        """Pourcentage de reduction (entier), ou None si pas de promo valide.
+
+        Calcule depuis prix et prix_promotion — jamais stocke, pour eviter
+        toute incoherence. Ex : 2000 -> 1500 donne 25.
+        """
+        if not self.promotion_valide:
+            return None
+        reduction = (self.prix - self.prix_promotion) / self.prix * 100
+        return int(round(reduction))
+
+    @property
+    def prix_effectif(self):
+        """Prix reellement paye : prix_promotion si promo valide, sinon prix."""
+        return self.prix_promotion if self.promotion_valide else self.prix
+
     def __str__(self):
         return f"{self.nom} ({self.partenaire.nom_commerce})"
 
