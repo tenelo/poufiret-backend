@@ -184,3 +184,28 @@ class StatsConnexionAdminView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
         from .stats_connexion import tableau_de_bord
         return Response(tableau_de_bord())
+
+
+class StatsConnexionExportView(APIView):
+    """Export CSV détaillé des sessions (admin). Une ligne par ouverture.
+
+    Paramètre optionnel ?jours=N pour borner la période (ex. ?jours=30).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response({'detail': 'Réservé aux administrateurs.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        from datetime import timedelta
+        from apps.core.exports import reponse_csv
+        from .stats_connexion import export_sessions_lignes
+        depuis = None
+        jours = request.query_params.get('jours')
+        if jours:
+            try:
+                depuis = timezone.now() - timedelta(days=int(jours))
+            except (ValueError, TypeError):
+                depuis = None
+        entetes, lignes = export_sessions_lignes(depuis)
+        return reponse_csv('stats_connexion_sessions', entetes, lignes)

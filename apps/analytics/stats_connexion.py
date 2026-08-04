@@ -111,3 +111,33 @@ def tableau_de_bord():
             'trente_jours': ouvertures(il_y_a_30j),
         },
     }
+
+
+def export_sessions_lignes(depuis=None):
+    """Prépare (entetes, lignes) pour l'export CSV détaillé des sessions.
+
+    Une ligne par ouverture d'app : de quoi recalculer librement dans Excel
+    (connexions distinctes, ouvertures/jour, durées, ventilation par rôle).
+    `depuis` : datetime optionnelle pour borner la période (None = tout).
+    """
+    qs = TempsSessionUtilisateur.objects.select_related('utilisateur')
+    if depuis is not None:
+        qs = qs.filter(debut__gte=depuis)
+    qs = qs.order_by('-debut')
+
+    entetes = ['id', 'utilisateur', 'role', 'source', 'debut',
+               'dernier_ping', 'duree_secondes', 'active']
+    lignes = []
+    for x in qs.iterator():
+        u = x.utilisateur
+        lignes.append([
+            str(x.id),
+            getattr(u, 'telephone', ''),
+            getattr(u, 'role', ''),
+            x.source,
+            timezone.localtime(x.debut).strftime('%Y-%m-%d %H:%M:%S'),
+            timezone.localtime(x.dernier_ping).strftime('%Y-%m-%d %H:%M:%S'),
+            x.duree_secondes,
+            'oui' if x.est_active else 'non',
+        ])
+    return entetes, lignes
