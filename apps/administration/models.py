@@ -21,6 +21,8 @@ class JournalModeration(ModeleBase):
         SUPPRIMER_SOFT = 'supprimer_soft', 'Suppression douce'
         SUPPRIMER_HARD = 'supprimer_hard', 'Suppression définitive'
         RESTAURER = 'restaurer', 'Restauration (annule suppression douce)'
+        ACCORDER_FAVEUR = 'accorder_faveur', 'Octroi d\'une faveur'
+        RETIRER_FAVEUR = 'retirer_faveur', 'Retrait d\'une faveur'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.

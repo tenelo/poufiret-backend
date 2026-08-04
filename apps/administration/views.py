@@ -12,9 +12,11 @@ from rest_framework import status
 
 from django.contrib.auth import get_user_model
 
-from apps.core.permissions import EstSuperAdmin
+from apps.core.permissions import EstAdmin, EstSuperAdmin
 from apps.core.exports import reponse_csv
-from . import services, moderation
+from . import services, moderation, faveurs
+from apps.users.models import ProfilPartenaire, PlanAbonnement
+from apps.users.serializers import MonProfilPartenaireSerializer
 from .models import JournalModeration
 
 User = get_user_model()
@@ -147,3 +149,43 @@ class PartenairesExportView(APIView):
         from . import indicateurs_partenaires as ip
         entetes, lignes = ip.export_partenaires_lignes()
         return reponse_csv('partenaires', entetes, lignes)
+
+
+class FaveurView(APIView):
+    """Accorde (POST) ou retire (DELETE) une faveur a un partenaire.
+
+    Geste commercial : accessible a EstAdmin (donc admin ET super-admin).
+    POST   body: {"plan_code": "premium", "motif": "Partenariat"}
+    DELETE body: {"motif": "Fin de partenariat"} (optionnel)
+    """
+    permission_classes = [IsAuthenticated, EstAdmin]
+
+    def _profil(self, pk):
+        return ProfilPartenaire.objects.select_related(
+            'user', 'plan').filter(pk=pk).first()
+
+    def post(self, request, pk):
+        profil = self._profil(pk)
+        if profil is None:
+            return Response({'detail': 'Partenaire introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        code = request.data.get('plan_code')
+        plan = PlanAbonnement.objects.filter(code=code, est_actif=True).first()
+        if plan is None:
+            return Response(
+                {'detail': "plan_code manquant ou plan inactif/inexistant."},
+                status=status.HTTP_400_BAD_REQUEST)
+        motif = request.data.get('motif', '')
+        profil = faveurs.accorder_faveur(request.user, profil, plan, motif)
+        return Response(MonProfilPartenaireSerializer(profil).data,
+                        status=status.HTTP_200_OK)
+
+    def delete(self, request, pk):
+        profil = self._profil(pk)
+        if profil is None:
+            return Response({'detail': 'Partenaire introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        motif = request.data.get('motif', '')
+        profil = faveurs.retirer_faveur(request.user, profil, motif)
+        return Response(MonProfilPartenaireSerializer(profil).data,
+                        status=status.HTTP_200_OK)
