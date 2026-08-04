@@ -20,6 +20,7 @@ urlpatterns = [
     path('api/v1/publicites/', include('apps.publicites.urls')),
     path('api/v1/geo/', include('apps.geo.urls')),
     path('api/v1/version/', include('apps.version.urls')),
+    path('api/v1/administration/', include('apps.administration.urls')),
 ]
 
 # Service des fichiers médias en développement uniquement

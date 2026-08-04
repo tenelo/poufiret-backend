@@ -47,3 +47,31 @@ class EstAuteurOuModerateurOuLectureSeule(permissions.BasePermission):
             return True
         cible_part = _partenaire_de(obj)
         return cible_part is not None and cible_part.user_id == u.id
+
+
+class EstAdmin(permissions.BasePermission):
+    """Accès réservé aux administrateurs (is_staff).
+
+    Niveau ADMIN : accès de gestion, mais pas forcément à tout. Les données
+    et actions les plus sensibles sont réservées au super-admin (voir
+    EstSuperAdmin). Remplace les checks manuels `if not request.user.is_staff`.
+    """
+    message = 'Réservé aux administrateurs.'
+
+    def has_permission(self, request, view):
+        u = request.user
+        return bool(u and u.is_authenticated and u.is_staff)
+
+
+class EstSuperAdmin(permissions.BasePermission):
+    """Accès réservé au super-admin (is_superuser = Tenelo).
+
+    Niveau SUPER-ADMIN : accès total aux données et aux manipulations
+    sensibles (modération de comptes, suppression, suspension d'un admin).
+    Un simple admin (is_staff) ne passe PAS cette permission.
+    """
+    message = 'Réservé au super-administrateur.'
+
+    def has_permission(self, request, view):
+        u = request.user
+        return bool(u and u.is_authenticated and u.is_superuser)

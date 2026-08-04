@@ -65,6 +65,21 @@ class User(AbstractUser):
     )
 
     # Pour les notifications push (Firebase Cloud Messaging)
+    # ── Modération (G5 super-admin) ──────────────────────────────────
+    est_suspendu = models.BooleanField('suspendu', default=False)
+    suspendu_le = models.DateTimeField('suspendu le', null=True, blank=True)
+    suspension_motif = models.CharField(
+        'motif de suspension', max_length=255, blank=True,
+    )
+    est_banni = models.BooleanField(
+        'banni', default=False,
+        help_text='Bannissement = suspension permanente.',
+    )
+    est_supprime = models.BooleanField(
+        'supprimé (soft)', default=False,
+        help_text='Suppression douce : compte désactivé mais récupérable.',
+    )
+    supprime_le = models.DateTimeField('supprimé le', null=True, blank=True)
     token_fcm = models.CharField(
         _('token FCM'),
         max_length=255,
