@@ -633,3 +633,35 @@ class SessionAppareil(ModeleBase):
 
     def __str__(self):
         return f"{self.user.telephone} — {self.appareil_nom or self.plateforme}"
+
+
+# ── Modèles proxy : listes séparées dans le Django admin ─────────────
+# Même table que User, mais filtrées par rôle pour avoir trois entrées
+# distinctes dans l'admin (Clients / Partenaires / Admins).
+
+class Client(User):
+    class Meta:
+        proxy = True
+        verbose_name = 'client'
+        verbose_name_plural = 'Clients'
+
+
+class Partenaire(User):
+    class Meta:
+        proxy = True
+        verbose_name = 'partenaire'
+        verbose_name_plural = 'Partenaires'
+
+
+class Administrateur(User):
+    class Meta:
+        proxy = True
+        verbose_name = 'admin'
+        verbose_name_plural = 'Admins'
+
+
+class Livreur(User):
+    class Meta:
+        proxy = True
+        verbose_name = 'livreur'
+        verbose_name_plural = 'Livreurs'

@@ -5,7 +5,9 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import User, PlanAbonnement, ProfilPartenaire, HoraireOuverture, AdresseClient
+from .models import (User, PlanAbonnement, ProfilPartenaire, HoraireOuverture,
+                     AdresseClient, Client, Partenaire, Administrateur, Livreur)
+from apps.administration.admin import PermissionsAdminInline
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
@@ -45,6 +47,14 @@ class UserAdmin(DjangoUserAdmin):
                        'role', 'first_name', 'last_name'),
         }),
     )
+
+    def get_inline_instances(self, request, obj=None):
+        """Affiche les permissions granulaires uniquement pour un admin
+        (is_staff, non super-admin). Inutile pour clients/partenaires et
+        pour le super-admin (qui peut déjà tout)."""
+        if obj and obj.is_staff and not obj.is_superuser:
+            return [PermissionsAdminInline(self.model, self.admin_site)]
+        return []
 
 
 @admin.register(PlanAbonnement)
@@ -197,4 +207,59 @@ class AdresseClientAdmin(admin.ModelAdmin):
     ordering = ('-updated_at',)
     readonly_fields = ('created_at', 'updated_at')
 
+
+# ── Listes séparées par rôle (modèles proxy) ─────────────────────────
+# On retire l'entrée générique "Utilisateurs" au profit de 4 listes
+# claires : Clients / Partenaires / Admins / Livreurs.
+
+
+class _BaseRoleAdmin(DjangoUserAdmin):
+    """Base commune : réutilise les fieldsets/gestion mot de passe de
+    UserAdmin, mais filtrée sur un rôle donné."""
+    role_cible = None
+    list_display = ('telephone', 'get_full_name', 'is_active', 'date_joined')
+    search_fields = ('telephone', 'username', 'first_name', 'last_name', 'email')
+    ordering = ('-date_joined',)
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.filter(role=self.role_cible)
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.role = self.role_cible
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(Client)
+class ClientAdmin(_BaseRoleAdmin):
+    role_cible = 'client'
+
+
+@admin.register(Partenaire)
+class PartenaireAdmin(_BaseRoleAdmin):
+    role_cible = 'partenaire'
+
+
+@admin.register(Livreur)
+class LivreurAdmin(_BaseRoleAdmin):
+    role_cible = 'livreur'
+
+
+@admin.register(Administrateur)
+class AdministrateurAdmin(_BaseRoleAdmin):
+    """Liste des admins + grille de permissions granulaires.
+
+    Colonne 'super-admin ?' pour distinguer le propriétaire (toi) des
+    admins délégués. L'inline permissions ne s'affiche que pour un admin
+    délégué (is_staff, non super-admin)."""
+    role_cible = 'admin'
+    list_display = ('telephone', 'get_full_name', 'is_superuser',
+                    'is_active', 'date_joined')
+    list_filter = ('is_superuser', 'is_active')
+
+    def get_inline_instances(self, request, obj=None):
+        if obj and obj.is_staff and not obj.is_superuser:
+            return [PermissionsAdminInline(self.model, self.admin_site)]
+        return []
 

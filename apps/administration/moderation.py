@@ -21,6 +21,22 @@ def _revoquer_sessions(cible, acteur):
     )
 
 
+def _sync_profil_partenaire(cible, statut, visible):
+    """Répercute la modération sur le ProfilPartenaire (statut + vitrine).
+
+    Sans effet si la cible n'est pas un partenaire. Garantit qu'un
+    partenaire suspendu/banni disparaît de l'app, et réapparaît à la
+    réactivation.
+    """
+    from apps.users.models import ProfilPartenaire
+    profil = ProfilPartenaire.objects.filter(user=cible).first()
+    if profil is None:
+        return
+    profil.statut = statut
+    profil.est_visible = visible
+    profil.save(update_fields=['statut', 'est_visible'])
+
+
 def _journaliser(acteur, cible, action, motif):
     """Crée l'entrée d'audit. cible peut être None (suppression hard)."""
     JournalModeration.objects.create(
@@ -34,6 +50,7 @@ def _journaliser(acteur, cible, action, motif):
 
 
 @transaction.atomic
+@transaction.atomic
 def suspendre(acteur, cible, motif=''):
     """Suspension réversible : le compte ne peut plus se connecter."""
     cible.est_suspendu = True
@@ -44,6 +61,7 @@ def suspendre(acteur, cible, motif=''):
     cible.save(update_fields=['est_suspendu', 'est_banni', 'suspendu_le',
                               'suspension_motif', 'is_active'])
     _revoquer_sessions(cible, acteur)
+    _sync_profil_partenaire(cible, 'suspendu', False)
     _journaliser(acteur, cible, JournalModeration.Action.SUSPENDRE, motif)
     return cible
 
@@ -58,6 +76,7 @@ def reactiver(acteur, cible, motif=''):
     cible.is_active = True
     cible.save(update_fields=['est_suspendu', 'est_banni', 'suspendu_le',
                               'suspension_motif', 'is_active'])
+    _sync_profil_partenaire(cible, 'actif', True)
     _journaliser(acteur, cible, JournalModeration.Action.REACTIVER, motif)
     return cible
 
@@ -73,6 +92,7 @@ def bannir(acteur, cible, motif=''):
     cible.save(update_fields=['est_banni', 'est_suspendu', 'suspendu_le',
                               'suspension_motif', 'is_active'])
     _revoquer_sessions(cible, acteur)
+    _sync_profil_partenaire(cible, 'banni', False)
     _journaliser(acteur, cible, JournalModeration.Action.BANNIR, motif)
     return cible
 
@@ -85,6 +105,7 @@ def supprimer_soft(acteur, cible, motif=''):
     cible.is_active = False
     cible.save(update_fields=['est_supprime', 'supprime_le', 'is_active'])
     _revoquer_sessions(cible, acteur)
+    _sync_profil_partenaire(cible, 'suspendu', False)
     _journaliser(acteur, cible, JournalModeration.Action.SUPPRIMER_SOFT, motif)
     return cible
 
@@ -114,5 +135,8 @@ def restaurer(acteur, cible, motif=''):
     if not cible.est_suspendu and not cible.est_banni:
         cible.is_active = True
     cible.save(update_fields=['est_supprime', 'supprime_le', 'is_active'])
+    # Vitrine : ne redevient visible que si le compte est réellement actif.
+    if not cible.est_suspendu and not cible.est_banni:
+        _sync_profil_partenaire(cible, 'actif', True)
     _journaliser(acteur, cible, JournalModeration.Action.RESTAURER, motif)
     return cible
