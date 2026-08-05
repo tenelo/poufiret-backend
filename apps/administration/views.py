@@ -17,6 +17,7 @@ from apps.core.exports import reponse_csv
 from . import services, moderation, faveurs
 from apps.users.models import ProfilPartenaire, PlanAbonnement
 from apps.users.serializers import MonProfilPartenaireSerializer
+from apps.publicites.models import Publicite
 from .models import JournalModeration
 
 User = get_user_model()
@@ -189,3 +190,48 @@ class FaveurView(APIView):
         profil = faveurs.retirer_faveur(request.user, profil, motif)
         return Response(MonProfilPartenaireSerializer(profil).data,
                         status=status.HTTP_200_OK)
+
+
+def _faveur_pub_reponse(pub):
+    """Petite reponse dediee (le serializer public n'expose pas statut/faveur)."""
+    return {
+        'id': str(pub.id),
+        'titre': pub.titre,
+        'statut': pub.statut,
+        'est_faveur': pub.est_faveur,
+        'debut_diffusion': pub.debut_diffusion,
+        'fin_diffusion': pub.fin_diffusion,
+        'faveur_motif': pub.faveur_motif,
+    }
+
+
+class FaveurPubliciteView(APIView):
+    """Offre (POST) ou retire (DELETE) une campagne publicitaire gratuite.
+
+    Geste commercial : EstAdmin (admin ET super-admin).
+    POST   body: {"motif": "Lancement"}  -> active la pub sans paiement
+    DELETE body: {"motif": "..."}         -> termine la pub offerte
+    """
+    permission_classes = [IsAuthenticated, EstAdmin]
+
+    def _pub(self, pk):
+        return Publicite.objects.select_related(
+            'partenaire__user', 'formule').filter(pk=pk).first()
+
+    def post(self, request, pk):
+        pub = self._pub(pk)
+        if pub is None:
+            return Response({'detail': 'Publicité introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        motif = request.data.get('motif', '')
+        pub = faveurs.offrir_campagne(request.user, pub, motif)
+        return Response(_faveur_pub_reponse(pub), status=status.HTTP_200_OK)
+
+    def delete(self, request, pk):
+        pub = self._pub(pk)
+        if pub is None:
+            return Response({'detail': 'Publicité introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        motif = request.data.get('motif', '')
+        pub = faveurs.retirer_campagne_offerte(request.user, pub, motif)
+        return Response(_faveur_pub_reponse(pub), status=status.HTTP_200_OK)

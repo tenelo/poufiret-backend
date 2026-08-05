@@ -127,6 +127,20 @@ class Publicite(ImagesOptimiseesMixin, ModeleBase):
     stats_visibles_partenaire = models.BooleanField(
         'stats visibles par le partenaire', default=False,
     )
+    # ── Faveur (campagne offerte, geste commercial EstAdmin) ─────────
+    est_faveur = models.BooleanField(
+        'campagne offerte', default=False,
+        help_text='Campagne diffusée gratuitement, sans paiement.',
+    )
+    faveur_accordee_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='publicites_offertes',
+        verbose_name='faveur accordée par',
+    )
+    faveur_motif = models.TextField(
+        'motif de la faveur', blank=True,
+        help_text='Ex: "Partenariat", "Lancement", "Compensation".',
+    )
 
     class Meta:
         verbose_name = 'publicité'

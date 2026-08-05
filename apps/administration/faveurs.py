@@ -80,3 +80,59 @@ def retirer_faveur(acteur, profil, motif=''):
         motif or '',
     )
     return profil
+
+
+# ── Faveurs publicité (campagne offerte) ─────────────────────────────
+
+@transaction.atomic
+def offrir_campagne(acteur, pub, motif=''):
+    """Active une campagne publicitaire gratuitement, sans paiement.
+
+    Pose statut=ACTIVE, calcule la fenêtre de diffusion depuis la durée
+    de la formule, laisse `paiement` à null, et trace la faveur.
+    """
+    from apps.publicites.models import Publicite
+
+    debut = timezone.now()
+    pub.statut = Publicite.Statut.ACTIVE
+    pub.debut_diffusion = debut
+    pub.fin_diffusion = debut + timedelta(days=pub.formule.duree_jours)
+    pub.est_faveur = True
+    pub.faveur_accordee_par = acteur
+    pub.faveur_motif = motif or ''
+    pub.save(update_fields=[
+        'statut', 'debut_diffusion', 'fin_diffusion',
+        'est_faveur', 'faveur_accordee_par', 'faveur_motif',
+    ])
+    _journaliser(
+        acteur, pub.partenaire.user,
+        JournalModeration.Action.ACCORDER_FAVEUR,
+        f"Pub offerte : {pub.titre} ({pub.formule.nom}) — {motif}".strip(' —'),
+    )
+    return pub
+
+
+@transaction.atomic
+def retirer_campagne_offerte(acteur, pub, motif=''):
+    """Retire une campagne offerte : la termine et nettoie la faveur.
+
+    On ne supprime pas la pub (historique/stats conservés) ; on la passe
+    en TERMINEE et on retire les marqueurs de faveur.
+    """
+    from apps.publicites.models import Publicite
+
+    pub.statut = Publicite.Statut.TERMINEE
+    pub.fin_diffusion = timezone.now()
+    pub.est_faveur = False
+    pub.faveur_accordee_par = None
+    pub.faveur_motif = ''
+    pub.save(update_fields=[
+        'statut', 'fin_diffusion',
+        'est_faveur', 'faveur_accordee_par', 'faveur_motif',
+    ])
+    _journaliser(
+        acteur, pub.partenaire.user,
+        JournalModeration.Action.RETIRER_FAVEUR,
+        f"Retrait pub offerte : {pub.titre} — {motif}".strip(' —'),
+    )
+    return pub

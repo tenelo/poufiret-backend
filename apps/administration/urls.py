@@ -3,7 +3,7 @@ from django.urls import path
 from .views import (DashboardG5View, AppareilsExportView, ModerationView,
                     JournalModerationView, JournalExportView,
                     IndicateursPartenairesView, PartenairesExportView,
-                    FaveurView)
+                    FaveurView, FaveurPubliciteView)
 
 app_name = 'administration'
 
@@ -16,4 +16,5 @@ urlpatterns = [
     path('partenaires/', IndicateursPartenairesView.as_view(), name='partenaires'),
     path('partenaires/export/', PartenairesExportView.as_view(), name='partenaires-export'),
     path('partenaires/<int:pk>/faveur/', FaveurView.as_view(), name='partenaire-faveur'),
+    path('publicites/<uuid:pk>/faveur/', FaveurPubliciteView.as_view(), name='publicite-faveur'),
 ]
