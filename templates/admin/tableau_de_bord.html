@@ -1,0 +1,82 @@
+{% extends "admin/base_site.html" %}
+{% block content_title %}
+<div style="display:flex; align-items:center; gap:14px; margin:6px 0 18px;">
+  <h1 style="margin:0;">Tableau de bord</h1>
+  <a href="" onclick="location.reload(); return false;" title="Rafraîchir"
+     style="text-decoration:none; font-size:19px; line-height:1;
+            display:inline-flex; align-items:center;">🔄</a>
+</div>
+{% endblock %}
+{% block content %}
+<style>
+  .tb-grille { display:flex; flex-wrap:wrap; gap:16px; margin:20px 0; }
+  .tb-carte { background:#2b2b2b; border:1px solid #444; border-radius:8px;
+              padding:18px 22px; min-width:200px; flex:1; }
+  .tb-carte h2 { margin:0 0 6px; font-size:13px; color:#9bb; text-transform:uppercase; }
+  .tb-chiffre { font-size:34px; font-weight:700; color:#fff; }
+  .tb-detail { margin-top:8px; font-size:13px; color:#bbb; line-height:1.6; }
+  .tb-section { margin-top:28px; font-size:15px; color:#8ab; }
+</style>
+
+
+<div class="tb-section">En temps réel</div>
+<div class="tb-grille">
+  <div class="tb-carte">
+    <h2>En ligne maintenant</h2>
+    <div class="tb-chiffre">{{ en_ligne.total }}</div>
+    <div class="tb-detail">
+      Clients : {{ en_ligne.par_role.client|default:0 }}<br>
+      Partenaires : {{ en_ligne.par_role.partenaire|default:0 }}<br>
+      Admins : {{ en_ligne.par_role.admin|default:0 }}<br>
+      Livreurs : {{ en_ligne.par_role.livreur|default:0 }}
+    </div>
+  </div>
+</div>
+
+<div class="tb-section">Comptes créés (total)</div>
+<div class="tb-grille">
+  <div class="tb-carte">
+    <h2>Total</h2><div class="tb-chiffre">{{ comptes.total }}</div>
+  </div>
+  <div class="tb-carte">
+    <h2>Clients</h2><div class="tb-chiffre">{{ comptes.par_role.client|default:0 }}</div>
+  </div>
+  <div class="tb-carte">
+    <h2>Partenaires</h2><div class="tb-chiffre">{{ comptes.par_role.partenaire|default:0 }}</div>
+  </div>
+  <div class="tb-carte">
+    <h2>Admins</h2><div class="tb-chiffre">{{ comptes.par_role.admin|default:0 }}</div>
+  </div>
+  <div class="tb-carte">
+    <h2>Livreurs</h2><div class="tb-chiffre">{{ comptes.par_role.livreur|default:0 }}</div>
+  </div>
+</div>
+
+<div class="tb-section">Connexions distinctes</div>
+<div class="tb-grille">
+  <div class="tb-carte">
+    <h2>Aujourd'hui</h2>
+    <div class="tb-chiffre">{{ connexions.aujourdhui.total }}</div>
+    <div class="tb-detail">
+      Clients : {{ connexions.aujourdhui.par_role.client|default:0 }} ·
+      Partenaires : {{ connexions.aujourdhui.par_role.partenaire|default:0 }}
+    </div>
+  </div>
+  <div class="tb-carte">
+    <h2>7 derniers jours</h2>
+    <div class="tb-chiffre">{{ connexions.sept_jours.total }}</div>
+    <div class="tb-detail">
+      Clients : {{ connexions.sept_jours.par_role.client|default:0 }} ·
+      Partenaires : {{ connexions.sept_jours.par_role.partenaire|default:0 }}
+    </div>
+  </div>
+  <div class="tb-carte">
+    <h2>30 derniers jours</h2>
+    <div class="tb-chiffre">{{ connexions.trente_jours.total }}</div>
+    <div class="tb-detail">
+      Clients : {{ connexions.trente_jours.par_role.client|default:0 }} ·
+      Partenaires : {{ connexions.trente_jours.par_role.partenaire|default:0 }}
+    </div>
+  </div>
+</div>
+{% endblock %}

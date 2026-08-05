@@ -1,0 +1,24 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>{{ titre }}</h1>
+<p>Vous êtes sur le point d'appliquer l'action <strong>« {{ verbe }} »</strong>
+   aux comptes suivants :</p>
+<ul>
+  {% for compte in comptes %}
+    <li><strong>{{ compte.telephone }}</strong>
+        — {{ compte.get_full_name|default:compte.username }}
+        ({{ compte.get_role_display }})</li>
+  {% endfor %}
+</ul>
+<p style="color:#b00;">Cette action est tracée dans le journal de modération.</p>
+<form method="post">
+  {% csrf_token %}
+  {% for pk in selection %}
+    <input type="hidden" name="_selected_action" value="{{ pk }}">
+  {% endfor %}
+  <input type="hidden" name="action" value="{{ action_name }}">
+  <input type="hidden" name="confirmation" value="oui">
+  <button type="submit" class="default">Confirmer</button>
+  <a href="../" class="button cancel-link">Annuler</a>
+</form>
+{% endblock %}

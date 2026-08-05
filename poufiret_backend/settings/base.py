@@ -43,6 +43,7 @@ LOCAL_APPS = [
     'apps.core',                    # couche commune (modele abstrait, exceptions)
     # On ajoutera ici nos apps : users, catalog, social, orders, etc.
     'apps.users',
+    'apps.comptes',
     'apps.catalog',
     'apps.social',
     'apps.orders',
@@ -82,7 +83,7 @@ ROOT_URLCONF = 'poufiret_backend.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

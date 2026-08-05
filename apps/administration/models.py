@@ -23,6 +23,8 @@ class JournalModeration(ModeleBase):
         RESTAURER = 'restaurer', 'Restauration (annule suppression douce)'
         ACCORDER_FAVEUR = 'accorder_faveur', 'Octroi d\'une faveur'
         RETIRER_FAVEUR = 'retirer_faveur', 'Retrait d\'une faveur'
+        ACCEPTER_PARTENAIRE = 'accepter_partenaire', 'Demande partenaire acceptée'
+        REJETER_PARTENAIRE = 'rejeter_partenaire', 'Demande partenaire rejetée'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.

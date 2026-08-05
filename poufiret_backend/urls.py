@@ -4,10 +4,12 @@ Toutes les routes API sont préfixées /api/v1/ (versioning).
 """
 from django.contrib import admin
 from django.urls import path, include
+from apps.administration.dashboard_admin import vue_tableau_de_bord
 from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
+    path('admin/tableau-de-bord/', vue_tableau_de_bord, name='tableau-de-bord'),
     path('admin/', admin.site.urls),
     path('api/v1/auth/', include('apps.users.urls')),
     path('api/v1/catalogue/', include('apps.catalog.urls')),

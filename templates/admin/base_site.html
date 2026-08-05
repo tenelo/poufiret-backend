@@ -1,0 +1,16 @@
+{% extends "admin/base.html" %}
+{% load i18n %}
+
+{% block branding %}
+<h1 id="site-name">
+  <a href="{% url 'admin:index' %}">{{ site_header|default:_('Administration') }}</a>
+</h1>
+{% if user.is_superuser or user.permissions_admin.voir_stats %}
+  <a href="{% url 'tableau-de-bord' %}"
+     style="display:inline-block; margin-left:20px; background:#4a90d9;
+            color:#fff; padding:6px 16px; border-radius:5px; font-weight:600;
+            text-decoration:none; font-size:14px;">
+    📊 Tableau de bord
+  </a>
+{% endif %}
+{% endblock %}

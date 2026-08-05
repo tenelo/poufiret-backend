@@ -14,7 +14,7 @@ from django.contrib.auth import get_user_model
 
 from apps.core.permissions import EstAdmin, EstSuperAdmin
 from apps.core.exports import reponse_csv
-from . import services, moderation, faveurs
+from . import services, moderation, faveurs, partenaires
 from apps.users.models import ProfilPartenaire, PlanAbonnement
 from apps.users.serializers import MonProfilPartenaireSerializer
 from apps.publicites.models import Publicite
@@ -235,3 +235,49 @@ class FaveurPubliciteView(APIView):
         motif = request.data.get('motif', '')
         pub = faveurs.retirer_campagne_offerte(request.user, pub, motif)
         return Response(_faveur_pub_reponse(pub), status=status.HTTP_200_OK)
+
+
+class DemandesPartenariatView(APIView):
+    """Demandes de partenariat en attente (liste + nombre) et décision.
+
+    GET  -> {"total": N, "demandes": [...]}
+    POST -> {"partenaire_id": <pk>, "decision": "accepter"|"rejeter",
+             "motif": "..."}
+    """
+    permission_classes = [IsAuthenticated, EstSuperAdmin]
+
+    def get(self, request):
+        qs = ProfilPartenaire.objects.select_related(
+            'user', 'departement', 'plan').filter(
+            statut=ProfilPartenaire.Statut.EN_ATTENTE).order_by('cree_le')
+        demandes = [{
+            'id': p.id,
+            'nom_commerce': p.nom_commerce,
+            'telephone': p.user.telephone,
+            'nom_complet': p.user.get_full_name(),
+            'departement': getattr(p.departement, 'nom', None),
+            'type_partenaire': p.type_partenaire,
+            'cree_le': p.cree_le,
+        } for p in qs]
+        return Response({'total': len(demandes), 'demandes': demandes})
+
+    def post(self, request):
+        pk = request.data.get('partenaire_id')
+        decision = request.data.get('decision')
+        motif = request.data.get('motif', '')
+        profil = ProfilPartenaire.objects.select_related('user').filter(
+            pk=pk, statut=ProfilPartenaire.Statut.EN_ATTENTE).first()
+        if profil is None:
+            return Response(
+                {'detail': 'Demande introuvable ou déjà traitée.'},
+                status=status.HTTP_404_NOT_FOUND)
+        if decision == 'accepter':
+            partenaires.accepter_partenaire(request.user, profil, motif)
+        elif decision == 'rejeter':
+            partenaires.rejeter_partenaire(request.user, profil, motif)
+        else:
+            return Response(
+                {'detail': "decision doit valoir 'accepter' ou 'rejeter'."},
+                status=status.HTTP_400_BAD_REQUEST)
+        return Response({'statut': profil.statut, 'id': profil.id},
+                        status=status.HTTP_200_OK)
