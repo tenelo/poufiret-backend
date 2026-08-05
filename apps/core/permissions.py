@@ -75,3 +75,36 @@ class EstSuperAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
         u = request.user
         return bool(u and u.is_authenticated and u.is_superuser)
+
+
+def ADroitDe(*capacites):
+    """Fabrique de permission basée sur la grille PermissionsAdmin.
+
+    Autorise si l'utilisateur est super-admin (accès total), OU s'il est
+    admin (is_staff) ET possède TOUTES les capacités demandées cochées
+    dans son PermissionsAdmin.
+
+    Usage :
+        permission_classes = [IsAuthenticated, ADroitDe('valider_paiement')]
+        permission_classes = [IsAuthenticated, ADroitDe('voir_stats')]
+
+    Plusieurs capacités = toutes requises (ET logique).
+    """
+    class _ADroitDe(permissions.BasePermission):
+        message = "Vous n'avez pas la permission pour cette action."
+
+        def has_permission(self, request, view):
+            u = request.user
+            if not (u and u.is_authenticated):
+                return False
+            if u.is_superuser:
+                return True
+            if not u.is_staff:
+                return False
+            perms = getattr(u, 'permissions_admin', None)
+            if perms is None:
+                return False
+            return all(getattr(perms, cap, False) for cap in capacites)
+
+    _ADroitDe.__name__ = 'ADroitDe_' + '_'.join(capacites)
+    return _ADroitDe

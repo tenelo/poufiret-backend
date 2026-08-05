@@ -12,7 +12,7 @@ from rest_framework import status
 
 from django.contrib.auth import get_user_model
 
-from apps.core.permissions import EstAdmin, EstSuperAdmin
+from apps.core.permissions import EstAdmin, EstSuperAdmin, ADroitDe
 from apps.core.exports import reponse_csv
 from . import services, moderation, faveurs, partenaires
 from apps.users.models import ProfilPartenaire, PlanAbonnement
@@ -25,7 +25,7 @@ User = get_user_model()
 
 class DashboardG5View(APIView):
     """Vue d'ensemble G5 : stats de connexion + répartition appareils."""
-    permission_classes = [IsAuthenticated, EstSuperAdmin]
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats')]
 
     def get(self, request):
         from apps.analytics.stats_connexion import tableau_de_bord
@@ -37,7 +37,7 @@ class DashboardG5View(APIView):
 
 class AppareilsExportView(APIView):
     """Export CSV détaillé des appareils."""
-    permission_classes = [IsAuthenticated, EstSuperAdmin]
+    permission_classes = [IsAuthenticated, ADroitDe('exporter_csv')]
 
     def get(self, request):
         actives = request.query_params.get('actives', '1') != '0'
@@ -91,7 +91,7 @@ class ModerationView(APIView):
 
 class JournalModerationView(APIView):
     """Consultation du journal d'audit de modération (super-admin)."""
-    permission_classes = [IsAuthenticated, EstSuperAdmin]
+    permission_classes = [IsAuthenticated, ADroitDe('lire_journal')]
 
     def get(self, request):
         entrees = JournalModeration.objects.select_related(
@@ -111,7 +111,7 @@ class JournalModerationView(APIView):
 
 class JournalExportView(APIView):
     """Export CSV du journal de modération."""
-    permission_classes = [IsAuthenticated, EstSuperAdmin]
+    permission_classes = [IsAuthenticated, ADroitDe('lire_journal', 'exporter_csv')]
 
     def get(self, request):
         from django.utils import timezone
@@ -135,7 +135,7 @@ class IndicateursPartenairesView(APIView):
     Répartition par plan/type/département/statut, certifiés, faveurs,
     et abonnements expirant bientôt (tranches exclusives).
     """
-    permission_classes = [IsAuthenticated, EstSuperAdmin]
+    permission_classes = [IsAuthenticated, ADroitDe('voir_indicateurs')]
 
     def get(self, request):
         from . import indicateurs_partenaires as ip
@@ -144,7 +144,7 @@ class IndicateursPartenairesView(APIView):
 
 class PartenairesExportView(APIView):
     """Export CSV détaillé des partenaires (super-admin)."""
-    permission_classes = [IsAuthenticated, EstSuperAdmin]
+    permission_classes = [IsAuthenticated, ADroitDe('exporter_csv')]
 
     def get(self, request):
         from . import indicateurs_partenaires as ip
@@ -159,7 +159,7 @@ class FaveurView(APIView):
     POST   body: {"plan_code": "premium", "motif": "Partenariat"}
     DELETE body: {"motif": "Fin de partenariat"} (optionnel)
     """
-    permission_classes = [IsAuthenticated, EstAdmin]
+    permission_classes = [IsAuthenticated, ADroitDe('accorder_faveur')]
 
     def _profil(self, pk):
         return ProfilPartenaire.objects.select_related(
@@ -212,7 +212,7 @@ class FaveurPubliciteView(APIView):
     POST   body: {"motif": "Lancement"}  -> active la pub sans paiement
     DELETE body: {"motif": "..."}         -> termine la pub offerte
     """
-    permission_classes = [IsAuthenticated, EstAdmin]
+    permission_classes = [IsAuthenticated, ADroitDe('offrir_campagne')]
 
     def _pub(self, pk):
         return Publicite.objects.select_related(
@@ -244,7 +244,7 @@ class DemandesPartenariatView(APIView):
     POST -> {"partenaire_id": <pk>, "decision": "accepter"|"rejeter",
              "motif": "..."}
     """
-    permission_classes = [IsAuthenticated, EstSuperAdmin]
+    permission_classes = [IsAuthenticated, ADroitDe('valider_devenir_partenaire')]
 
     def get(self, request):
         qs = ProfilPartenaire.objects.select_related(
