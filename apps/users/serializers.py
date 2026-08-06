@@ -55,7 +55,8 @@ class InscriptionSerializer(serializers.ModelSerializer):
     Inscription d'un nouvel utilisateur (rôle client par défaut).
     Le passage partenaire se fait via un flux séparé.
     """
-    password = serializers.CharField(write_only=True, min_length=8)
+    # Le mot de passe EST un PIN a 4 chiffres (stocke hashe via set_password).
+    password = serializers.CharField(write_only=True, min_length=4, max_length=4)
 
     class Meta:
         model = User
@@ -67,9 +68,13 @@ class InscriptionSerializer(serializers.ModelSerializer):
         }
 
     def validate_password(self, value):
-        from django.contrib.auth.password_validation import validate_password
-        validate_password(value)
-        return value
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from rest_framework import serializers as drf_serializers
+        from apps.core.validateurs import valider_pin
+        try:
+            return valider_pin(value)
+        except DjangoValidationError as e:
+            raise drf_serializers.ValidationError(e.messages)
 
     def create(self, validated_data):
         password = validated_data.pop('password')
