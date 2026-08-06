@@ -3,7 +3,8 @@
 - Tableau de bord (réexpose les stats de connexion) + répartition appareils.
 - Exports CSV (sessions, appareils).
 - Actions de modération : suspendre / réactiver / bannir / supprimer.
-Tout est protégé par EstSuperAdmin (is_superuser).
+Protégé par la grille de permissions granulaire (ADroitDe), sauf la
+modération de comptes qui reste réservée au super-admin (EstSuperAdmin).
 """
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -90,7 +91,7 @@ class ModerationView(APIView):
 
 
 class JournalModerationView(APIView):
-    """Consultation du journal d'audit de modération (super-admin)."""
+    """Consultation du journal d'audit de modération (capacité lire_journal)."""
     permission_classes = [IsAuthenticated, ADroitDe('lire_journal')]
 
     def get(self, request):
@@ -130,7 +131,7 @@ class JournalExportView(APIView):
 
 
 class IndicateursPartenairesView(APIView):
-    """Tableau de bord des indicateurs partenaires (super-admin).
+    """Tableau de bord des indicateurs partenaires (capacité voir_indicateurs).
 
     Répartition par plan/type/département/statut, certifiés, faveurs,
     et abonnements expirant bientôt (tranches exclusives).
