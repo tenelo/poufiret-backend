@@ -6,7 +6,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.translation import gettext_lazy as _
 
 from .models import (User, PlanAbonnement, ProfilPartenaire, HoraireOuverture,
-                     AdresseClient, NumeroVerifie)
+                     AdresseClient, NumeroVerifie, CodeOTP)
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
@@ -218,3 +218,14 @@ class NumeroVerifieAdmin(admin.ModelAdmin):
     search_fields = ('telephone', 'nom', 'prenom')
     ordering = ('-cree_le',)
     readonly_fields = ('cree_le', 'modifie_le')
+
+
+@admin.register(CodeOTP)
+class CodeOTPAdmin(admin.ModelAdmin):
+    """Codes OTP (lecture pratique en dev faux-SMS)."""
+    list_display = ('telephone', 'code', 'but', 'est_utilise',
+                    'pin_consomme', 'tentatives', 'expire_le', 'cree_le')
+    list_filter = ('but', 'est_utilise', 'pin_consomme')
+    search_fields = ('telephone',)
+    ordering = ('-cree_le',)
+    readonly_fields = ('cree_le', 'modifie_le', 'valide_le')

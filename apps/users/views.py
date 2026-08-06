@@ -10,6 +10,7 @@ from .serializers import (
     ConnexionSerializer, UtilisateurSerializer, LogoutSerializer,
     InscriptionSerializer, SessionAppareilSerializer, DevenirPartenaireSerializer,
     VitrinePartenaireSerializer,
+    DemandeOTPSerializer, VerifierOTPSerializer, DefinirPINSerializer,
 )
 
 
@@ -190,3 +191,49 @@ class MaCategorieDetailView(generics.RetrieveUpdateAPIView):
         if profil is None:
             return PartenaireCategorie.objects.none()
         return PartenaireCategorie.objects.filter(partenaire=profil)
+
+
+class DemanderOTPView(APIView):
+    """POST /auth/otp/demander/ — demande un code OTP. Public.
+    Anti-facture : ne genere/envoie rien si le numero est deja verifie
+    (cas inscription). Renvoie deja_verifie pour que Flutter enchaine."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = DemandeOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        resultat = serializer.creer_et_envoyer()
+        return Response(resultat, status=status.HTTP_200_OK)
+
+
+class VerifierOTPView(APIView):
+    """POST /auth/otp/verifier/ — verifie le code. Public.
+    Sur succes, inscrit le numero dans NumeroVerifie et ouvre la fenetre
+    pour definir le PIN."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = VerifierOTPSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(
+            {'verifie': True,
+             'message': "Numéro vérifié. Vous pouvez définir votre code PIN."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class DefinirPINView(APIView):
+    """POST /auth/pin/definir/ — definit (inscription) ou reinitialise le PIN
+    apres OTP valide. Public. Renvoie les tokens pour connecter direct."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = DefinirPINSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'utilisateur': UtilisateurSerializer(user).data,
+        }, status=status.HTTP_200_OK)

@@ -683,3 +683,81 @@ class NumeroVerifie(ModeleBase):
 
     def __str__(self):
         return f'{self.telephone} ({self.get_source_display()})'
+
+
+class CodeOTP(ModeleBase):
+    """
+    Code OTP a usage unique pour verifier un numero de telephone.
+
+    Cree lors d'une demande (inscription ou reinit PIN), envoye via la couche
+    SMS abstraite (faux-SMS en dev). Sur validation reussie -> le numero entre
+    dans NumeroVerifie et ce code passe est_utilise=True.
+
+    Anti-facture : on ne genere un OTP que pour un numero INCONNU (absent de
+    NumeroVerifie), sauf pour le but REINIT_PIN (option A : re-OTP meme si connu).
+    Anti-brute-force : `tentatives` plafonne les essais, expiration a 10 min.
+    """
+    DUREE_VIE_MINUTES = 10
+    MAX_TENTATIVES = 5
+    FENETRE_PREUVE_MINUTES = 15  # delai max entre OTP validé et definition du PIN
+
+    class But(models.TextChoices):
+        INSCRIPTION = 'inscription', _('Inscription')
+        REINIT_PIN = 'reinit_pin', _('Réinitialisation du PIN')
+
+    telephone = models.CharField(_('téléphone'), max_length=20, db_index=True)
+    code = models.CharField(_('code'), max_length=4)
+    but = models.CharField(
+        _('but'), max_length=20,
+        choices=But.choices, default=But.INSCRIPTION,
+    )
+    expire_le = models.DateTimeField(_('expire le'))
+    tentatives = models.PositiveSmallIntegerField(_('tentatives'), default=0)
+    est_utilise = models.BooleanField(_('déjà utilisé'), default=False)
+    # Preuve (option B) : instant de validation reussie de l'OTP, et verrou
+    # pour qu'une meme validation ne serve qu'UNE fois a definir/reinit le PIN.
+    valide_le = models.DateTimeField(_('validé le'), null=True, blank=True)
+    pin_consomme = models.BooleanField(
+        _('validation consommée pour le PIN'), default=False,
+    )
+
+    class Meta:
+        verbose_name = _('code OTP')
+        verbose_name_plural = _('codes OTP')
+        ordering = ['-cree_le']
+        indexes = [
+            models.Index(fields=['telephone', 'est_utilise']),
+        ]
+
+    def __str__(self):
+        return f'{self.telephone} — {self.code} ({self.get_but_display()})'
+
+    def est_valide(self):
+        """Non expire, non utilise, tentatives sous le plafond."""
+        from django.utils import timezone
+        return (
+            not self.est_utilise
+            and self.tentatives < self.MAX_TENTATIVES
+            and timezone.now() < self.expire_le
+        )
+
+    @classmethod
+    def generer(cls, telephone, but=But.INSCRIPTION):
+        """
+        Cree un nouvel OTP pour ce numero : invalide les anciens codes actifs
+        du meme numero+but, tire un code a 4 chiffres, pose l'expiration.
+        Retourne l'instance creee.
+        """
+        import random
+        from django.utils import timezone
+        # Invalide les codes precedents encore actifs (un seul OTP vivant a la fois)
+        cls.objects.filter(
+            telephone=telephone, but=but, est_utilise=False,
+        ).update(est_utilise=True)
+        code = f'{random.randint(0, 9999):04d}'
+        return cls.objects.create(
+            telephone=telephone,
+            code=code,
+            but=but,
+            expire_le=timezone.now() + timezone.timedelta(minutes=cls.DUREE_VIE_MINUTES),
+        )

@@ -4,7 +4,7 @@ Serializers de l'app users : authentification et profil.
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, SessionAppareil, ProfilPartenaire
+from .models import User, SessionAppareil, ProfilPartenaire, NumeroVerifie, CodeOTP
 
 
 class UtilisateurSerializer(serializers.ModelSerializer):
@@ -249,3 +249,172 @@ class MaCategorieSerializer(serializers.ModelSerializer):
         fields = ['id', 'categorie', 'categorie_nom', 'categorie_slug',
                   'categorie_icone', 'est_principale', 'image_couverture']
         read_only_fields = ['id', 'categorie', 'est_principale']
+
+
+class DemandeOTPSerializer(serializers.Serializer):
+    """
+    Demande d'un code OTP. Logique anti-facture :
+    - but=inscription : si le numero est DEJA verifie -> aucun SMS,
+      on signale deja_verifie=True (Flutter enchaine sur le choix du PIN).
+    - but=reinit_pin  : OTP meme si numero connu (option A), mais SEULEMENT
+      si un compte existe pour ce numero.
+    """
+    telephone = serializers.CharField(max_length=20)
+    but = serializers.ChoiceField(
+        choices=CodeOTP.But.choices, default=CodeOTP.But.INSCRIPTION,
+    )
+
+    def validate_telephone(self, v):
+        v = v.strip()
+        if not v.startswith('+'):
+            raise serializers.ValidationError(
+                "Numéro au format international attendu (+225...).")
+        return v
+
+    def creer_et_envoyer(self):
+        from apps.core.sms import envoyer_sms
+        tel = self.validated_data['telephone']
+        but = self.validated_data['but']
+        deja_verifie = NumeroVerifie.objects.filter(telephone=tel).exists()
+        compte_existe = User.objects.filter(telephone=tel).exists()
+
+        if but == CodeOTP.But.INSCRIPTION:
+            if deja_verifie:
+                # Numero connu -> pas de SMS. Flutter passe direct au PIN.
+                return {'deja_verifie': True, 'compte_existe': compte_existe,
+                        'otp_envoye': False}
+            # Numero inconnu -> on genere et on envoie.
+        else:  # REINIT_PIN
+            if not compte_existe:
+                raise serializers.ValidationError(
+                    {'telephone': "Aucun compte n'existe pour ce numéro."})
+            # Option A : on (re)envoie un OTP meme si connu.
+
+        code = CodeOTP.generer(tel, but=but)
+        envoyer_sms(tel, f"Poufiret : votre code de vérification est {code.code}")
+        return {'deja_verifie': False, 'compte_existe': compte_existe,
+                'otp_envoye': True}
+
+
+class VerifierOTPSerializer(serializers.Serializer):
+    """
+    Verifie un code OTP. Incremente les tentatives, et sur succes :
+    pose valide_le, inscrit le numero dans NumeroVerifie (source otp).
+    """
+    telephone = serializers.CharField(max_length=20)
+    code = serializers.CharField(max_length=4)
+    but = serializers.ChoiceField(
+        choices=CodeOTP.But.choices, default=CodeOTP.But.INSCRIPTION,
+    )
+
+    def validate(self, attrs):
+        from django.utils import timezone
+        tel = attrs['telephone'].strip()
+        but = attrs['but']
+        otp = CodeOTP.objects.filter(
+            telephone=tel, but=but, est_utilise=False,
+        ).order_by('-cree_le').first()
+
+        if otp is None:
+            raise serializers.ValidationError(
+                {'code': "Aucun code actif. Demandez un nouveau code."})
+        if not otp.est_valide():
+            raise serializers.ValidationError(
+                {'code': "Code expiré ou trop de tentatives. Demandez un nouveau code."})
+
+        otp.tentatives += 1
+        if otp.code != attrs['code'].strip():
+            otp.save(update_fields=['tentatives', 'modifie_le'])
+            restant = max(0, otp.MAX_TENTATIVES - otp.tentatives)
+            raise serializers.ValidationError(
+                {'code': f"Code incorrect. Essais restants : {restant}."})
+
+        # Succes : on marque valide, on garde est_utilise=False pour l'etape PIN.
+        otp.valide_le = timezone.now()
+        otp.save(update_fields=['tentatives', 'valide_le', 'modifie_le'])
+
+        # Le numero est desormais prouve -> registre anti-double-OTP.
+        NumeroVerifie.objects.get_or_create(
+            telephone=tel,
+            defaults={'source': NumeroVerifie.Source.OTP},
+        )
+        self._otp = otp
+        return attrs
+
+
+class DefinirPINSerializer(serializers.Serializer):
+    """
+    Definit (inscription) ou reinitialise (reinit_pin) le PIN, apres preuve
+    d'un OTP valide recemment (option B : CodeOTP.valide_le recent, non consomme).
+    """
+    telephone = serializers.CharField(max_length=20)
+    password = serializers.CharField(min_length=4, max_length=4, write_only=True)
+    but = serializers.ChoiceField(
+        choices=CodeOTP.But.choices, default=CodeOTP.But.INSCRIPTION,
+    )
+    # Champs profil facultatifs pour l'inscription
+    username = serializers.CharField(required=False, allow_blank=True)
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_password(self, value):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.core.validateurs import valider_pin
+        try:
+            return valider_pin(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(e.messages)
+
+    def validate(self, attrs):
+        from django.utils import timezone
+        from datetime import timedelta
+        tel = attrs['telephone'].strip()
+        but = attrs['but']
+        limite = timezone.now() - timedelta(minutes=CodeOTP.FENETRE_PREUVE_MINUTES)
+        otp = CodeOTP.objects.filter(
+            telephone=tel, but=but, valide_le__isnull=False,
+            valide_le__gte=limite, pin_consomme=False,
+        ).order_by('-valide_le').first()
+        if otp is None:
+            raise serializers.ValidationError(
+                "Vérification OTP requise ou expirée. Recommencez la vérification.")
+        self._otp = otp
+        return attrs
+
+    def save(self, **kwargs):
+        tel = self.validated_data['telephone'].strip()
+        but = self.validated_data['but']
+        pin = self.validated_data['password']
+
+        if but == CodeOTP.But.INSCRIPTION:
+            if User.objects.filter(telephone=tel).exists():
+                raise serializers.ValidationError(
+                    {'telephone': "Un compte existe déjà pour ce numéro."})
+            user = User(
+                telephone=tel,
+                username=self.validated_data.get('username') or tel,
+                first_name=self.validated_data.get('first_name', ''),
+                last_name=self.validated_data.get('last_name', ''),
+                role=User.Role.CLIENT,
+                est_verifie=True,
+                pin_par_defaut=False,
+            )
+            user.set_password(pin)
+            user.save()
+        else:  # REINIT_PIN
+            try:
+                user = User.objects.get(telephone=tel)
+            except User.DoesNotExist:
+                raise serializers.ValidationError(
+                    {'telephone': "Aucun compte pour ce numéro."})
+            user.set_password(pin)
+            user.pin_par_defaut = False
+            user.est_verifie = True
+            user.save(update_fields=['password', 'pin_par_defaut', 'est_verifie'])
+
+        # Consomme la preuve : cet OTP ne peut plus reservir.
+        self._otp.est_utilise = True
+        self._otp.pin_consomme = True
+        self._otp.save(update_fields=['est_utilise', 'pin_consomme', 'modifie_le'])
+        self.user = user
+        return user
