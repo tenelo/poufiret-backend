@@ -6,7 +6,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.translation import gettext_lazy as _
 
 from .models import (User, PlanAbonnement, ProfilPartenaire, HoraireOuverture,
-                     AdresseClient)
+                     AdresseClient, NumeroVerifie)
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
@@ -205,3 +205,16 @@ class AdresseClientAdmin(admin.ModelAdmin):
     list_editable = ('est_principale', 'est_active')
     ordering = ('-updated_at',)
     readonly_fields = ('created_at', 'updated_at')
+
+
+@admin.register(NumeroVerifie)
+class NumeroVerifieAdmin(admin.ModelAdmin):
+    """
+    Registre des numeros deja verifies (anti-double-OTP).
+    Un admin peut pre-saisir un numero ici : il ne recevra plus d'OTP.
+    """
+    list_display = ('telephone', 'prenom', 'nom', 'source', 'cree_le')
+    list_filter = ('source',)
+    search_fields = ('telephone', 'nom', 'prenom')
+    ordering = ('-cree_le',)
+    readonly_fields = ('cree_le', 'modifie_le')

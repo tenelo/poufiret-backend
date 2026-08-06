@@ -63,6 +63,14 @@ class User(AbstractUser):
         default=False,
         help_text=_('Le téléphone a été vérifié via un code OTP par SMS.'),
     )
+    # PIN par defaut (0000 / code lu par l'admin) non encore change par l'utilisateur.
+    # Tant que True, l'app force l'ecran bloquant "choisis ton PIN" a la 1re connexion.
+    pin_par_defaut = models.BooleanField(
+        _('PIN par défaut à changer'),
+        default=False,
+        help_text=_('True si le PIN est encore celui fourni à la création '
+                    '(compte créé par un admin) et doit être changé à la 1re connexion.'),
+    )
 
     # Pour les notifications push (Firebase Cloud Messaging)
     # ── Modération (G5 super-admin) ──────────────────────────────────
@@ -634,3 +642,44 @@ class SessionAppareil(ModeleBase):
 
     def __str__(self):
         return f"{self.user.telephone} — {self.appareil_nom or self.plateforme}"
+
+
+class NumeroVerifie(ModeleBase):
+    """
+    Registre des numeros ayant DEJA prouve leur existence (OTP valide une fois,
+    ou saisi par un admin qui verifie de visu). Sert a NE PLUS renvoyer d'OTP
+    a un numero connu -> reduit fortement la facture SMS.
+
+    Regle : on ecrit ici uniquement sur validation reussie (OTP confirme) ou
+    sur creation par un admin/demarcheur. Jamais sur simple envoi.
+    `cree_le` (herite de ModeleBase) fait office de date de verification.
+    """
+    class Source(models.TextChoices):
+        OTP = 'otp', _('OTP validé par SMS')
+        ADMIN = 'admin', _('Créé par un admin')
+        DEMARCHEUR = 'demarcheur', _('Pré-saisi par un démarcheur')
+        MIGRATION = 'migration', _('Compte préexistant migré')
+
+    telephone = models.CharField(
+        _('téléphone'),
+        max_length=20,
+        unique=True,
+        db_index=True,
+        help_text=_('Numéro déjà vérifié, au format international (+225...).'),
+    )
+    nom = models.CharField(_('nom'), max_length=100, blank=True)
+    prenom = models.CharField(_('prénom'), max_length=100, blank=True)
+    source = models.CharField(
+        _('source de la vérification'),
+        max_length=15,
+        choices=Source.choices,
+        default=Source.OTP,
+    )
+
+    class Meta:
+        verbose_name = _('numéro vérifié')
+        verbose_name_plural = _('numéros vérifiés')
+        ordering = ['-cree_le']
+
+    def __str__(self):
+        return f'{self.telephone} ({self.get_source_display()})'
