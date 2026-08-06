@@ -18,11 +18,11 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'id', 'telephone', 'username', 'first_name', 'last_name',
-            'role', 'est_verifie', 'langue_preferee', 'token_fcm',
+            'role', 'est_verifie', 'pin_par_defaut', 'langue_preferee', 'token_fcm',
             'departement', 'departement_nom', 'region_nom',
             'tranche_age', 'sexe',
         ]
-        read_only_fields = ['id', 'telephone', 'role', 'est_verifie',
+        read_only_fields = ['id', 'telephone', 'role', 'est_verifie', 'pin_par_defaut',
                             'departement_nom', 'region_nom']
 
 
