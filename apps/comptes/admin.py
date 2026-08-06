@@ -122,6 +122,14 @@ class ClientAdmin(_BaseRoleAdmin):
 @admin.register(Partenaire)
 class PartenaireAdmin(_BaseRoleAdmin):
     role_cible = 'partenaire'
+
+    def add_view(self, request, form_url='', extra_context=None):
+        # La creation d'un partenaire passe par le formulaire complet
+        # (User + ProfilPartenaire actif + PIN + NumeroVerifie), pas par
+        # l'ajout User natif. On redirige.
+        from django.shortcuts import redirect
+        from django.urls import reverse
+        return redirect(reverse('admin:users_user_creer_partenaire'))
     actions = _BaseRoleAdmin.actions + ['action_accepter_demande',
                                         'action_rejeter_demande']
     list_display = ('telephone', 'enseigne', 'nom_complet', 'type_part',

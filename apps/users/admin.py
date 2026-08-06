@@ -47,6 +47,65 @@ class UserAdmin(DjangoUserAdmin):
         }),
     )
 
+    def get_urls(self):
+        from django.urls import path
+        perso = [
+            path('creer-partenaire/',
+                 self.admin_site.admin_view(self.vue_creer_partenaire),
+                 name='users_user_creer_partenaire'),
+        ]
+        return perso + super().get_urls()
+
+    def vue_creer_partenaire(self, request):
+        from django.shortcuts import render, redirect
+        from django.contrib import messages
+        from apps.users.serializers import CreerPartenaireParAdminSerializer
+        from apps.users.models import User, PlanAbonnement, ProfilPartenaire
+        from apps.geo.models import Departement
+
+        # Permission : super-admin, ou grille PermissionsAdmin.creer_partenaire
+        autorise = request.user.is_superuser
+        if not autorise:
+            perms = getattr(request.user, 'permissions_admin', None)
+            autorise = bool(perms and perms.creer_partenaire)
+        if not autorise:
+            messages.error(request, "Vous n'avez pas la permission de créer un partenaire.")
+            return redirect('admin:users_user_changelist')
+
+        contexte = {
+            **self.admin_site.each_context(request),
+            'title': 'Créer un partenaire',
+            'types_partenaire': ProfilPartenaire.TypePartenaire.choices,
+            'plans': PlanAbonnement.objects.all(),
+            'departements': Departement.objects.all().order_by('nom'),
+            'valeurs': {},
+        }
+
+        if request.method == 'POST':
+            data = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+            contexte['valeurs'] = data
+            serializer = CreerPartenaireParAdminSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                contexte['succes'] = serializer.data
+                contexte['valeurs'] = {}
+                # journalisation best-effort
+                try:
+                    from apps.administration.models import JournalModeration
+                    JournalModeration.objects.create(
+                        acteur=request.user, cible=serializer._user,
+                        cible_identifiant=serializer._user.telephone,
+                        cible_role=serializer._user.role,
+                        action=JournalModeration.Action.CREER_PARTENAIRE,
+                        motif=f"Création partenaire « {serializer._profil.nom_commerce} » (admin Django)",
+                    )
+                except Exception:
+                    pass
+            else:
+                contexte['erreurs'] = serializer.errors
+
+        return render(request, 'admin/users/creer_partenaire.html', contexte)
+
     def get_inline_instances(self, request, obj=None):
         """Affiche les permissions granulaires uniquement pour un admin
         (is_staff, non super-admin). Inutile pour clients/partenaires et

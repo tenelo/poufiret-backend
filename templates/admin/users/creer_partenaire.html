@@ -1,0 +1,113 @@
+{% extends "admin/base_site.html" %}
+{% block content_title %}<h1>Créer un partenaire</h1>{% endblock %}
+{% block content %}
+<style>
+  .cp-form { max-width:640px; }
+  .cp-form .ligne { margin-bottom:14px; }
+  .cp-form label { display:block; font-size:13px; color:#9bb; margin-bottom:4px; }
+  .cp-form input, .cp-form select, .cp-form textarea {
+    width:100%; padding:8px 10px; background:#2b2b2b; border:1px solid #555;
+    border-radius:6px; color:#eee; box-sizing:border-box; }
+  .cp-form .aide { font-size:12px; color:#888; margin-top:3px; }
+  .cp-form .obligatoire { color:#e88; }
+  .cp-bouton { background:#8A4B34; color:#fff; border:0; padding:11px 22px;
+    border-radius:6px; font-size:14px; cursor:pointer; margin-top:8px; }
+  .cp-erreur { background:#442; border:1px solid #a66; color:#fca;
+    padding:12px 16px; border-radius:6px; margin-bottom:18px; }
+  .cp-succes { background:#243; border:1px solid #6a8; color:#cfd;
+    padding:20px 24px; border-radius:8px; margin-bottom:20px; }
+  .cp-pin { font-size:40px; font-weight:700; letter-spacing:6px; color:#fff;
+    margin:10px 0; }
+  .cp-sep { margin:26px 0; border:0; border-top:1px solid #444; }
+</style>
+
+{% if succes %}
+<div class="cp-succes">
+  <div>✅ Partenaire <strong>{{ succes.nom_commerce }}</strong> créé ({{ succes.telephone }}).</div>
+  <div style="margin-top:12px; font-size:13px; color:#9c9;">Code PIN à communiquer au partenaire :</div>
+  <div class="cp-pin">{{ succes.pin_par_defaut }}</div>
+  <div style="font-size:13px; color:#9c9;">Il devra le changer à sa première connexion.</div>
+</div>
+<a href="" class="cp-bouton" style="display:inline-block; text-decoration:none;">Créer un autre partenaire</a>
+<hr class="cp-sep">
+{% endif %}
+
+{% if erreurs %}
+<div class="cp-erreur">
+  <strong>Erreur(s) :</strong>
+  <ul style="margin:8px 0 0;">
+    {% for champ, messages in erreurs.items %}
+      {% for m in messages %}<li>{{ champ }} : {{ m }}</li>{% endfor %}
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" class="cp-form">
+  {% csrf_token %}
+  <div class="ligne">
+    <label>Téléphone <span class="obligatoire">*</span></label>
+    <input name="telephone" value="{{ valeurs.telephone|default:'+225' }}" required>
+    <div class="aide">Format international, ex. +2250700000000</div>
+  </div>
+  <div class="ligne">
+    <label>Prénom</label>
+    <input name="prenom" value="{{ valeurs.prenom|default:'' }}">
+  </div>
+  <div class="ligne">
+    <label>Nom</label>
+    <input name="nom" value="{{ valeurs.nom|default:'' }}">
+  </div>
+  <div class="ligne">
+    <label>Type de partenaire <span class="obligatoire">*</span></label>
+    <select name="type_partenaire" required>
+      {% for val, lib in types_partenaire %}
+        <option value="{{ val }}" {% if valeurs.type_partenaire == val %}selected{% endif %}>{{ lib }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="ligne">
+    <label>Nom du commerce <span class="obligatoire">*</span></label>
+    <input name="nom_commerce" value="{{ valeurs.nom_commerce|default:'' }}" required>
+  </div>
+  <div class="ligne">
+    <label>Plan</label>
+    <select name="plan_id">
+      <option value="">Basique (par défaut)</option>
+      {% for plan in plans %}
+        <option value="{{ plan.id }}" {% if valeurs.plan_id == plan.id|stringformat:'s' %}selected{% endif %}>{{ plan.libelle }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="ligne">
+    <label>Ville</label>
+    <input name="ville" value="{{ valeurs.ville|default:'' }}">
+  </div>
+  <div class="ligne">
+    <label>Quartier</label>
+    <input name="quartier" value="{{ valeurs.quartier|default:'' }}">
+  </div>
+  <div class="ligne">
+    <label>Département</label>
+    <select name="departement">
+      <option value="">—</option>
+      {% for dep in departements %}
+        <option value="{{ dep.id }}" {% if valeurs.departement == dep.id|stringformat:'s' %}selected{% endif %}>{{ dep.nom }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="ligne">
+    <label>Téléphone pro</label>
+    <input name="telephone_pro" value="{{ valeurs.telephone_pro|default:'' }}">
+  </div>
+  <div class="ligne">
+    <label>WhatsApp</label>
+    <input name="whatsapp" value="{{ valeurs.whatsapp|default:'' }}">
+  </div>
+  <div class="ligne">
+    <label>Description</label>
+    <textarea name="description" rows="3">{{ valeurs.description|default:'' }}</textarea>
+  </div>
+  <button type="submit" class="cp-bouton">Créer le partenaire</button>
+</form>
+{% endblock %}
