@@ -213,3 +213,12 @@ CHANNEL_LAYERS = {
 # Firebase Cloud Messaging (notifications push) — inerte tant que non configuré
 # ------------------------------------------------------------------------------
 FIREBASE_CREDENTIALS = config('FIREBASE_CREDENTIALS', default='')
+
+# ------------------------------------------------------------------------------
+# SMS / OTP — couche d'envoi abstraite (apps/core/sms.py)
+# ------------------------------------------------------------------------------
+# 'faux' = mode dev, aucun SMS reel envoye (logue seulement) -> zero facture.
+# Bascule prod : passer a 'orange' / 'twilio' / 'mtn' via la variable
+# d'environnement SMS_BACKEND, sans toucher au code metier.
+SMS_BACKEND = config('SMS_BACKEND', default='faux')
+
