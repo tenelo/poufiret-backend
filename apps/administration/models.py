@@ -25,6 +25,7 @@ class JournalModeration(ModeleBase):
         RETIRER_FAVEUR = 'retirer_faveur', 'Retrait d\'une faveur'
         ACCEPTER_PARTENAIRE = 'accepter_partenaire', 'Demande partenaire acceptée'
         REJETER_PARTENAIRE = 'rejeter_partenaire', 'Demande partenaire rejetée'
+        CREER_PARTENAIRE = 'creer_partenaire', 'Création d\'un partenaire (démarcheur)'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.
@@ -111,6 +112,7 @@ class PermissionsAdmin(ModeleBase):
     certifier_partenaire = models.BooleanField('donner / retirer le badge certifié', default=False)
     accorder_faveur = models.BooleanField('accorder / retirer une faveur', default=False)
     valider_devenir_partenaire = models.BooleanField('valider une demande « devenir partenaire »', default=False)
+    creer_partenaire = models.BooleanField('créer un partenaire de A à Z (démarcheur)', default=False)
 
     # ── C. Publicités ────────────────────────────────────────────────
     valider_publicite = models.BooleanField('valider / rejeter une publicité', default=False)

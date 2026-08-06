@@ -418,3 +418,138 @@ class DefinirPINSerializer(serializers.Serializer):
         self._otp.save(update_fields=['est_utilise', 'pin_consomme', 'modifie_le'])
         self.user = user
         return user
+
+
+class CreerPartenaireParAdminSerializer(serializers.Serializer):
+    """
+    Creation COMPLETE d'un partenaire par un admin/demarcheur :
+    User + ProfilPartenaire ACTIF et visible immediatement.
+
+    - Le numero n'a pas d'OTP : on considere la verification faite de visu.
+      -> inscrit dans NumeroVerifie (source admin), est_verifie=True.
+    - PIN par defaut ALEATOIRE 4 chiffres + pin_par_defaut=True
+      -> le partenaire le change a sa 1re connexion (ecran bloquant Flutter).
+    - Le PIN en clair est renvoye UNE fois dans la reponse, l'admin le lit
+      au partenaire.
+    """
+    # Identite (User)
+    telephone = serializers.CharField(max_length=20)
+    prenom = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    nom = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    # Profil partenaire
+    type_partenaire = serializers.CharField()
+    nom_commerce = serializers.CharField(max_length=255)
+    description = serializers.CharField(required=False, allow_blank=True)
+    adresse = serializers.CharField(required=False, allow_blank=True)
+    quartier = serializers.CharField(required=False, allow_blank=True)
+    secteur = serializers.CharField(required=False, allow_blank=True)
+    ville = serializers.CharField(required=False, allow_blank=True)
+    departement = serializers.PrimaryKeyRelatedField(
+        queryset=__import__('apps.geo.models', fromlist=['Departement']).Departement.objects.all(),
+        required=False, allow_null=True,
+    )
+    telephone_pro = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    whatsapp = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    email_pro = serializers.EmailField(required=False, allow_blank=True)
+    plan_id = serializers.IntegerField(
+        required=False,
+        help_text="Plan a assigner. Si absent, Basique par defaut.",
+    )
+    categories = serializers.ListField(
+        child=serializers.IntegerField(), required=False, write_only=True,
+    )
+
+    def validate_telephone(self, v):
+        v = v.strip()
+        if not v.startswith('+'):
+            raise serializers.ValidationError(
+                "Numéro au format international attendu (+225...).")
+        if User.objects.filter(telephone=v).exists():
+            raise serializers.ValidationError(
+                "Un compte existe déjà pour ce numéro.")
+        return v
+
+    def validate_categories(self, ids):
+        from apps.catalog.models import Categorie
+        if not ids:
+            return ids
+        existantes = set(Categorie.objects.filter(
+            id__in=ids, est_active=True).values_list('id', flat=True))
+        inconnues = [i for i in ids if i not in existantes]
+        if inconnues:
+            raise serializers.ValidationError(
+                f'Categories inconnues ou inactives : {inconnues}')
+        return ids
+
+    def create(self, validated_data):
+        import random
+        from django.db import transaction
+        from .models import PlanAbonnement, ProfilPartenaire
+
+        categories = validated_data.pop('categories', [])
+        plan_id = validated_data.pop('plan_id', None)
+        tel = validated_data.pop('telephone')
+        prenom = validated_data.pop('prenom', '')
+        nom = validated_data.pop('nom', '')
+
+        # PIN par defaut aleatoire non trivial
+        pin = f'{random.randint(0, 9999):04d}'
+        while pin in {'0000', '1111', '1234'}:
+            pin = f'{random.randint(0, 9999):04d}'
+
+        # Plan : celui demande, sinon Basique
+        if plan_id:
+            try:
+                plan = PlanAbonnement.objects.get(pk=plan_id)
+            except PlanAbonnement.DoesNotExist:
+                raise serializers.ValidationError(
+                    {'plan_id': "Plan introuvable."})
+        else:
+            plan, _ = PlanAbonnement.objects.get_or_create(
+                code='basique', duree_jours=-1,
+                defaults={'libelle': 'Basique', 'prix': 0,
+                          'nb_articles_max': 10, 'nb_photos_par_article': 1})
+
+        with transaction.atomic():
+            user = User(
+                telephone=tel,
+                username=tel,
+                first_name=prenom,
+                last_name=nom,
+                role=User.Role.PARTENAIRE,
+                est_verifie=True,
+                pin_par_defaut=True,
+            )
+            user.set_password(pin)
+            user.save()
+
+            NumeroVerifie.objects.get_or_create(
+                telephone=tel,
+                defaults={'nom': nom, 'prenom': prenom,
+                          'source': NumeroVerifie.Source.ADMIN},
+            )
+
+            profil = ProfilPartenaire.objects.create(
+                user=user, plan=plan,
+                statut=ProfilPartenaire.Statut.ACTIF,
+                est_visible=True,
+                **validated_data,
+            )
+            DevenirPartenaireSerializer._rattacher_categories(profil, categories)
+
+        self._pin_clair = pin
+        self._user = user
+        self._profil = profil
+        return profil
+
+    def to_representation(self, instance):
+        return {
+            'partenaire_id': str(self._user.id),
+            'telephone': self._user.telephone,
+            'nom_commerce': self._profil.nom_commerce,
+            'statut': self._profil.statut,
+            'pin_par_defaut': self._pin_clair,
+            'message': (f"Partenaire créé. Communiquez ce code au partenaire : "
+                        f"{self._pin_clair}. Il devra le changer à sa première "
+                        f"connexion."),
+        }

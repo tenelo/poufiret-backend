@@ -6,6 +6,7 @@ from .views import (
     MesAppareilsView, RevoquerAppareilView, DevenirPartenaireView, MonProfilPartenaireView, MesCategoriesView, MaCategorieDetailView,
     VitrinePartenaireView,
     DemanderOTPView, VerifierOTPView, DefinirPINView,
+    CreerPartenaireParAdminView,
 )
 
 urlpatterns = [
@@ -18,6 +19,7 @@ urlpatterns = [
     path('deconnexion/', DeconnexionView.as_view(), name='deconnexion'),
     path('moi/', MonProfilView.as_view(), name='moi'),
     path('devenir-partenaire/', DevenirPartenaireView.as_view(), name='devenir-partenaire'),
+    path('partenaires/creer/', CreerPartenaireParAdminView.as_view(), name='partenaire-creer'),
     path('mon-profil-partenaire/', MonProfilPartenaireView.as_view(), name='mon-profil-partenaire'),
     path('mes-categories/', MesCategoriesView.as_view(), name='mes-categories'),
     path('mes-categories/<int:pk>/', MaCategorieDetailView.as_view(), name='ma-categorie'),

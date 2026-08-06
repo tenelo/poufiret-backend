@@ -6,11 +6,13 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, SessionAppareil, ProfilPartenaire
+from apps.core.permissions import ADroitDe
 from .serializers import (
     ConnexionSerializer, UtilisateurSerializer, LogoutSerializer,
     InscriptionSerializer, SessionAppareilSerializer, DevenirPartenaireSerializer,
     VitrinePartenaireSerializer,
     DemandeOTPSerializer, VerifierOTPSerializer, DefinirPINSerializer,
+    CreerPartenaireParAdminSerializer,
 )
 
 
@@ -237,3 +239,32 @@ class DefinirPINView(APIView):
             'refresh': str(refresh),
             'utilisateur': UtilisateurSerializer(user).data,
         }, status=status.HTTP_200_OK)
+
+
+class CreerPartenaireParAdminView(APIView):
+    """POST /auth/partenaires/creer/ — cree un partenaire complet
+    (User + ProfilPartenaire ACTIF) par un admin/demarcheur habilite.
+    Protege par la capacite `creer_partenaire`. Renvoie le PIN par defaut
+    a communiquer au partenaire."""
+    permission_classes = [permissions.IsAuthenticated, ADroitDe('creer_partenaire')]
+
+    def post(self, request):
+        serializer = CreerPartenaireParAdminSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        profil = serializer.save()
+
+        # Journalisation de l'action (best-effort, ne bloque pas la creation)
+        try:
+            from apps.administration.models import JournalModeration
+            JournalModeration.objects.create(
+                acteur=request.user,
+                cible=serializer._user,
+                cible_identifiant=serializer._user.telephone,
+                action=JournalModeration.Action.CREER_PARTENAIRE,
+                cible_role=serializer._user.role,
+                motif=f"Création partenaire « {profil.nom_commerce} »",
+            )
+        except Exception:
+            pass
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
