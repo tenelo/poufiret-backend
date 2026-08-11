@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from apps.catalog.models import Article, Variante, Supplement
 from .models import Panier, LignePanier
 from .serializers import PanierSerializer
+from apps.notifications.fcm import notifier_utilisateur
 
 
 class MesPaniersView(APIView):
@@ -215,6 +216,37 @@ class CommandeDetailView(APIView):
         return Response(CommandeSerializer(c, context={'request': request}).data)
 
 
+_LIBELLES_COMMANDE = {
+    'acceptee': 'a ete acceptee',
+    'refusee': 'a ete refusee',
+    'en_preparation': 'est en preparation',
+    'prete': 'est prete',
+    'en_livraison': 'est en livraison',
+    'livree': 'a ete livree',
+}
+
+
+def _notifier_transition_commande(commande, cible, acteur_est_client, request):
+    """Notifie la bonne partie apres un changement de statut de commande."""
+    num = commande.numero
+    if cible == 'annulee' and acteur_est_client:
+        # Le client a annule -> on previent le partenaire.
+        dest = getattr(commande.partenaire, 'user', None)
+        if dest:
+            notifier_utilisateur(
+                dest, 'Commande annulee',
+                f'La commande {num} a ete annulee par le client.',
+                data={'type': 'commande', 'id': str(commande.id)}, request=request)
+        return
+    libelle = _LIBELLES_COMMANDE.get(cible)
+    if libelle:
+        # Transition faite par le partenaire -> on previent le client.
+        notifier_utilisateur(
+            commande.user, 'Suivi de commande',
+            f'Votre commande {num} {libelle}.',
+            data={'type': 'commande', 'id': str(commande.id)}, request=request)
+
+
 class TransitionCommandeView(APIView):
     """POST /orders/commandes/<id>/transition/ — change le statut selon le workflow.
     Body: statut (cible), raison_refus? Le partenaire gère accept/refus/prepa/prete/livraison;
@@ -248,4 +280,5 @@ class TransitionCommandeView(APIView):
         elif cible == 'refusee': c.raison_refus = request.data.get('raison_refus', '')
         elif cible == 'annulee': c.annulee_par = u
         c.save()
+        _notifier_transition_commande(c, cible, est_client and not est_part, request)
         return Response(CommandeSerializer(c, context={'request': request}).data)

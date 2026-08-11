@@ -8,6 +8,34 @@ from rest_framework.response import Response
 from apps.users.models import ProfilPartenaire, AdresseClient
 from .models import DemandeIntervention, DemandeInterventionPhoto
 from .serializers import DemandeInterventionSerializer, DemandeInterventionPhotoSerializer
+from apps.notifications.fcm import notifier_utilisateur
+
+_LIBELLES_INTERVENTION = {
+    'acceptee': 'a ete acceptee',
+    'refusee': 'a ete refusee',
+    'en_cours': 'est en cours',
+    'terminee': 'est terminee',
+}
+
+
+def _notifier_transition_intervention(demande, cible, acteur_est_client, request):
+    """Notifie la bonne partie apres un changement de statut d'intervention."""
+    num = demande.numero
+    if cible == 'annulee' and acteur_est_client:
+        dest = getattr(demande.artisan, 'user', None)
+        if dest:
+            notifier_utilisateur(
+                dest, 'Demande annulee',
+                f'La demande {num} a ete annulee par le client.',
+                data={'type': 'intervention', 'id': str(demande.id)}, request=request)
+        return
+    libelle = _LIBELLES_INTERVENTION.get(cible)
+    if libelle:
+        notifier_utilisateur(
+            demande.user, 'Suivi de demande',
+            f'Votre demande {num} {libelle}.',
+            data={'type': 'intervention', 'id': str(demande.id)}, request=request)
+
 
 TRANSITIONS = {
     'en_attente': ['acceptee', 'refusee', 'annulee'],
@@ -106,6 +134,7 @@ class TransitionDemandeView(APIView):
             d.raison_refus = request.data.get('raison_refus', '')
         d.statut = cible
         d.save()
+        _notifier_transition_intervention(d, cible, est_client and not est_artisan, request)
         return Response(DemandeInterventionSerializer(d, context={'request': request}).data)
 
 
