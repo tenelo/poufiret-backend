@@ -5,7 +5,7 @@ from .views import (
     ConnexionView, DeconnexionView, MonProfilView, InscriptionView,
     MesAppareilsView, RevoquerAppareilView, DevenirPartenaireView, MonProfilPartenaireView, MesCategoriesView, MaCategorieDetailView,
     VitrinePartenaireView,
-    DemanderOTPView, VerifierOTPView, DefinirPINView,
+    DemanderOTPView, VerifierOTPView, DefinirPINView, ChangerPINView,
     CreerPartenaireParAdminView,
 )
 
@@ -15,6 +15,7 @@ urlpatterns = [
     path('otp/demander/', DemanderOTPView.as_view(), name='otp-demander'),
     path('otp/verifier/', VerifierOTPView.as_view(), name='otp-verifier'),
     path('pin/definir/', DefinirPINView.as_view(), name='pin-definir'),
+    path('pin/changer/', ChangerPINView.as_view(), name='pin-changer'),
     path('rafraichir/', TokenRefreshView.as_view(), name='rafraichir'),
     path('deconnexion/', DeconnexionView.as_view(), name='deconnexion'),
     path('moi/', MonProfilView.as_view(), name='moi'),

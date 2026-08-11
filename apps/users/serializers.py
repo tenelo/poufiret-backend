@@ -420,6 +420,38 @@ class DefinirPINSerializer(serializers.Serializer):
         return user
 
 
+class ChangerPINSerializer(serializers.Serializer):
+    """Change le PIN d'un utilisateur deja authentifie (ancien + nouveau PIN).
+    Pas d'OTP : l'identite est prouvee par le JWT."""
+    ancien_pin = serializers.CharField(min_length=4, max_length=4, write_only=True)
+    nouveau_pin = serializers.CharField(min_length=4, max_length=4, write_only=True)
+
+    def validate_nouveau_pin(self, value):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.core.validateurs import valider_pin
+        try:
+            return valider_pin(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(e.messages)
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        if not user.check_password(attrs['ancien_pin']):
+            raise serializers.ValidationError(
+                {'ancien_pin': "Ancien code PIN incorrect."})
+        if attrs['ancien_pin'] == attrs['nouveau_pin']:
+            raise serializers.ValidationError(
+                {'nouveau_pin': "Le nouveau PIN doit etre different de l'ancien."})
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.context['request'].user
+        user.set_password(self.validated_data['nouveau_pin'])
+        user.pin_par_defaut = False
+        user.save(update_fields=['password', 'pin_par_defaut'])
+        return user
+
+
 class CreerPartenaireParAdminSerializer(serializers.Serializer):
     """
     Creation COMPLETE d'un partenaire par un admin/demarcheur :

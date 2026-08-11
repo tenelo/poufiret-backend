@@ -12,6 +12,7 @@ from .serializers import (
     InscriptionSerializer, SessionAppareilSerializer, DevenirPartenaireSerializer,
     VitrinePartenaireSerializer,
     DemandeOTPSerializer, VerifierOTPSerializer, DefinirPINSerializer,
+    ChangerPINSerializer,
     CreerPartenaireParAdminSerializer,
 )
 
@@ -231,6 +232,24 @@ class DefinirPINView(APIView):
 
     def post(self, request):
         serializer = DefinirPINSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'utilisateur': UtilisateurSerializer(user).data,
+        }, status=status.HTTP_200_OK)
+
+
+class ChangerPINView(APIView):
+    """POST /auth/pin/changer/ — change le PIN d'un utilisateur connecte
+    (ancien + nouveau PIN, pas d'OTP). Renvoie des tokens frais + profil."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangerPINSerializer(
+            data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         refresh = RefreshToken.for_user(user)
