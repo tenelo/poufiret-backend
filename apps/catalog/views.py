@@ -305,16 +305,30 @@ class PartenairesParCategorieView(_APIView):
                 categorie=cat, partenaire_id__in=list(ids))
             if l.image_couverture
         }
-        donnees = [{
-            'id': p.id,
-            'nom_commerce': p.nom_commerce,
-            'description': p.description,
-            'logo': _url(p.logo),
-            'photo_couverture': _url(couvertures.get(p.id) or p.photo_couverture),
-            'departement': p.departement.nom if p.departement_id else '',
-            'region': (p.departement.region.nom
-                       if p.departement_id else ''),
-        } for p in partenaires]
+        def _coords(profil):
+            # PointField(geography=True) stocke (x=longitude, y=latitude).
+            pt = profil.localisation
+            if pt is None:
+                return None, None
+            return pt.y, pt.x  # latitude, longitude
+
+        donnees = []
+        for p in partenaires:
+            lat, lng = _coords(p)
+            donnees.append({
+                'id': p.id,
+                'nom_commerce': p.nom_commerce,
+                'description': p.description,
+                'logo': _url(p.logo),
+                'photo_couverture': _url(couvertures.get(p.id) or p.photo_couverture),
+                'departement': p.departement.nom if p.departement_id else '',
+                'region': (p.departement.region.nom
+                           if p.departement_id else ''),
+                'latitude': lat,
+                'longitude': lng,
+                'adresse': p.adresse,
+                'quartier': p.quartier,
+            })
         return _Response(donnees)
 
 
