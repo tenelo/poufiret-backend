@@ -3,6 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     PartenairesParCategorieView, StatsVuesPartenaireView, RechercheUnifieeView,
+    CartePartenairesView,
     CategorieViewSet, ArticleViewSet, EnregistrerVueView,
     ArticleImageViewSet, VarianteViewSet, SupplementViewSet,
     PanoramaViewSet, LogementView, VehiculeView, ArticleVideoViewSet,
@@ -23,6 +24,7 @@ urlpatterns = [
          VideosPartenaireView.as_view(), name='partenaire-videos'),
     path('recherche/', RechercheUnifieeView.as_view(), name='recherche-unifiee'),
     path('partenaire/stats-vues/', StatsVuesPartenaireView.as_view(), name='partenaire-stats-vues'),
+    path('carte/partenaires/', CartePartenairesView.as_view(), name='carte-partenaires'),
     path('categories/<slug:slug>/partenaires/', PartenairesParCategorieView.as_view(), name='categorie-partenaires'),
     path('articles/<slug:slug>/vue/', EnregistrerVueView.as_view(), name='article-vue'),
     path('articles/<slug:slug>/logement/', LogementView.as_view(), name='article-logement'),

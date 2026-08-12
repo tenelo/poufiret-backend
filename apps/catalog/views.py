@@ -262,6 +262,76 @@ from rest_framework.response import Response as _Response
 from apps.users.models import ProfilPartenaire as _ProfilPartenaire
 
 
+class CartePartenairesView(_APIView):
+    """GET /catalogue/carte/partenaires/ - tous les partenaires visibles
+    AYANT des coordonnees GPS, dans la portee de l'utilisateur. Filtre
+    optionnel par categorie via ?categorie=slug. Un seul appel : le client
+    calcule le plus proche localement (zero latence percue)."""
+    permission_classes = []
+
+    def get(self, request):
+        from .models import Article, Categorie, PartenaireCategorie
+        from apps.geo.portee import filtre_visibilite
+
+        # Filtre categorie optionnel.
+        slug = request.query_params.get('categorie', '').strip()
+        ids = None
+        if slug:
+            try:
+                cat = Categorie.objects.get(slug=slug, est_active=True)
+            except Categorie.DoesNotExist:
+                return _Response({'erreur': True, 'message': 'Categorie introuvable.'}, status=404)
+            ids = set(Article.objects.filter(categorie=cat, est_actif=True)
+                      .values_list('partenaire_id', flat=True))
+            ids |= set(PartenaireCategorie.objects.filter(categorie=cat)
+                       .values_list('partenaire_id', flat=True))
+
+        dep_user = getattr(request.user, 'departement', None) \
+            if request.user.is_authenticated else None
+        localites = request.query_params.get('localites', '')
+        localites = [x for x in localites.split(',') if x] or None
+
+        qs = (_ProfilPartenaire.objects
+              .filter(est_visible=True, localisation__isnull=False)
+              .filter(filtre_visibilite(dep_user, localites))
+              .select_related('departement__region')
+              .order_by('-est_faveur', 'nom_commerce'))
+        if ids is not None:
+            qs = qs.filter(id__in=list(ids))
+
+        def _url(champ):
+            if not champ:
+                return ''
+            try:
+                return request.build_absolute_uri(champ.url)
+            except Exception:
+                return ''
+
+        # Categorie principale de chaque partenaire (pour colorer le marqueur).
+        cats_par_part = {}
+        for pc in PartenaireCategorie.objects.filter(
+                partenaire__in=qs).select_related('categorie'):
+            cats_par_part.setdefault(pc.partenaire_id, pc.categorie.slug)
+
+        donnees = []
+        for p in qs:
+            pt = p.localisation
+            donnees.append({
+                'id': p.id,
+                'nom_commerce': p.nom_commerce,
+                'logo': _url(p.logo),
+                'photo_couverture': _url(p.photo_couverture),
+                'departement': p.departement.nom if p.departement_id else '',
+                'region': (p.departement.region.nom if p.departement_id else ''),
+                'latitude': pt.y,
+                'longitude': pt.x,
+                'adresse': p.adresse,
+                'quartier': p.quartier,
+                'categorie': cats_par_part.get(p.id, ''),
+            })
+        return _Response(donnees)
+
+
 class PartenairesParCategorieView(_APIView):
     """GET /categories/<slug>/partenaires/ — partenaires visibles ayant
     au moins un article actif dans la catégorie."""
