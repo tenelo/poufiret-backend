@@ -49,7 +49,21 @@ def _course_dict(c):
             'gps': pt(c.b_position),
         },
         'livreur': str(c.livreur_id) if c.livreur_id else None,
+        'livreur_position': _livreur_position(c),
         'cree_le': c.cree_le.isoformat(),
+    }
+
+
+def _livreur_position(c):
+    """Derniere position connue du livreur assigne (ou None)."""
+    liv = c.livreur
+    if liv is None or liv.position is None:
+        return None
+    return {
+        'latitude': liv.position.y,
+        'longitude': liv.position.x,
+        'type_vehicule': liv.type_vehicule,
+        'maj_le': liv.position_maj_le.isoformat() if liv.position_maj_le else None,
     }
 
 
