@@ -48,6 +48,8 @@ LOCAL_APPS = [
     'apps.social',
     'apps.orders',
     'apps.messaging',
+    'apps.livreurs',
+    'apps.livraison',
     'apps.moderation',
     'apps.payments',
     'apps.notifications',
