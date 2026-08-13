@@ -16,6 +16,8 @@ urlpatterns = [
     path('api/v1/social/', include('apps.social.urls')),
     path('api/v1/orders/', include('apps.orders.urls')),
     path('api/v1/messaging/', include('apps.messaging.urls')),
+    path('api/v1/livreurs/', include('apps.livreurs.urls')),
+    path('api/v1/livraison/', include('apps.livraison.urls')),
     path('api/v1/payments/', include('apps.payments.urls')),
     path('api/v1/notifications/', include('apps.notifications.urls')),
     path('api/v1/analytics/', include('apps.analytics.urls')),
