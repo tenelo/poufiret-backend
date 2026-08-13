@@ -337,7 +337,7 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
     adresse = models.CharField(_('adresse'), max_length=255, blank=True)
     quartier = models.CharField(_('quartier'), max_length=100, blank=True)
     secteur = models.CharField(_('secteur'), max_length=100, blank=True)
-    ville = models.CharField(_('ville'), max_length=100, default='Ferkessédougou')
+    ville = models.CharField(_('ville'), max_length=100, default='Ferké')
     departement = models.ForeignKey(
         'geo.Departement', on_delete=models.PROTECT,
         null=True, blank=True, related_name='partenaires',

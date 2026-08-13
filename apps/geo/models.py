@@ -74,3 +74,33 @@ class Departement(models.Model):
     def district(self):
         """Raccourci : le district dont dépend ce département."""
         return self.region.district
+
+
+class Quartier(models.Model):
+    """Quartier d'un département (niveau le plus fin, saisi en livraison).
+
+    Sert à l'autocomplétion des points de retrait/livraison. Enrichissable
+    au fil de l'eau (comme les mots-clés de recherche) : on démarre avec les
+    quartiers connus et on complète à mesure.
+    """
+    nom = models.CharField('nom', max_length=120)
+    departement = models.ForeignKey(
+        Departement, on_delete=models.PROTECT,
+        related_name='quartiers', verbose_name='département',
+    )
+    ordre = models.PositiveIntegerField("ordre d'affichage", default=0)
+    est_actif = models.BooleanField('actif', default=True)
+
+    class Meta:
+        verbose_name = 'quartier'
+        verbose_name_plural = 'quartiers'
+        ordering = ['ordre', 'nom']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['nom', 'departement'],
+                name='unique_quartier_departement'),
+        ]
+
+    def __str__(self):
+        return f'{self.nom} ({self.departement})'
+

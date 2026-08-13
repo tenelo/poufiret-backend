@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Departement
+from .models import Departement, Quartier
 
 
 class DepartementSerializer(serializers.ModelSerializer):
@@ -16,3 +16,11 @@ class DepartementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Departement
         fields = ['id', 'nom', 'region', 'district']
+
+
+class QuartierSerializer(serializers.ModelSerializer):
+    """Quartier d'un departement, pour l'autocompletion en livraison."""
+
+    class Meta:
+        model = Quartier
+        fields = ['id', 'nom']
