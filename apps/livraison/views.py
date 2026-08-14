@@ -13,6 +13,7 @@ from apps.livreurs.models import Livreur
 from .models import (Course, ParametresLivraison, TRANSITIONS,
                      ANNULATION_DEMANDEUR_JUSQUA)
 from .destinataire import programmer_lookup_destinataire
+from .notifications_course import notifier_transition
 
 
 def _numero():
@@ -145,6 +146,7 @@ class CreerCourseView(APIView):
         course.statut = Course.Statut.ASSIGNEE
         course.assignee_le = timezone.now()
         course.save(update_fields=['livreur', 'statut', 'assignee_le'])
+        notifier_transition(course, 'assignee')
         return Response({
             'course': _course_dict(course),
             'assigne': True,
@@ -254,4 +256,5 @@ class TransitionCourseView(APIView):
         elif cible == 'refusee':
             c.raison_refus = request.data.get('raison_refus', '')
         c.save()
+        notifier_transition(c, cible)
         return Response(_course_dict(c), status=200)
