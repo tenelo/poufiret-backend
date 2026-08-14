@@ -161,8 +161,44 @@ class CourseDetailView(APIView):
         est_demandeur = c.demandeur_id == request.user.id
         livreur = getattr(request.user, 'profil_livreur', None)
         est_livreur = livreur is not None and c.livreur_id == livreur.id
-        if not (est_demandeur or est_livreur):
+        est_destinataire = c.contact_user_id == request.user.id
+        if not (est_demandeur or est_livreur or est_destinataire):
             return Response({'erreur': True, 'message': 'Acces refuse.'}, status=403)
+        return Response(_course_dict(c), status=200)
+
+
+class CoursesRecuesView(APIView):
+    """GET /livraison/courses/recues/ — courses ou je suis le destinataire
+    (contact_user). Alimente la surface 'colis qui m'arrivent'."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        qs = Course.objects.filter(contact_user=request.user)
+        s = request.query_params.get('statut')
+        if s:
+            qs = qs.filter(statut=s)
+        return Response([_course_dict(c) for c in qs[:100]], status=200)
+
+
+class PositionContactView(APIView):
+    """POST /livraison/courses/<id>/position-contact/ — le destinataire
+    depose sa position GPS reelle sur SON point (B). Il ne pilote pas la
+    course : il ne peut ni transitionner ni annuler. Ses coords ecrasent
+    la saisie manuelle du point B."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk=None):
+        c = get_object_or_404(Course, pk=pk)
+        if c.contact_user_id != request.user.id:
+            return Response({'erreur': True, 'message': 'Acces refuse.'}, status=403)
+        lat = request.data.get('latitude')
+        lng = request.data.get('longitude')
+        pt = _point(lat, lng)
+        if pt is None:
+            return Response({'erreur': True,
+                             'message': 'latitude et longitude requises.'}, status=400)
+        c.b_position = pt
+        c.save(update_fields=['b_position'])
         return Response(_course_dict(c), status=200)
 
 
