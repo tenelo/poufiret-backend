@@ -1,4 +1,6 @@
 from django.contrib import admin
+
+from .models import ParametresLivraison
 from .models import Course
 
 
@@ -12,3 +14,15 @@ class CourseAdmin(admin.ModelAdmin):
     readonly_fields = ('numero', 'assignee_le', 'acceptee_le',
                        'colis_pris_le', 'livree_le', 'annulee_le')
     autocomplete_fields = ('demandeur', 'ville', 'livreur')
+
+
+@admin.register(ParametresLivraison)
+class ParametresLivraisonAdmin(admin.ModelAdmin):
+    list_display = ('prix_course',)
+
+    def has_add_permission(self, request):
+        # Singleton : pas d'ajout si une ligne existe deja.
+        return not ParametresLivraison.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False

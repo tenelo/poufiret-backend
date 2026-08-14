@@ -2,10 +2,11 @@
 from django.urls import path
 from .views import (
     CreerCourseView, MesCoursesView, CourseDetailView, TransitionCourseView,
-    CoursesRecuesView, PositionContactView,
+    CoursesRecuesView, PositionContactView, TarifView,
 )
 
 urlpatterns = [
+    path('tarif/', TarifView.as_view(), name='tarif'),
     path('courses/', MesCoursesView.as_view(), name='courses-liste'),
     path('courses/creer/', CreerCourseView.as_view(), name='course-creer'),
     path('courses/recues/', CoursesRecuesView.as_view(), name='courses-recues'),

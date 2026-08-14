@@ -124,3 +124,35 @@ TRANSITIONS = {
 
 # Etat a partir duquel le demandeur ne peut plus annuler (colis deja pris).
 ANNULATION_DEMANDEUR_JUSQUA = ['demandee', 'assignee', 'acceptee', 'vers_a']
+
+
+class ParametresLivraison(ModeleBase):
+    """Parametres tarifaires de la livraison (ligne unique).
+
+    Pour l'instant : un prix de course fixe et unique, pilotable depuis
+    l'admin sans republier l'app. La grille fine (par ville / vehicule /
+    distance) fera l'objet d'une passe dediee plus tard.
+    """
+    prix_course = models.PositiveIntegerField(
+        'prix d\'une course (FCFA)', default=500,
+        help_text='Prix unique applique a toute course, en FCFA.',
+    )
+
+    class Meta:
+        verbose_name = 'parametres livraison'
+        verbose_name_plural = 'parametres livraison'
+
+    def save(self, *args, **kwargs):
+        # Singleton : on force une seule ligne.
+        self.pk = self.pk or self.__class__.objects.first() and self.__class__.objects.first().pk or None
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def obtenir(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create()
+        return obj
+
+    def __str__(self):
+        return f'Parametres livraison (prix course : {self.prix_course} FCFA)'

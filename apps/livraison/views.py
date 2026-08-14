@@ -10,7 +10,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from apps.livreurs.models import Livreur
-from .models import Course, TRANSITIONS, ANNULATION_DEMANDEUR_JUSQUA
+from .models import (Course, ParametresLivraison, TRANSITIONS,
+                     ANNULATION_DEMANDEUR_JUSQUA)
 from .destinataire import programmer_lookup_destinataire
 
 
@@ -83,6 +84,16 @@ def _assigner_plus_proche(course):
     else:
         qs = qs.order_by('?')
     return qs.first()
+
+
+class TarifView(APIView):
+    """GET /livraison/tarif/ — prix de course courant (public, lecture seule).
+    Pilotable depuis l'admin ; le formulaire le lit au chargement."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        p = ParametresLivraison.obtenir()
+        return Response({'prix_course': p.prix_course}, status=200)
 
 
 class CreerCourseView(APIView):
