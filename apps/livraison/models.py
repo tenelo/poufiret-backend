@@ -66,6 +66,18 @@ class Course(ModeleBase):
     b_position = gis_models.PointField(
         'B - GPS', geography=True, blank=True, null=True)
 
+    # Compte destinataire (point B) trouve par le lookup asynchrone APRES
+    # creation. Jamais renseigne a la creation, jamais expose au demandeur
+    # (sinon on divulguerait l'existence des comptes). Sert a lier la course
+    # au compte du destinataire : notif + depot de sa propre position.
+    contact_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True, null=True,
+        related_name='courses_recues',
+        verbose_name='compte destinataire (B)',
+    )
+
     description_colis = models.CharField(
         max_length=200, blank=True, default='',
         help_text='Repere pour le livreur (ex: pain, pagne, chaussures).',

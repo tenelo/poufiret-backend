@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from apps.livreurs.models import Livreur
 from .models import Course, TRANSITIONS, ANNULATION_DEMANDEUR_JUSQUA
+from .destinataire import programmer_lookup_destinataire
 
 
 def _numero():
@@ -116,6 +117,10 @@ class CreerCourseView(APIView):
             description_colis=d.get('description_colis', ''),
             prix=int(d.get('prix') or 0),
         )
+
+        # Lookup destinataire : async, non-bloquant, apres commit.
+        # Couvre les deux sorties (assigne ou non). Silencieux cote demandeur.
+        programmer_lookup_destinataire(course)
 
         livreur = _assigner_plus_proche(course)
         if livreur is None:
