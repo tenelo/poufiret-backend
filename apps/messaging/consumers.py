@@ -103,7 +103,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 destinataire,
                 titre=f'Nouveau message de {nom}',
                 corps=contenu[:120],
-                data={'conversation_id': str(conv_id)},
+                data={'type': 'message', 'conversation_id': str(conv_id),
+                      'expediteur_nom': nom},
             )
         except Exception:
             pass  # une notification ratee ne doit jamais bloquer le chat
