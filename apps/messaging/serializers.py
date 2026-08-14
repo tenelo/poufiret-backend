@@ -14,7 +14,7 @@ class DemandeInterventionSerializer(serializers.ModelSerializer):
     photos = DemandeInterventionPhotoSerializer(many=True, read_only=True)
     client_nom = serializers.SerializerMethodField()
     client_telephone = serializers.CharField(source='client.telephone', read_only=True)
-    partenaire_telephone = serializers.SerializerMethodField()
+    artisan_telephone = serializers.SerializerMethodField()
     artisan_nom = serializers.CharField(source='artisan.nom_commerce', read_only=True)
 
     class Meta:
@@ -29,8 +29,8 @@ class DemandeInterventionSerializer(serializers.ModelSerializer):
         read_only_fields = ['numero', 'user', 'statut', 'date_proposee',
                             'prix_propose', 'raison_refus', 'conversation']
 
-    def get_partenaire_telephone(self, obj):
-        return obj.partenaire.telephone_pro or obj.partenaire.user.telephone
+    def get_artisan_telephone(self, obj):
+        return obj.artisan.telephone_pro or obj.artisan.user.telephone
 
     def get_client_nom(self, obj):
         return obj.user.get_full_name() or obj.user.username or obj.user.telephone

@@ -27,14 +27,14 @@ def _notifier_transition_intervention(demande, cible, acteur_est_client, request
             notifier_utilisateur(
                 dest, 'Demande annulee',
                 f'La demande {num} a ete annulee par le client.',
-                data={'type': 'intervention', 'id': str(demande.id)}, request=request)
+                data={'type': 'intervention', 'id': str(demande.id), 'est_artisan': '1'}, request=request)
         return
     libelle = _LIBELLES_INTERVENTION.get(cible)
     if libelle:
         notifier_utilisateur(
             demande.user, 'Suivi de demande',
             f'Votre demande {num} {libelle}.',
-            data={'type': 'intervention', 'id': str(demande.id)}, request=request)
+            data={'type': 'intervention', 'id': str(demande.id), 'est_artisan': '0'}, request=request)
 
 
 TRANSITIONS = {
