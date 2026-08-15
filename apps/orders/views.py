@@ -8,6 +8,8 @@ from apps.catalog.models import Article, Variante, Supplement
 from .models import Panier, LignePanier
 from .serializers import PanierSerializer
 from apps.notifications.fcm import notifier_utilisateur
+from apps.livraison.models import Course
+from apps.livraison.views import _numero as _numero_course, finaliser_assignation
 
 
 class MesPaniersView(APIView):
@@ -302,3 +304,94 @@ class TransitionCommandeView(APIView):
         c.save()
         _notifier_transition_commande(c, cible, est_client and not est_part, request)
         return Response(CommandeSerializer(c, context={'request': request}).data)
+
+
+class CommanderLivreurView(APIView):
+    """POST /orders/commandes/<pk>/livreur/ — le partenaire proprietaire
+    declenche une course de livraison pour une commande prete.
+
+    Cree la course (A = partenaire, B = client), herite du prix
+    (frais_livraison), tente l'assignation, puis passe la commande en
+    livraison. Point B = localisation_livraison capturee au checkout.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, pk=None):
+        commande = get_object_or_404(Commande, pk=pk)
+
+        # ── Garde 1 : proprietaire ──
+        profil = getattr(request.user, 'profil_partenaire', None)
+        if profil is None or commande.partenaire_id != profil.pk:
+            return Response(
+                {'erreur': True, 'message': "Vous n'etes pas le partenaire de cette commande."},
+                status=403)
+
+        # ── Garde 2 : mode livraison ──
+        if commande.mode_livraison != 'livraison':
+            return Response(
+                {'erreur': True, 'message': "Cette commande n'est pas en mode livraison."},
+                status=400)
+
+        # ── Garde 4 : pas de course active ──
+        course_active = commande.courses.exclude(
+            statut__in=['annulee', 'refusee']).order_by('-cree_le').first()
+        if course_active is not None:
+            return Response(
+                {'erreur': True, 'message': "Une course est deja en cours pour cette commande.",
+                 'course_numero': course_active.numero},
+                status=409)
+
+        # ── Garde 3 : statut prete ──
+        if commande.statut != Commande.Statut.PRETE:
+            return Response(
+                {'erreur': True,
+                 'message': "La commande doit etre prete avant d'appeler un livreur."},
+                status=400)
+
+        # ── Garde 5 : GPS partenaire (point A) present ──
+        if profil.localisation is None:
+            return Response(
+                {'erreur': True,
+                 'message': "Votre commerce n'a pas de position GPS. Renseignez-la d'abord."},
+                status=400)
+
+        # ── Creation de la course ──
+        client = commande.user
+        course = Course.objects.create(
+            numero=_numero_course(),
+            demandeur=request.user,
+            type_demandeur='partenaire',
+            ville=profil.departement,
+            commande=commande,
+            contact_user=client,  # destinataire connu : pas de lookup async
+            # Point A = partenaire (retrait)
+            a_quartier=profil.quartier or profil.nom_commerce,
+            a_nom_contact=profil.nom_commerce,
+            a_telephone_contact=profil.telephone_pro or request.user.telephone,
+            a_position=profil.localisation,
+            # Point B = client (livraison)
+            b_quartier=commande.adresse_snapshot or '—',
+            b_nom_contact=client.get_full_name() or client.telephone,
+            b_telephone_contact=client.telephone,
+            b_position=commande.localisation_livraison,
+            description_colis=commande.numero,
+            prix=int(commande.frais_livraison or 0),
+        )
+
+        # ── Assignation (fonction commune) ──
+        resultat = finaliser_assignation(course)
+
+        # ── Transition commande -> en livraison ──
+        commande.statut = Commande.Statut.EN_LIVRAISON
+        commande.save(update_fields=['statut'])
+
+        return Response({
+            'course': {
+                'numero': course.numero,
+                'statut': course.statut,
+                'prix': course.prix,
+            },
+            'commande_statut': commande.statut,
+            **resultat,
+        }, status=201)

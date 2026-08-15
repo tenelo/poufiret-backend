@@ -3,7 +3,7 @@ from django.urls import path
 from .views import (
     MesPaniersView, AjouterLigneView, LigneDetailView, ViderPanierView,
     ValiderPanierView, MesCommandesClientView, CommandesPartenaireView,
-    CommandeDetailView, TransitionCommandeView,
+    CommandeDetailView, TransitionCommandeView, CommanderLivreurView,
 )
 
 urlpatterns = [
@@ -16,4 +16,5 @@ urlpatterns = [
     path('commandes/partenaire/', CommandesPartenaireView.as_view(), name='commandes-partenaire'),
     path('commandes/<int:pk>/', CommandeDetailView.as_view(), name='commande-detail'),
     path('commandes/<int:pk>/transition/', TransitionCommandeView.as_view(), name='commande-transition'),
+    path('commandes/<int:pk>/livreur/', CommanderLivreurView.as_view(), name='commande-livreur'),
 ]
