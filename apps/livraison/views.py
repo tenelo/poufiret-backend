@@ -203,7 +203,9 @@ class CourseDetailView(APIView):
         est_destinataire = c.contact_user_id == request.user.id
         if not (est_demandeur or est_livreur or est_destinataire):
             return Response({'erreur': True, 'message': 'Acces refuse.'}, status=403)
-        return Response(_course_dict(c), status=200)
+        data = _course_dict(c)
+        data['je_suis_livreur'] = est_livreur
+        return Response(data, status=200)
 
 
 class CoursesRecuesView(APIView):
