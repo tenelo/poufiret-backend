@@ -259,6 +259,11 @@ class TransitionCourseView(APIView):
             c.colis_pris_le = now
         elif cible == 'livree':
             c.livree_le = now
+            # Course issue d'une commande : refleter la livraison cote commande.
+            if c.commande_id:
+                from apps.orders.models import Commande
+                Commande.objects.filter(pk=c.commande_id).update(
+                    statut=Commande.Statut.LIVREE)
         elif cible == 'annulee':
             c.annulee_le = now
         elif cible == 'refusee':
