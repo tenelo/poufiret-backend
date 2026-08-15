@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ParametresLivraison
+from .models import ParametresLivraison, IconeMotard
 from .models import Course
 
 
@@ -26,3 +26,21 @@ class ParametresLivraisonAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(IconeMotard)
+class IconeMotardAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'role', 'est_active', 'apercu')
+    list_filter = ('role', 'est_active')
+    list_editable = ('est_active',)
+    search_fields = ('nom',)
+    readonly_fields = ('apercu',)
+
+    @admin.display(description='apercu')
+    def apercu(self, obj):
+        from django.utils.html import format_html
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="height:48px;background:#ddd;'
+                'border-radius:6px;padding:2px" />', obj.image.url)
+        return '—'

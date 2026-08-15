@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib.gis.db import models as gis_models
 from django.db import models
 from apps.core.models import ModeleBase
+from apps.core.images import ImagesOptimiseesMixin
 
 
 class Course(ModeleBase):
@@ -167,3 +168,57 @@ class ParametresLivraison(ModeleBase):
 
     def __str__(self):
         return f'Parametres livraison (prix course : {self.prix_course} FCFA)'
+
+
+class IconeMotard(ImagesOptimiseesMixin, ModeleBase):
+    """Bibliotheque d'icones du marqueur livreur sur la carte.
+
+    Deux roles : STANDARD (utilisee dans tous les cas pendant la course) et
+    TERMINEE (utilisee uniquement quand la course est livree). Pour chaque
+    role, une seule icone active a la fois. Cocher `est_active` decoche les
+    autres icones DU MEME role. Modifiable dans l'admin sans republier l'app
+    et sans supprimer les anciennes.
+    """
+    class Role(models.TextChoices):
+        STANDARD = 'standard', 'Standard (course en cours)'
+        TERMINEE = 'terminee', 'Livraison terminee'
+
+    champs_images = ('image',)
+
+    nom = models.CharField(
+        'nom', max_length=100,
+        help_text='Libelle pour reconnaitre l\'icone (ex: motard rouge).',
+    )
+    role = models.CharField(
+        'role', max_length=12, choices=Role.choices, default=Role.STANDARD,
+        help_text='Standard = pendant la course ; Terminee = a la livraison.',
+    )
+    image = models.ImageField(
+        'image (PNG)',
+        upload_to='carte/motards/',
+        help_text='PNG transparent recommande.',
+    )
+    est_active = models.BooleanField(
+        'active', default=False,
+        help_text='Une seule active par role : l\'app utilise celle-ci.',
+    )
+
+    class Meta:
+        verbose_name = 'icone motard'
+        verbose_name_plural = 'icones motard'
+        ordering = ['role', '-est_active', '-cree_le']
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Exclusivite PAR ROLE : une seule active par role.
+        if self.est_active:
+            IconeMotard.objects.exclude(pk=self.pk).filter(
+                role=self.role, est_active=True).update(est_active=False)
+
+    @classmethod
+    def active(cls, role=Role.STANDARD):
+        return cls.objects.filter(role=role, est_active=True).first()
+
+    def __str__(self):
+        actif = ' (active)' if self.est_active else ''
+        return f'{self.nom} [{self.get_role_display()}]{actif}'
