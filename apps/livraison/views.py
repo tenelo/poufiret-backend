@@ -97,6 +97,29 @@ class TarifView(APIView):
         return Response({'prix_course': p.prix_course}, status=200)
 
 
+def finaliser_assignation(course):
+    """Tente d'assigner le livreur le plus proche (PostGIS) et notifie.
+
+    Logique commune a toute creation de course (directe ou issue d'une
+    commande). Ne renvoie PAS de Response : retourne un dict que la vue
+    appelante integre dans sa reponse. Deux sorties :
+      - aucun livreur  -> {'assigne': False, 'message': ...}
+      - livreur trouve -> {'assigne': True}
+    """
+    livreur = _assigner_plus_proche(course)
+    if livreur is None:
+        return {
+            'assigne': False,
+            'message': "Aucun livreur disponible pour l'instant. Reessayez bientot.",
+        }
+    course.livreur = livreur
+    course.statut = Course.Statut.ASSIGNEE
+    course.assignee_le = timezone.now()
+    course.save(update_fields=['livreur', 'statut', 'assignee_le'])
+    notifier_transition(course, 'assignee')
+    return {'assigne': True}
+
+
 class CreerCourseView(APIView):
     """POST /livraison/courses/ — cree une course directe A -> B et tente
     l'assignation automatique au livreur le plus proche."""
@@ -134,23 +157,8 @@ class CreerCourseView(APIView):
         # Couvre les deux sorties (assigne ou non). Silencieux cote demandeur.
         programmer_lookup_destinataire(course)
 
-        livreur = _assigner_plus_proche(course)
-        if livreur is None:
-            return Response({
-                'course': _course_dict(course),
-                'message': "Aucun livreur disponible pour l'instant. Reessayez bientot.",
-                'assigne': False,
-            }, status=201)
-
-        course.livreur = livreur
-        course.statut = Course.Statut.ASSIGNEE
-        course.assignee_le = timezone.now()
-        course.save(update_fields=['livreur', 'statut', 'assignee_le'])
-        notifier_transition(course, 'assignee')
-        return Response({
-            'course': _course_dict(course),
-            'assigne': True,
-        }, status=201)
+        resultat = finaliser_assignation(course)
+        return Response({'course': _course_dict(course), **resultat}, status=201)
 
 
 class MesCoursesView(APIView):

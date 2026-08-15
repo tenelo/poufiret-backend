@@ -51,6 +51,17 @@ class Course(ModeleBase):
         related_name='courses',
         verbose_name='livreur assigne',
     )
+    # Course issue d'une commande (orders). Null pour une course directe
+    # TeneLivr. FK (pas OneToOne) : permet de re-declencher une course apres
+    # annulation sans ecraser l'historique. La derniere course non annulee
+    # est la course active de la commande.
+    commande = models.ForeignKey(
+        'orders.Commande',
+        on_delete=models.SET_NULL,
+        blank=True, null=True,
+        related_name='courses',
+        verbose_name='commande liee',
+    )
 
     # ── Point A (retrait) ────────────────────────────────────────────
     a_quartier = models.CharField('A - quartier', max_length=150)
