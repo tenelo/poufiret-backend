@@ -20,6 +20,7 @@ Cycle de vie d'une commande :
                         livree
 """
 from django.db import models # type: ignore
+from django.contrib.gis.db import models as gis_models # type: ignore
 from django.utils.translation import gettext_lazy as _ # type: ignore
 
 from apps.catalog.models import Article
@@ -191,6 +192,13 @@ class Commande(models.Model):
         _('adresse (snapshot)'),
         max_length=500, blank=True,
         help_text=_('Copie figée de l\'adresse au moment de la commande.'),
+    )
+    localisation_livraison = gis_models.PointField(
+        _('position GPS de livraison'),
+        geography=True,
+        blank=True, null=True,
+        help_text=_('Point GPS capturé quand le client choisit "je veux être livré". '
+                    'Obligatoire si mode_livraison=livraison. Sert au livreur (point B).'),
     )
     heure_souhaitee = models.DateTimeField(
         _('heure souhaitée'),

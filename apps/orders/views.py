@@ -1,4 +1,5 @@
 """Vues panier (Module 4 - bloc A1)."""
+from django.contrib.gis.geos import Point # type: ignore
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
 from rest_framework.views import APIView
@@ -151,9 +152,28 @@ class ValiderPanierView(APIView):
             if adresse_obj:
                 adresse_snap = adresse_obj.adresse
 
+        # ── Point GPS de livraison (obligatoire si livraison) ──
+        mode_liv = request.data.get('mode_livraison', 'emporter')
+        point_livraison = None
+        if mode_liv == 'livraison':
+            lat = request.data.get('latitude')
+            lng = request.data.get('longitude')
+            if lat in (None, '') or lng in (None, ''):
+                return Response(
+                    {'erreur': True,
+                     'message': 'Position GPS obligatoire pour une livraison.'},
+                    status=400)
+            try:
+                point_livraison = Point(float(lng), float(lat))
+            except (TypeError, ValueError):
+                return Response(
+                    {'erreur': True, 'message': 'Coordonnées GPS invalides.'},
+                    status=400)
+
         commande = Commande.objects.create(
             numero=_numero_commande(), user=request.user, partenaire=panier.partenaire,
-            mode_livraison=request.data.get('mode_livraison', 'emporter'),
+            mode_livraison=mode_liv,
+            localisation_livraison=point_livraison,
             adresse=adresse_obj, adresse_snapshot=adresse_snap,
             heure_souhaitee=request.data.get('heure_souhaitee') or None,
             mode_paiement=request.data.get('mode_paiement', 'cash'),
