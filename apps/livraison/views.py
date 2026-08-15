@@ -53,6 +53,7 @@ def _course_dict(c):
         },
         'livreur': str(c.livreur_id) if c.livreur_id else None,
         'livreur_position': _livreur_position(c),
+        'position_b_deposee': c.b_position is not None,
         'cree_le': c.cree_le.isoformat(),
     }
 
@@ -206,7 +207,6 @@ class CourseDetailView(APIView):
         data = _course_dict(c)
         data['je_suis_livreur'] = est_livreur
         data['je_suis_destinataire'] = est_destinataire
-        data['position_b_deposee'] = c.b_position is not None
         return Response(data, status=200)
 
 
