@@ -205,6 +205,8 @@ class CourseDetailView(APIView):
             return Response({'erreur': True, 'message': 'Acces refuse.'}, status=403)
         data = _course_dict(c)
         data['je_suis_livreur'] = est_livreur
+        data['je_suis_destinataire'] = est_destinataire
+        data['position_b_deposee'] = c.b_position is not None
         return Response(data, status=200)
 
 
