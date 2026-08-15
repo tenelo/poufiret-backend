@@ -53,10 +53,11 @@ class CommandeSerializer(serializers.ModelSerializer):
     lignes = LigneCommandeSerializer(many=True, read_only=True)
     partenaire_nom = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
     client_nom = serializers.SerializerMethodField()
+    client_telephone = serializers.CharField(source='user.telephone', read_only=True)
 
     class Meta:
         model = Commande
-        fields = ['id', 'numero', 'user', 'client_nom', 'partenaire', 'partenaire_nom',
+        fields = ['id', 'numero', 'user', 'client_nom', 'client_telephone', 'partenaire', 'partenaire_nom',
                   'mode_livraison', 'adresse', 'adresse_snapshot', 'heure_souhaitee',
                   'statut', 'raison_refus', 'sous_total', 'frais_livraison', 'total',
                   'mode_paiement', 'notes_client', 'notes_partenaire', 'lignes',
