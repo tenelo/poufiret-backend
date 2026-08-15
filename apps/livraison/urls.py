@@ -2,11 +2,12 @@
 from django.urls import path
 from .views import (
     CreerCourseView, MesCoursesView, CourseDetailView, TransitionCourseView,
-    CoursesRecuesView, PositionContactView, TarifView,
+    CoursesRecuesView, PositionContactView, TarifView, IconesMotardView,
 )
 
 urlpatterns = [
     path('tarif/', TarifView.as_view(), name='tarif'),
+    path('icones-motard/', IconesMotardView.as_view(), name='icones-motard'),
     path('courses/', MesCoursesView.as_view(), name='courses-liste'),
     path('courses/creer/', CreerCourseView.as_view(), name='course-creer'),
     path('courses/recues/', CoursesRecuesView.as_view(), name='courses-recues'),

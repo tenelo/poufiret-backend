@@ -11,7 +11,7 @@ from rest_framework.response import Response
 
 from apps.livreurs.models import Livreur
 from .models import (Course, ParametresLivraison, TRANSITIONS,
-                     ANNULATION_DEMANDEUR_JUSQUA)
+                     ANNULATION_DEMANDEUR_JUSQUA, IconeMotard)
 from .destinataire import programmer_lookup_destinataire
 from .notifications_course import notifier_transition
 
@@ -118,6 +118,24 @@ def finaliser_assignation(course):
     course.save(update_fields=['livreur', 'statut', 'assignee_le'])
     notifier_transition(course, 'assignee')
     return {'assigne': True}
+
+
+class IconesMotardView(APIView):
+    """GET /livraison/icones-motard/ — URLs des icones actives du marqueur
+    livreur. Public (lecture seule). Renvoie l'icone standard (course en
+    cours) et l'icone terminee (livraison faite). URLs absolues."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        def url(role):
+            ic = IconeMotard.active(role)
+            if ic and ic.image:
+                return request.build_absolute_uri(ic.image.url)
+            return None
+        return Response({
+            'standard': url(IconeMotard.Role.STANDARD),
+            'terminee': url(IconeMotard.Role.TERMINEE),
+        }, status=200)
 
 
 class CreerCourseView(APIView):
