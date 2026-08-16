@@ -152,6 +152,26 @@ class VueVitrineView(APIView):
                         status=status.HTTP_201_CREATED)
 
 
+class VueServiceLivraisonView(APIView):
+    """POST livraison/vue/ — ouverture de l'ecran/service livraison.
+
+    Accessible sans authentification : un visiteur anonyme peut aussi
+    ouvrir l'onglet, sans alimenter de profil de navigation.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        if not flag_is_active(request._request, 'analytics_actif'):
+            return Response({'detail': 'Analytics desactive.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        from .services import enregistrer_vue_service_livraison
+        enregistrer_vue_service_livraison(
+            request.user, source=request.data.get('source', 'onglet'),
+        )
+        return Response({'message': 'Vue enregistree.'},
+                        status=status.HTTP_201_CREATED)
+
+
 class OuvertureDemandeInterventionView(APIView):
     """POST intervention/ouverture/ — l'utilisateur ouvre l'ecran de demande.
 

@@ -186,3 +186,35 @@ class VueVitrine(ModeleBase):
 
     def __str__(self):
         return f'{self.partenaire} — {self.utilisateur or "anonyme"}'
+
+
+
+class VueServiceLivraison(ModeleBase):
+    """Trace chaque ouverture de l'ecran/service livraison par un utilisateur,
+    pour mesurer combien de personnes consultent la livraison (vs combien
+    l'utilisent reellement en creant une course).
+    """
+
+    class Source(models.TextChoices):
+        ONGLET = 'onglet', 'Onglet de la barre du bas'
+        AUTRE = 'autre', 'Autre'
+
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True, null=True,
+        related_name='vues_service_livraison',
+        verbose_name='utilisateur',
+    )
+    source = models.CharField(
+        'source', max_length=15,
+        choices=Source.choices, default=Source.ONGLET,
+    )
+
+    class Meta:
+        verbose_name = 'vue du service livraison'
+        verbose_name_plural = 'vues du service livraison'
+        ordering = ['-cree_le']
+
+    def __str__(self):
+        return f'{self.utilisateur or "anonyme"} — {self.cree_le:%d/%m/%Y %H:%M}'

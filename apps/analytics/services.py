@@ -62,3 +62,20 @@ def enregistrer_vue_vitrine(utilisateur, partenaire, source='autre', avec_catalo
         profil.nb_articles_vus_mois += 1
     profil.derniere_activite = timezone.now()
     profil.save()
+
+
+
+def enregistrer_vue_service_livraison(utilisateur, source='onglet'):
+    """Ouverture de l'ecran/service livraison.
+
+    Simple trace d'evenement : contrairement a enregistrer_vue_vitrine,
+    ne touche a aucun compteur agrege (ProfilNavigation).
+    """
+    from .models import VueServiceLivraison
+
+    utilisateur_reel = (
+        utilisateur if utilisateur and utilisateur.is_authenticated else None
+    )
+    VueServiceLivraison.objects.create(
+        utilisateur=utilisateur_reel, source=source,
+    )
