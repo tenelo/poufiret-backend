@@ -761,3 +761,92 @@ class CodeOTP(ModeleBase):
             but=but,
             expire_le=timezone.now() + timezone.timedelta(minutes=cls.DUREE_VIE_MINUTES),
         )
+
+
+class ParametresSecurite(ModeleBase):
+    """Parametres de securite lies aux comptes (ligne unique).
+
+    Pilotables depuis l'admin sans republier l'app :
+    - liste des PIN explicitement interdits ;
+    - blocage optionnel des suites croissantes/decroissantes (1234, 4321...).
+    """
+
+    PINS_INTERDITS_DEFAUT = ['0000', '1111', '1234']
+
+    pins_interdits = models.JSONField(
+        _('PIN interdits'),
+        default=list,
+        blank=True,
+        help_text=_('Liste de codes PIN a 4 chiffres refuses '
+                    '(ex: ["0000", "1111", "1234"]).'),
+    )
+    bloquer_suites = models.BooleanField(
+        _('bloquer les suites'),
+        default=True,
+        help_text=_('Refuse les suites croissantes ou decroissantes '
+                    '(1234, 2345, 4321, 9876...).'),
+    )
+
+    class Meta:
+        verbose_name = _('parametres securite')
+        verbose_name_plural = _('parametres securite')
+
+    def save(self, *args, **kwargs):
+        # Singleton : une seule ligne.
+        premier = self.__class__.objects.first()
+        self.pk = self.pk or (premier.pk if premier else None)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def obtenir(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create(pins_interdits=cls.PINS_INTERDITS_DEFAUT)
+        return obj
+
+    def __str__(self):
+        return 'Parametres securite'
+
+
+class ParametresSecurite(ModeleBase):
+    """Parametres de securite lies aux comptes (ligne unique).
+
+    Pilotables depuis l'admin sans republier l'app :
+    - liste des PIN explicitement interdits ;
+    - blocage optionnel des suites croissantes/decroissantes (1234, 4321...).
+    """
+
+    PINS_INTERDITS_DEFAUT = ['0000', '1111', '1234']
+
+    pins_interdits = models.JSONField(
+        _('PIN interdits'),
+        default=list,
+        blank=True,
+        help_text=_('Liste de codes PIN a 4 chiffres refuses '
+                    '(ex: ["0000", "1111", "1234"]).'),
+    )
+    bloquer_suites = models.BooleanField(
+        _('bloquer les suites'),
+        default=True,
+        help_text=_('Refuse les suites croissantes ou decroissantes '
+                    '(1234, 2345, 4321, 9876...).'),
+    )
+
+    class Meta:
+        verbose_name = _('parametres securite')
+        verbose_name_plural = _('parametres securite')
+
+    def save(self, *args, **kwargs):
+        premier = self.__class__.objects.first()
+        self.pk = self.pk or (premier.pk if premier else None)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def obtenir(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create(pins_interdits=cls.PINS_INTERDITS_DEFAUT)
+        return obj
+
+    def __str__(self):
+        return 'Parametres securite'

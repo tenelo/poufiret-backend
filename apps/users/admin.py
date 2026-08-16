@@ -6,7 +6,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.translation import gettext_lazy as _
 
 from .models import (User, PlanAbonnement, ProfilPartenaire, HoraireOuverture,
-                     AdresseClient, NumeroVerifie, CodeOTP)
+                     AdresseClient, NumeroVerifie, CodeOTP, ParametresSecurite)
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
@@ -288,3 +288,16 @@ class CodeOTPAdmin(admin.ModelAdmin):
     search_fields = ('telephone',)
     ordering = ('-cree_le',)
     readonly_fields = ('cree_le', 'modifie_le', 'valide_le')
+
+
+@admin.register(ParametresSecurite)
+class ParametresSecuriteAdmin(admin.ModelAdmin):
+    """Singleton : parametres de securite des comptes (PIN interdits, suites)."""
+    list_display = ('__str__', 'bloquer_suites')
+
+    def has_add_permission(self, request):
+        # Un seul enregistrement autorise.
+        return not ParametresSecurite.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
