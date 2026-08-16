@@ -229,3 +229,91 @@ class StatsConnexionExportView(APIView):
                 depuis = None
         entetes, lignes = export_sessions_lignes(depuis)
         return reponse_csv('stats_connexion_sessions', entetes, lignes)
+
+
+def _bornes_periode(request):
+    """Lit ?debut=YYYY-MM-DD&fin=YYYY-MM-DD. Retourne (debut, fin, erreur)."""
+    from datetime import datetime
+    debut = fin = None
+    try:
+        if request.query_params.get('debut'):
+            debut = datetime.strptime(request.query_params['debut'], '%Y-%m-%d').date()
+        if request.query_params.get('fin'):
+            fin = datetime.strptime(request.query_params['fin'], '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None, None, True
+    return debut, fin, False
+
+
+class LivraisonStatsClientView(APIView):
+    """GET livraison/client/<user_id>/ — stats livraison d'un client (admin).
+
+    Consultations de l'onglet livraison + usages réels (demandeur/destinataire).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id=None):
+        if not request.user.is_staff:
+            return Response({'detail': 'Réservé aux administrateurs.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        from .stats_livraison import stats_client
+        return Response(stats_client(user_id))
+
+
+class LivraisonStatsPartenaireView(APIView):
+    """GET livraison/partenaire/<partenaire_id>/ — stats livraison d'un partenaire (admin).
+
+    Nombre de courses issues d'une commande de ce partenaire.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, partenaire_id=None):
+        if not request.user.is_staff:
+            return Response({'detail': 'Réservé aux administrateurs.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        from .stats_livraison import stats_partenaire
+        return Response(stats_partenaire(partenaire_id))
+
+
+class LivraisonTableauDeBordView(APIView):
+    """GET livraison/tableau-de-bord/ — tableau de bord livraison (admin/Angular).
+
+    Agrège TOUTES les courses : taux de conversion, CA (courses livrées),
+    CA par jour/mois/heure, répartition par type de demandeur, top villes,
+    top quartiers de départ, top catégories de partenaire.
+    Filtre de période optionnel : ?debut=YYYY-MM-DD&fin=YYYY-MM-DD.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response({'detail': 'Réservé aux administrateurs.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        debut, fin, erreur = _bornes_periode(request)
+        if erreur:
+            return Response({'detail': 'Format de date invalide (attendu YYYY-MM-DD).'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        from .stats_livraison import tableau_de_bord
+        return Response(tableau_de_bord(debut, fin))
+
+
+class LivraisonTableauDeBordExportView(APIView):
+    """Export CSV du tableau de bord livraison (admin).
+
+    Mêmes données que LivraisonTableauDeBordView, à plat (section ; clé ; valeur).
+    Filtre de période optionnel : ?debut=YYYY-MM-DD&fin=YYYY-MM-DD.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response({'detail': 'Réservé aux administrateurs.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        debut, fin, erreur = _bornes_periode(request)
+        if erreur:
+            return Response({'detail': 'Format de date invalide (attendu YYYY-MM-DD).'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        from apps.core.exports import reponse_csv
+        from .stats_livraison import export_tableau_de_bord_lignes
+        entetes, lignes = export_tableau_de_bord_lignes(debut, fin)
+        return reponse_csv('livraison_tableau_de_bord', entetes, lignes)
