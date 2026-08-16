@@ -52,3 +52,6 @@ Thumbs.db
 .docker/
 secrets/
 tmp_pubs/
+apply_bloc23.py
+seed_tests.py
+purge_tests.py
