@@ -40,6 +40,9 @@ class User(AbstractUser):
         PARTENAIRE = 'partenaire', _('Partenaire')
         LIVREUR = 'livreur', _('Livreur')
         ADMIN = 'admin', _('Administrateur')
+        GESTIONNAIRE_LIVRAISON = 'gestionnaire_livraison', _('Gestionnaire de livraison')
+        SUPERVISEUR_LIVRAISON = 'superviseur_livraison', _('Superviseur de livraison')
+        COORDONNATEUR_LIVRAISON = 'coordonnateur_livraison', _('Coordonnateur de livraison')
 
     # Téléphone obligatoire et unique : c'est l'identifiant principal
     telephone = models.CharField(
@@ -52,7 +55,7 @@ class User(AbstractUser):
     # Le rôle détermine ce que l'utilisateur peut faire
     role = models.CharField(
         _('rôle'),
-        max_length=20,
+        max_length=30,
         choices=Role.choices,
         default=Role.CLIENT,
     )

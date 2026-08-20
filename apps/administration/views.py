@@ -13,11 +13,12 @@ from rest_framework import status
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 
-from apps.core.permissions import EstAdmin, EstSuperAdmin, ADroitDe
+from apps.core.permissions import EstAdmin, EstSuperAdmin, ADroitDe, PeutGererAdmins
 from apps.core.exports import reponse_csv
+from apps.core.validateurs import generer_pin_aleatoire
 from . import services, moderation, faveurs, partenaires
 from apps.users.models import ProfilPartenaire, PlanAbonnement
 from apps.users.serializers import MonProfilPartenaireSerializer
@@ -288,23 +289,30 @@ class DemandesPartenariatView(APIView):
                         status=status.HTTP_200_OK)
 
 
+def _noms_capacites_admin():
+    """Noms de toutes les capacités booléennes de PermissionsAdmin.
+
+    Introspection dynamique (BooleanField) pour ne jamais se désynchroniser
+    du modèle réel — un nouveau champ y apparaît automatiquement.
+    """
+    return [
+        champ.name for champ in PermissionsAdmin._meta.get_fields()
+        if isinstance(champ, models.BooleanField)
+    ]
+
+
 class MesPermissionsView(APIView):
     """Rôle + capacités admin de l'utilisateur connecté.
 
     Sert de source de vérité au front Angular pour construire dynamiquement
     le menu et les gardes de routes, sans dupliquer la liste des capacités
-    côté client. La liste des capacités est introspectée depuis les
-    BooleanField de PermissionsAdmin pour ne jamais se désynchroniser du
-    modèle réel.
+    côté client.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
-        noms_capacites = [
-            champ.name for champ in PermissionsAdmin._meta.get_fields()
-            if isinstance(champ, models.BooleanField)
-        ]
+        noms_capacites = _noms_capacites_admin()
 
         if user.is_superuser:
             capacites = {nom: True for nom in noms_capacites}
@@ -516,3 +524,286 @@ class CreditDetailView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
 
         return Response({'detail': 'Crédit retiré.'}, status=status.HTTP_200_OK)
+
+
+class RechercheComptesView(APIView):
+    """Recherche de comptes utilisateurs (tous rôles), pour l'écran de modération.
+
+    Réservée au super-admin : alimente les actions de ModerationView, qui
+    sont elles-mêmes réservées à EstSuperAdmin.
+    GET ?q=<texte>&role=<optionnel> — moins de 2 caractères => liste vide.
+    """
+    permission_classes = [IsAuthenticated, EstSuperAdmin]
+
+    @staticmethod
+    def _etat(u):
+        if u.est_supprime:
+            return 'supprime', 'Supprimé'
+        if u.est_banni:
+            return 'banni', 'Banni'
+        if u.est_suspendu:
+            return 'suspendu', 'Suspendu'
+        if u.is_active:
+            return 'actif', 'Actif'
+        return 'inactif', 'Inactif'
+
+    def get(self, request):
+        q = request.query_params.get('q', '').strip()
+        if len(q) < 2:
+            return Response({'resultats': []})
+
+        qs = User.objects.filter(
+            Q(telephone__icontains=q) | Q(username__icontains=q)
+            | Q(first_name__icontains=q) | Q(last_name__icontains=q)
+        )
+        role = request.query_params.get('role')
+        if role:
+            qs = qs.filter(role=role)
+        qs = qs.order_by('username', 'telephone')[:25]
+
+        resultats = []
+        for u in qs:
+            etat, etat_libelle = self._etat(u)
+            resultats.append({
+                'id': u.id,
+                'telephone': u.telephone,
+                'username': u.username,
+                'nom_complet': u.get_full_name(),
+                'role': u.role,
+                'role_libelle': u.get_role_display(),
+                'etat': etat,
+                'etat_libelle': etat_libelle,
+                'est_suspendu': u.est_suspendu,
+                'est_banni': u.est_banni,
+                'est_supprime': u.est_supprime,
+                'is_active': u.is_active,
+                'date_joined': u.date_joined,
+            })
+        return Response({'resultats': resultats})
+
+
+def _admin_dict(u, noms_capacites=None):
+    """Représentation commune d'un admin : identité + grille de capacités."""
+    if noms_capacites is None:
+        noms_capacites = _noms_capacites_admin()
+    perms = getattr(u, 'permissions_admin', None)
+    if perms is not None:
+        capacites = {nom: getattr(perms, nom) for nom in noms_capacites}
+    else:
+        capacites = {nom: False for nom in noms_capacites}
+    return {
+        'id': u.id,
+        'telephone': u.telephone,
+        'username': u.username,
+        'nom_complet': u.get_full_name(),
+        'role': u.role,
+        'date_joined': u.date_joined,
+        'is_active': u.is_active,
+        'capacites': capacites,
+    }
+
+
+def _filtrer_anti_escalade(capacites_payload, acteur):
+    """Retire `gerer_admins` du payload si l'acteur n'est pas super-admin.
+
+    gerer_admins est privilégié : seul un is_superuser peut le poser/retirer.
+    Un admin-gestionnaire non-superuser voit toute tentative sur ce champ
+    ignorée silencieusement (la cible garde sa valeur actuelle).
+    """
+    if acteur.is_superuser:
+        return dict(capacites_payload)
+    return {k: v for k, v in capacites_payload.items() if k != 'gerer_admins'}
+
+
+class AdminsListView(APIView):
+    """Liste des comptes admins (is_staff, hors super-admins) + leurs capacités.
+
+    N'expose jamais les super-admins : leurs droits sont totaux et ne se
+    gèrent pas via cette grille.
+    """
+    permission_classes = [IsAuthenticated, PeutGererAdmins]
+
+    def get(self, request):
+        noms_capacites = _noms_capacites_admin()
+
+        qs = User.objects.filter(is_staff=True, is_superuser=False).select_related(
+            'permissions_admin').order_by('username', 'telephone')
+
+        resultats = [_admin_dict(u, noms_capacites) for u in qs]
+        return Response({'resultats': resultats})
+
+
+class CreerAdminView(APIView):
+    """Crée un compte admin de zéro (User + PermissionsAdmin).
+
+    Le PIN est généré aléatoirement et communiqué en clair une seule fois,
+    exactement comme la création de partenaire par un admin
+    (CreerPartenaireParAdminView / generer_pin_aleatoire).
+    """
+    permission_classes = [IsAuthenticated, PeutGererAdmins]
+
+    def post(self, request):
+        telephone = (request.data.get('telephone') or '').strip()
+        if not telephone.startswith('+'):
+            return Response(
+                {'detail': 'Numéro au format international attendu (+225...).'},
+                status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(telephone=telephone).exists():
+            return Response(
+                {'detail': 'Un compte existe déjà pour ce numéro.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        username = (request.data.get('username') or telephone).strip()
+        if User.objects.filter(username=username).exists():
+            return Response(
+                {'detail': 'Ce nom d\'utilisateur est déjà pris.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        prenom = request.data.get('prenom', '') or ''
+        nom = request.data.get('nom', '') or ''
+
+        capacites_payload = request.data.get('capacites') or {}
+        if not isinstance(capacites_payload, dict):
+            return Response(
+                {'detail': 'capacites doit être un objet {nom_capacite: bool}.'},
+                status=status.HTTP_400_BAD_REQUEST)
+        capacites_payload = _filtrer_anti_escalade(capacites_payload, request.user)
+
+        noms_capacites = _noms_capacites_admin()
+        pin = generer_pin_aleatoire()
+
+        with transaction.atomic():
+            user = User(
+                telephone=telephone,
+                username=username,
+                first_name=prenom,
+                last_name=nom,
+                role=User.Role.ADMIN,
+                is_staff=True,
+                is_superuser=False,
+                est_verifie=True,
+                pin_par_defaut=True,
+            )
+            user.set_password(pin)
+            user.save()
+
+            perms = PermissionsAdmin.objects.create(admin=user)
+            champs_modifies = []
+            for nom_cap, valeur in capacites_payload.items():
+                if nom_cap in noms_capacites:
+                    setattr(perms, nom_cap, bool(valeur))
+                    champs_modifies.append(nom_cap)
+            if champs_modifies:
+                perms.save(update_fields=champs_modifies)
+
+        try:
+            moderation._journaliser(
+                request.user, user, 'creer_admin',
+                f"Création admin « {username} »",
+            )
+        except Exception:
+            pass
+
+        return Response({
+            'admin_id': user.id,
+            'telephone': user.telephone,
+            'username': user.username,
+            'pin_clair': pin,
+            'message': (f"Admin créé. Ceci est son PIN de connexion, à lui "
+                       f"communiquer une seule fois : {pin}. Il devra le "
+                       f"changer à sa première connexion."),
+        }, status=status.HTTP_201_CREATED)
+
+
+class AdminDetailView(APIView):
+    """Détail (GET), édition des capacités (PATCH) et révocation (DELETE)
+    d'un admin ciblé par son id de User.
+
+    Ne s'applique jamais à un super-admin (404) : leurs droits ne se gèrent
+    pas via cette grille.
+    """
+    permission_classes = [IsAuthenticated, PeutGererAdmins]
+
+    def _admin(self, pk):
+        return User.objects.select_related('permissions_admin').filter(
+            pk=pk, is_staff=True, is_superuser=False).first()
+
+    def get(self, request, pk):
+        admin = self._admin(pk)
+        if admin is None:
+            return Response({'detail': 'Admin introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        return Response(_admin_dict(admin))
+
+    def patch(self, request, pk):
+        if str(pk) == str(request.user.id):
+            return Response(
+                {'detail': 'Vous ne pouvez pas éditer vos propres capacités ici.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        admin = self._admin(pk)
+        if admin is None:
+            return Response({'detail': 'Admin introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        capacites_payload = request.data.get('capacites')
+        if not isinstance(capacites_payload, dict):
+            return Response(
+                {'detail': 'capacites doit être un objet {nom_capacite: bool}.'},
+                status=status.HTTP_400_BAD_REQUEST)
+        capacites_payload = _filtrer_anti_escalade(capacites_payload, request.user)
+
+        noms_capacites = _noms_capacites_admin()
+        perms = getattr(admin, 'permissions_admin', None)
+        if perms is None:
+            perms = PermissionsAdmin.objects.create(admin=admin)
+
+        champs_modifies = []
+        for nom_cap, valeur in capacites_payload.items():
+            if nom_cap in noms_capacites:
+                setattr(perms, nom_cap, bool(valeur))
+                champs_modifies.append(nom_cap)
+        if champs_modifies:
+            perms.save(update_fields=champs_modifies)
+
+        try:
+            moderation._journaliser(
+                request.user, admin, 'editer_capacites_admin',
+                f"Capacités modifiées : {', '.join(champs_modifies) or '(aucune)'}",
+            )
+        except Exception:
+            pass
+
+        admin.refresh_from_db()
+        return Response(_admin_dict(admin, noms_capacites))
+
+    def delete(self, request, pk):
+        if str(pk) == str(request.user.id):
+            return Response(
+                {'detail': 'Vous ne pouvez pas révoquer votre propre accès admin.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        admin = self._admin(pk)
+        if admin is None:
+            return Response({'detail': 'Admin introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        motif = request.data.get('motif', '')
+
+        with transaction.atomic():
+            admin.is_staff = False
+            admin.role = User.Role.CLIENT
+            admin.save(update_fields=['is_staff', 'role'])
+
+            perms = getattr(admin, 'permissions_admin', None)
+            if perms is not None:
+                perms.delete()
+
+        try:
+            moderation._journaliser(
+                request.user, admin, 'revoquer_admin', motif or '',
+            )
+        except Exception:
+            pass
+
+        return Response({'detail': 'Admin révoqué.'}, status=status.HTTP_200_OK)

@@ -13,6 +13,10 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         source='departement.nom', read_only=True, default='')
     region_nom = serializers.CharField(
         source='departement.region.nom', read_only=True, default='')
+    espace = serializers.SerializerMethodField()
+    livraison_departement_id = serializers.SerializerMethodField()
+    livraison_departement_nom = serializers.SerializerMethodField()
+    livraison_nom_bureau = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -20,10 +24,44 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             'id', 'telephone', 'username', 'first_name', 'last_name',
             'role', 'est_verifie', 'pin_par_defaut', 'langue_preferee', 'token_fcm',
             'departement', 'departement_nom', 'region_nom',
-            'tranche_age', 'sexe',
+            'tranche_age', 'sexe', 'espace',
+            'livraison_departement_id', 'livraison_departement_nom',
+            'livraison_nom_bureau',
         ]
         read_only_fields = ['id', 'telephone', 'role', 'est_verifie', 'pin_par_defaut',
-                            'departement_nom', 'region_nom']
+                            'departement_nom', 'region_nom', 'espace',
+                            'livraison_departement_id', 'livraison_departement_nom',
+                            'livraison_nom_bureau']
+
+    def get_espace(self, obj):
+        """Espace Angular vers lequel router l'utilisateur après connexion."""
+        if obj.is_superuser:
+            return 'super_admin'
+        if obj.role == User.Role.ADMIN:
+            return 'admin'
+        if obj.role == User.Role.COORDONNATEUR_LIVRAISON:
+            return 'coordination_livraison'
+        if obj.role == User.Role.SUPERVISEUR_LIVRAISON:
+            return 'supervision_livraison'
+        if obj.role == User.Role.GESTIONNAIRE_LIVRAISON:
+            return 'gestion_livraison'
+        if obj.role == User.Role.PARTENAIRE:
+            return 'partenaire'
+        if obj.role == User.Role.LIVREUR:
+            return 'livreur'
+        return 'client'
+
+    def get_livraison_departement_id(self, obj):
+        profil = getattr(obj, 'profil_livraison', None)
+        return profil.departement_id if profil else None
+
+    def get_livraison_departement_nom(self, obj):
+        profil = getattr(obj, 'profil_livraison', None)
+        return profil.departement.nom if profil and profil.departement_id else None
+
+    def get_livraison_nom_bureau(self, obj):
+        profil = getattr(obj, 'profil_livraison', None)
+        return profil.nom_bureau if profil else None
 
 
 class ConnexionSerializer(TokenObtainPairSerializer):

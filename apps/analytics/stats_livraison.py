@@ -12,7 +12,7 @@ Définition retenue :
     livraison réellement effectuée ; cf. TRANSITIONS dans
     apps.livraison.models, 'livree': [] est l'état final du cycle normal).
 """
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractHour, TruncDay, TruncMonth
 from django.utils import timezone
 
@@ -157,12 +157,52 @@ def _top_categories_partenaire(courses_qs):
     ]
 
 
-def tableau_de_bord(debut=None, fin=None):
+def stats_par_ville(courses_qs):
+    """Ventilation compacte (nb courses, CA) par département.
+
+    Sert la vue nationale du coordonnateur, pour comparer les villes entre
+    elles. Contrairement à _top_villes : pas de LIMITE_TOP (toutes les
+    villes ayant au moins une course sur la période), et inclut le CA
+    (courses LIVREE, même définition que _ca_total) en plus du décompte.
+    """
+    lignes = (
+        courses_qs.exclude(ville_id__isnull=True)
+        .values('ville_id', 'ville__nom')
+        .annotate(
+            nb_courses=Count('id'),
+            ca=Sum('prix', filter=Q(statut=Course.Statut.LIVREE)),
+        )
+        .order_by('-nb_courses')
+    )
+    return [
+        {
+            'ville_id': l['ville_id'],
+            'ville_nom': l['ville__nom'] or 'non_precise',
+            'nb_courses': l['nb_courses'],
+            'ca': l['ca'] or 0,
+        }
+        for l in lignes
+    ]
+
+
+def tableau_de_bord(debut=None, fin=None, ville_id=None):
     """Assemble le tableau de bord complet des stats de livraison.
 
     debut / fin : objets date() optionnels, bornent la période (incluses).
+    ville_id : optionnel, restreint les courses à ce département (id de
+        geo.Departement, correspond à Course.ville_id). None = toutes les
+        villes (comportement identique à avant l'ajout de ce paramètre).
+
+    Note : VueServiceLivraison (consultations) n'a pas de notion de ville
+    (une ouverture de l'onglet livraison n'est pas rattachée à un
+    département) — consultations_qs n'est donc jamais filtré par ville_id,
+    même quand les courses le sont. Le ratio de conversion, dans ce cas,
+    compare des courses locales à des consultations nationales : à lire en
+    conséquence côté ville.
     """
     courses_qs = _courses_periode(debut, fin)
+    if ville_id is not None:
+        courses_qs = courses_qs.filter(ville_id=ville_id)
     consultations_qs = _consultations_periode(debut, fin)
 
     return {

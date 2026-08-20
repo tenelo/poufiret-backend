@@ -222,3 +222,51 @@ class IconeMotard(ImagesOptimiseesMixin, ModeleBase):
     def __str__(self):
         actif = ' (active)' if self.est_active else ''
         return f'{self.nom} [{self.get_role_display()}]{actif}'
+
+
+class ProfilLivraison(ModeleBase):
+    """Profil du personnel de gestion TeneLivr (gestionnaire / superviseur).
+
+    Un gestionnaire est rattaché à une ville (departement) : il ne gère que
+    les courses de cette ville. Un superviseur n'a pas de departement
+    (null) : il voit toutes les villes.
+
+    Module volontairement isolé dans apps/livraison/ (pas de dépendance
+    d'import vers apps.users.models) pour rester facilement extractible —
+    TeneLivr est destiné à devenir une plateforme potentiellement revendue
+    à une structure tierce, indépendamment du reste de Poufiret.
+    """
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='profil_livraison', verbose_name='compte utilisateur',
+    )
+    departement = models.ForeignKey(
+        'geo.Departement', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='gestionnaires_livraison',
+        verbose_name='ville de rattachement',
+        help_text='Rempli pour un gestionnaire (sa ville). Laisser vide '
+                  'pour un superviseur (voit toutes les villes).',
+    )
+    est_actif = models.BooleanField(
+        'actif', default=True,
+        help_text='Permet de désactiver un bureau sans supprimer le compte.',
+    )
+    nom_bureau = models.CharField(
+        'nom du bureau', max_length=150, blank=True, default='',
+        help_text='Nom lisible du bureau, ex. « Bureau TeneLivr Ferké ».',
+    )
+
+    class Meta:
+        verbose_name = 'profil de livraison'
+        verbose_name_plural = 'profils de livraison'
+
+    @property
+    def est_superviseur(self):
+        return self.user.role == self.user.Role.SUPERVISEUR_LIVRAISON
+
+    @property
+    def est_gestionnaire(self):
+        return self.user.role == self.user.Role.GESTIONNAIRE_LIVRAISON
+
+    def __str__(self):
+        return f'{self.user} — {self.departement or "Superviseur"}'

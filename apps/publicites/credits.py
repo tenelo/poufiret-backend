@@ -4,8 +4,9 @@ Un crédit = une formule offerte à un partenaire sans paiement immédiat, en
 attente d'être consommée (création d'une publicité). Contrairement à
 `administration.faveurs` (qui offre directement une campagne active), ici
 l'admin ne fait qu'accorder le droit ; la consommation elle-même (pose de
-`publicite_consommatrice` + `statut=CONSOMME` + `consomme_le`) se fera au
-moment de la création de la pub, hors périmètre de ce module.
+`publicite_consommatrice` + `statut=CONSOMME` + `consomme_le`, puis
+activation de la pub) se fait côté partenaire, à la création de sa pub
+(voir `consommer_credit` et apps.publicites.views.MesPublicitesView).
 
 Chaque action est tracée dans JournalModeration via `_journaliser`
 (audit commun avec apps.administration.faveurs), best-effort : l'import
@@ -13,6 +14,7 @@ et l'appel sont protégés pour ne jamais faire échouer l'opération métier
 si l'API du helper venait à changer.
 """
 from django.db import transaction
+from django.utils import timezone
 
 from .models import CreditFormulePub
 
@@ -75,3 +77,56 @@ def retirer_credit(acteur, credit, motif=''):
         f"Crédit {formule_nom} — {motif}".strip(' —'),
     )
     credit.delete()
+
+
+@transaction.atomic
+def consommer_credit(partenaire, credit, publicite):
+    """Consomme un crédit disponible pour activer `publicite` gratuitement.
+
+    partenaire : ProfilPartenaire qui consomme (doit être le titulaire du
+                 crédit).
+    credit     : CreditFormulePub à consommer.
+    publicite  : Publicite nouvellement créée par ce partenaire, portant
+                 la MÊME formule que le crédit (pas de substitution de
+                 formule via un crédit).
+
+    Active la pub immédiatement (statut ACTIVE + dates de diffusion) en
+    réutilisant `services.activer_publicite` — le même calcul de dates que
+    la transition « valider » et que la faveur admin (`offrir_campagne`),
+    jamais réinventé ici. La pub est aussi marquée comme faveur
+    (`est_faveur`), cohérence avec offrir_campagne : c'est une campagne
+    diffusée sans paiement direct, l'admin qui a accordé le crédit en est
+    tracé comme l'accordant de la faveur.
+
+    Lève ValueError si le crédit n'appartient pas au partenaire, n'est
+    plus disponible, ou si sa formule ne correspond pas à celle de la pub.
+    """
+    from .services import activer_publicite
+
+    if credit.partenaire_id != partenaire.id:
+        raise ValueError("Ce crédit n'appartient pas à ce partenaire.")
+    if credit.statut != CreditFormulePub.Statut.DISPONIBLE:
+        raise ValueError('Ce crédit a déjà été consommé.')
+    if credit.formule_id != publicite.formule_id:
+        raise ValueError(
+            'La formule du crédit ne correspond pas à celle de la publicité.')
+
+    credit.statut = CreditFormulePub.Statut.CONSOMME
+    credit.consomme_le = timezone.now()
+    credit.publicite_consommatrice = publicite
+    credit.save(update_fields=['statut', 'consomme_le', 'publicite_consommatrice'])
+
+    activer_publicite(publicite)
+    publicite.est_faveur = True
+    publicite.faveur_accordee_par = credit.accorde_par
+    publicite.faveur_motif = (
+        'Crédit de formule consommé'
+        + (f' — {credit.motif}' if credit.motif else '')
+    )
+    publicite.save(update_fields=['est_faveur', 'faveur_accordee_par', 'faveur_motif'])
+
+    _journaliser_best_effort(
+        partenaire.user, credit.accorde_par, 'consommer_credit_pub',
+        f"Pub « {publicite.titre} » activée via crédit {credit.formule.nom}",
+    )
+    return publicite

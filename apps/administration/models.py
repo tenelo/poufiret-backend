@@ -131,6 +131,12 @@ class PermissionsAdmin(ModeleBase):
     lire_journal = models.BooleanField('lire le journal d\'audit', default=False)
     exporter_csv = models.BooleanField('exporter en CSV', default=False)
 
+    # ── G. Gestion ────────────────────────────────────────────────────
+    gerer_admins = models.BooleanField(
+        'gérer les comptes admins (créer, éditer capacités, révoquer)',
+        default=False,
+    )
+
     class Meta:
         verbose_name = 'permissions admin'
         verbose_name_plural = 'permissions des admins'

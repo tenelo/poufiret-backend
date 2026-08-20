@@ -1,6 +1,7 @@
 """
 Validateurs reutilisables Poufiret.
 """
+import random
 import re
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
@@ -8,6 +9,19 @@ from django.utils.translation import gettext_lazy as _
 # Fallback si la table ParametresSecurite n'existe pas encore (migration non
 # passee) ou en cas d'erreur d'acces base : liste minimale codee en dur.
 PINS_INTERDITS = {'0000', '1111', '1234'}
+
+
+def generer_pin_aleatoire():
+    """PIN a 4 chiffres aleatoire, en excluant les plus triviaux.
+
+    Meme logique que la creation de partenaire par un admin
+    (CreerPartenaireParAdminSerializer) : le titulaire le change a sa
+    1re connexion (pin_par_defaut=True).
+    """
+    pin = f'{random.randint(0, 9999):04d}'
+    while pin in PINS_INTERDITS:
+        pin = f'{random.randint(0, 9999):04d}'
+    return pin
 
 
 def _est_suite(valeur):

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ParametresLivraison, IconeMotard
+from .models import ParametresLivraison, IconeMotard, ProfilLivraison
 from .models import Course
 
 
@@ -44,3 +44,15 @@ class IconeMotardAdmin(admin.ModelAdmin):
                 '<img src="{}" style="height:48px;background:#ddd;'
                 'border-radius:6px;padding:2px" />', obj.image.url)
         return '—'
+
+
+@admin.register(ProfilLivraison)
+class ProfilLivraisonAdmin(admin.ModelAdmin):
+    list_display = ('user', 'role', 'departement', 'nom_bureau', 'est_actif')
+    list_filter = ('departement', 'est_actif')
+    search_fields = ('user__telephone', 'user__username', 'nom_bureau')
+    autocomplete_fields = ('user', 'departement')
+
+    @admin.display(description='rôle')
+    def role(self, obj):
+        return obj.user.get_role_display()

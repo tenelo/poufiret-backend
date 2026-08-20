@@ -6,7 +6,9 @@ from .views import (DashboardG5View, AppareilsExportView, ModerationView,
                     FaveurView, FaveurPubliciteView,
                     DemandesPartenariatView, MesPermissionsView,
                     ChangerFormulePubliciteView, RecherchePartenairesView,
-                    CreditsPartenaireView, CreditDetailView)
+                    CreditsPartenaireView, CreditDetailView,
+                    RechercheComptesView, AdminsListView,
+                    CreerAdminView, AdminDetailView)
 
 app_name = 'administration'
 
@@ -25,5 +27,9 @@ urlpatterns = [
     path('partenaires/recherche/', RecherchePartenairesView.as_view(), name='partenaires-recherche'),
     path('partenaires/<int:pk>/credits/', CreditsPartenaireView.as_view(), name='partenaire-credits'),
     path('credits/<uuid:pk>/', CreditDetailView.as_view(), name='credit-detail'),
+    path('comptes/recherche/', RechercheComptesView.as_view(), name='comptes-recherche'),
+    path('admins/', AdminsListView.as_view(), name='admins-liste'),
+    path('admins/creer/', CreerAdminView.as_view(), name='admins-creer'),
+    path('admins/<int:pk>/', AdminDetailView.as_view(), name='admin-detail'),
     path('demandes-partenariat/', DemandesPartenariatView.as_view(), name='demandes-partenariat'),
 ]

@@ -77,6 +77,32 @@ class EstSuperAdmin(permissions.BasePermission):
         return bool(u and u.is_authenticated and u.is_superuser)
 
 
+class PeutGererAdmins(permissions.BasePermission):
+    """Accès réservé à qui peut gérer les comptes admins (créer, éditer
+    leurs capacités, révoquer).
+
+    Autorise si l'utilisateur est super-admin (accès total), OU s'il est
+    admin (is_staff) ET possède la capacité `gerer_admins` cochée dans son
+    PermissionsAdmin. Même logique que ADroitDe, en classe dédiée pour un
+    usage explicite (gestion des admins eux-mêmes, distincte des autres
+    capacités métier).
+    """
+    message = "Vous n'avez pas la permission de gérer les comptes admins."
+
+    def has_permission(self, request, view):
+        u = request.user
+        if not (u and u.is_authenticated):
+            return False
+        if u.is_superuser:
+            return True
+        if not u.is_staff:
+            return False
+        perms = getattr(u, 'permissions_admin', None)
+        if perms is None:
+            return False
+        return bool(getattr(perms, 'gerer_admins', False))
+
+
 def ADroitDe(*capacites):
     """Fabrique de permission basée sur la grille PermissionsAdmin.
 

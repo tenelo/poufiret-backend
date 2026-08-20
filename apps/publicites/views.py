@@ -1,11 +1,15 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from waffle import flag_is_active
 
-from .models import (FormulePublicite, ImpressionPublicite, ParametresPublicite, Publicite, TypeAffichage)
+from . import credits as credits_pub
+from .models import (CreditFormulePub, FormulePublicite, ImpressionPublicite,
+                     ParametresPublicite, Publicite, TypeAffichage)
 from .serializers import (
     FormulePubliciteSerializer, PubliciteCreationSerializer,
     PubliciteDetailSerializer, PubliciteListSerializer,
@@ -177,8 +181,53 @@ class EnregistrerImpressionView(APIView):
                         status=status.HTTP_201_CREATED)
 
 
+class MesCreditsView(APIView):
+    """Crédits de formule pub du partenaire connecté (consultation).
+
+    GET ?statut=disponible|consomme — sans filtre, renvoie tous les crédits.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        profil = getattr(request.user, 'profil_partenaire', None)
+        if profil is None:
+            return Response({'erreur': True, 'message': 'Réservé aux partenaires.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        qs = CreditFormulePub.objects.filter(
+            partenaire=profil).select_related('formule')
+        statut_filtre = request.query_params.get('statut')
+        if statut_filtre:
+            qs = qs.filter(statut=statut_filtre)
+        qs = qs.order_by('-cree_le')
+
+        resultats = [{
+            'id': str(c.id),
+            'formule_id': c.formule_id,
+            'formule_nom': c.formule.nom,
+            'formule_prix': c.formule.prix,
+            'formule_types_affichage': c.formule.types_affichage,
+            'statut': c.statut,
+            'cree_le': c.cree_le,
+            'consomme_le': c.consomme_le,
+            'publicite_consommatrice_id': (
+                str(c.publicite_consommatrice_id)
+                if c.publicite_consommatrice_id else None
+            ),
+        } for c in qs]
+        return Response({'resultats': resultats})
+
+
 class MesPublicitesView(generics.ListCreateAPIView):
-    """Parcours partenaire : lister ses pubs / en créer une (brouillon)."""
+    """Parcours partenaire : lister ses pubs / en créer une.
+
+    Sans `credit_id` dans le body : comportement inchangé, la pub est créée
+    en brouillon (cycle normal soumission/paiement).
+    Avec `credit_id` : la pub créée est immédiatement activée gratuitement
+    en consommant ce crédit (voir apps.publicites.credits.consommer_credit).
+    `credit_id` n'est pas un champ du modèle Publicite, donc pas déclaré
+    sur PubliciteCreationSerializer — simplement lu depuis request.data.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_class(self):
@@ -193,7 +242,27 @@ class MesPublicitesView(generics.ListCreateAPIView):
         if profil is None:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Réservé aux partenaires.')
-        serializer.save(partenaire=profil)
+
+        with transaction.atomic():
+            pub = serializer.save(partenaire=profil)
+
+            credit_id = self.request.data.get('credit_id')
+            if not credit_id:
+                return
+
+            try:
+                credit = CreditFormulePub.objects.select_related(
+                    'formule').filter(pk=credit_id).first()
+            except (ValueError, TypeError, DjangoValidationError):
+                credit = None
+            if credit is None:
+                raise serializers.ValidationError(
+                    {'credit_id': 'Crédit introuvable.'})
+
+            try:
+                credits_pub.consommer_credit(profil, credit, pub)
+            except ValueError as exc:
+                raise serializers.ValidationError({'credit_id': str(exc)})
 
 
 class TransitionPubliciteView(APIView):
