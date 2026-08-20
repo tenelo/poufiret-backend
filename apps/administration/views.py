@@ -12,14 +12,18 @@ from rest_framework.views import APIView
 from rest_framework import status
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.db.models import Q
 
 from apps.core.permissions import EstAdmin, EstSuperAdmin, ADroitDe
 from apps.core.exports import reponse_csv
 from . import services, moderation, faveurs, partenaires
 from apps.users.models import ProfilPartenaire, PlanAbonnement
 from apps.users.serializers import MonProfilPartenaireSerializer
-from apps.publicites.models import Publicite
-from .models import JournalModeration
+from apps.publicites.models import CreditFormulePub, FormulePublicite, Publicite
+from apps.publicites import credits as credits_pub
+from .models import JournalModeration, PermissionsAdmin
 
 User = get_user_model()
 
@@ -250,7 +254,7 @@ class DemandesPartenariatView(APIView):
     def get(self, request):
         qs = ProfilPartenaire.objects.select_related(
             'user', 'departement', 'plan').filter(
-            statut=ProfilPartenaire.Statut.EN_ATTENTE).order_by('cree_le')
+            statut=ProfilPartenaire.Statut.EN_ATTENTE).order_by('created_at')
         demandes = [{
             'id': p.id,
             'nom_commerce': p.nom_commerce,
@@ -258,7 +262,7 @@ class DemandesPartenariatView(APIView):
             'nom_complet': p.user.get_full_name(),
             'departement': getattr(p.departement, 'nom', None),
             'type_partenaire': p.type_partenaire,
-            'cree_le': p.cree_le,
+            'cree_le': p.created_at,
         } for p in qs]
         return Response({'total': len(demandes), 'demandes': demandes})
 
@@ -282,3 +286,233 @@ class DemandesPartenariatView(APIView):
                 status=status.HTTP_400_BAD_REQUEST)
         return Response({'statut': profil.statut, 'id': profil.id},
                         status=status.HTTP_200_OK)
+
+
+class MesPermissionsView(APIView):
+    """Rôle + capacités admin de l'utilisateur connecté.
+
+    Sert de source de vérité au front Angular pour construire dynamiquement
+    le menu et les gardes de routes, sans dupliquer la liste des capacités
+    côté client. La liste des capacités est introspectée depuis les
+    BooleanField de PermissionsAdmin pour ne jamais se désynchroniser du
+    modèle réel.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        noms_capacites = [
+            champ.name for champ in PermissionsAdmin._meta.get_fields()
+            if isinstance(champ, models.BooleanField)
+        ]
+
+        if user.is_superuser:
+            capacites = {nom: True for nom in noms_capacites}
+        else:
+            perms = getattr(user, 'permissions_admin', None)
+            if user.is_staff and perms is not None:
+                capacites = {nom: getattr(perms, nom) for nom in noms_capacites}
+            else:
+                capacites = {nom: False for nom in noms_capacites}
+
+        return Response({
+            'role': user.role,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser,
+            'capacites': capacites,
+        })
+
+
+class ChangerFormulePubliciteView(APIView):
+    """Réassigne la formule d'une publicité (avant de l'offrir en faveur).
+
+    Même capacité que la faveur pub (offrir_campagne) : sert typiquement à
+    ramener une pub soumise avec une formule chère au forfait effectivement
+    offert, avant d'appeler FaveurPubliciteView.
+    """
+    permission_classes = [IsAuthenticated, ADroitDe('offrir_campagne')]
+
+    STATUTS_INTERDITS = {Publicite.Statut.ACTIVE, Publicite.Statut.TERMINEE}
+
+    def patch(self, request, pk):
+        pub = Publicite.objects.select_related('formule', 'partenaire__user').filter(pk=pk).first()
+        if pub is None:
+            return Response({'detail': 'Publicité introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        formule_id = request.data.get('formule_id')
+        if not formule_id:
+            return Response({'detail': 'formule_id requis.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            nouvelle_formule = FormulePublicite.objects.filter(
+                pk=formule_id, est_active=True).first()
+        except (ValueError, TypeError, ValidationError):
+            nouvelle_formule = None
+        if nouvelle_formule is None:
+            return Response(
+                {'detail': 'Formule introuvable ou inactive.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        if pub.statut in self.STATUTS_INTERDITS:
+            return Response(
+                {'detail': f"Impossible de changer la formule d'une publicité "
+                           f"au statut « {pub.get_statut_display()} »."},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        ancienne_formule = pub.formule
+        pub.formule = nouvelle_formule
+        pub.save(update_fields=['formule'])
+
+        try:
+            moderation._journaliser(
+                request.user, pub.partenaire.user, 'changer_formule',
+                f"Pub « {pub.titre} » : formule {ancienne_formule.nom} "
+                f"→ {nouvelle_formule.nom}",
+            )
+        except Exception:
+            pass
+
+        return Response({
+            'id': str(pub.id),
+            'titre': pub.titre,
+            'statut': pub.statut,
+            'formule': nouvelle_formule.nom,
+            'formule_id': nouvelle_formule.id,
+            'prix_formule': nouvelle_formule.prix,
+        }, status=status.HTTP_200_OK)
+
+
+class RecherchePartenairesView(APIView):
+    """Recherche un partenaire par nom d'enseigne ou téléphone.
+
+    Sert de premier pas au parcours « accorder un crédit de formule pub » :
+    l'admin cherche le partenaire avant de lui offrir un crédit.
+    GET ?q=<texte> — moins de 2 caractères => liste vide (pas d'erreur).
+    """
+    permission_classes = [IsAuthenticated, ADroitDe('offrir_campagne')]
+
+    def get(self, request):
+        q = request.query_params.get('q', '').strip()
+        if len(q) < 2:
+            return Response({'resultats': []})
+
+        qs = ProfilPartenaire.objects.select_related(
+            'user', 'departement', 'plan').filter(
+            Q(nom_commerce__icontains=q) | Q(user__telephone__icontains=q)
+        ).order_by('nom_commerce')[:20]
+
+        resultats = [{
+            'id': p.id,
+            'nom_commerce': p.nom_commerce,
+            'telephone': p.user.telephone,
+            'type_partenaire': p.type_partenaire,
+            'type_partenaire_libelle': p.get_type_partenaire_display(),
+            'departement': getattr(p.departement, 'nom', None),
+            'statut': p.statut,
+            'statut_libelle': p.get_statut_display(),
+        } for p in qs]
+        return Response({'resultats': resultats})
+
+
+def _credit_dict(credit):
+    accorde_par = None
+    if credit.accorde_par_id:
+        accorde_par = (getattr(credit.accorde_par, 'telephone', '')
+                       or getattr(credit.accorde_par, 'username', '')) or None
+    return {
+        'id': str(credit.id),
+        'formule_id': credit.formule_id,
+        'formule_nom': credit.formule.nom,
+        'formule_prix': credit.formule.prix,
+        'statut': credit.statut,
+        'motif': credit.motif,
+        'accorde_par': accorde_par,
+        'cree_le': credit.cree_le,
+        'consomme_le': credit.consomme_le,
+        'publicite_consommatrice_id': (
+            str(credit.publicite_consommatrice_id)
+            if credit.publicite_consommatrice_id else None
+        ),
+    }
+
+
+class CreditsPartenaireView(APIView):
+    """Crédits de formule pub d'un partenaire : liste (GET) et octroi (POST).
+
+    pk = id du ProfilPartenaire (pas du User).
+    """
+    permission_classes = [IsAuthenticated, ADroitDe('offrir_campagne')]
+
+    def _partenaire(self, pk):
+        return ProfilPartenaire.objects.select_related('user').filter(pk=pk).first()
+
+    def get(self, request, pk):
+        partenaire = self._partenaire(pk)
+        if partenaire is None:
+            return Response({'detail': 'Partenaire introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        qs = CreditFormulePub.objects.filter(partenaire=partenaire).select_related(
+            'formule', 'accorde_par').order_by('-cree_le')
+
+        return Response({
+            'partenaire': {
+                'id': partenaire.id,
+                'nom_commerce': partenaire.nom_commerce,
+                'telephone': partenaire.user.telephone,
+            },
+            'credits': [_credit_dict(c) for c in qs],
+        })
+
+    def post(self, request, pk):
+        partenaire = self._partenaire(pk)
+        if partenaire is None:
+            return Response({'detail': 'Partenaire introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        formule_id = request.data.get('formule_id')
+        if not formule_id:
+            return Response({'detail': 'formule_id requis.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            formule = FormulePublicite.objects.filter(
+                pk=formule_id, est_active=True).first()
+        except (ValueError, TypeError, ValidationError):
+            formule = None
+        if formule is None:
+            return Response({'detail': 'Formule introuvable ou inactive.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        motif = request.data.get('motif', '')
+        try:
+            credit = credits_pub.accorder_credit(
+                request.user, partenaire, formule, motif)
+        except ValueError as exc:
+            return Response({'detail': str(exc)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(_credit_dict(credit), status=status.HTTP_201_CREATED)
+
+
+class CreditDetailView(APIView):
+    """DELETE : retire un crédit de formule pub encore disponible."""
+    permission_classes = [IsAuthenticated, ADroitDe('offrir_campagne')]
+
+    def delete(self, request, pk):
+        credit = CreditFormulePub.objects.select_related(
+            'partenaire__user', 'formule').filter(pk=pk).first()
+        if credit is None:
+            return Response({'detail': 'Crédit introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        motif = request.data.get('motif', '')
+        try:
+            credits_pub.retirer_credit(request.user, credit, motif)
+        except ValueError as exc:
+            return Response({'detail': str(exc)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({'detail': 'Crédit retiré.'}, status=status.HTTP_200_OK)

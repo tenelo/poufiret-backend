@@ -4,11 +4,14 @@ from .views import (DashboardG5View, AppareilsExportView, ModerationView,
                     JournalModerationView, JournalExportView,
                     IndicateursPartenairesView, PartenairesExportView,
                     FaveurView, FaveurPubliciteView,
-                    DemandesPartenariatView)
+                    DemandesPartenariatView, MesPermissionsView,
+                    ChangerFormulePubliciteView, RecherchePartenairesView,
+                    CreditsPartenaireView, CreditDetailView)
 
 app_name = 'administration'
 
 urlpatterns = [
+    path('mes-permissions/', MesPermissionsView.as_view(), name='mes-permissions'),
     path('dashboard/', DashboardG5View.as_view(), name='dashboard'),
     path('appareils/export/', AppareilsExportView.as_view(), name='appareils-export'),
     path('moderation/', ModerationView.as_view(), name='moderation'),
@@ -18,5 +21,9 @@ urlpatterns = [
     path('partenaires/export/', PartenairesExportView.as_view(), name='partenaires-export'),
     path('partenaires/<int:pk>/faveur/', FaveurView.as_view(), name='partenaire-faveur'),
     path('publicites/<uuid:pk>/faveur/', FaveurPubliciteView.as_view(), name='publicite-faveur'),
+    path('publicites/<uuid:pk>/formule/', ChangerFormulePubliciteView.as_view(), name='publicite-formule'),
+    path('partenaires/recherche/', RecherchePartenairesView.as_view(), name='partenaires-recherche'),
+    path('partenaires/<int:pk>/credits/', CreditsPartenaireView.as_view(), name='partenaire-credits'),
+    path('credits/<uuid:pk>/', CreditDetailView.as_view(), name='credit-detail'),
     path('demandes-partenariat/', DemandesPartenariatView.as_view(), name='demandes-partenariat'),
 ]

@@ -282,3 +282,48 @@ class ParametresPublicite(ModeleBase):
 
     def __str__(self):
         return 'Paramètres publicité'
+
+
+class CreditFormulePub(ModeleBase):
+    """Crédit de formule publicitaire offert par un admin, en attente d'usage.
+
+    Un admin peut offrir un crédit (formule) à un partenaire sans créer
+    tout de suite la campagne : le partenaire (ou l'admin) le consomme
+    ensuite pour créer une publicité, à usage unique.
+    """
+
+    class Statut(models.TextChoices):
+        DISPONIBLE = 'disponible', 'Disponible'
+        CONSOMME = 'consomme', 'Consommé'
+
+    partenaire = models.ForeignKey(
+        'users.ProfilPartenaire', on_delete=models.CASCADE,
+        related_name='credits_pub', verbose_name='partenaire',
+    )
+    formule = models.ForeignKey(
+        'publicites.FormulePublicite', on_delete=models.PROTECT,
+        related_name='credits', verbose_name='formule',
+    )
+    statut = models.CharField(
+        'statut', max_length=20,
+        choices=Statut.choices, default=Statut.DISPONIBLE,
+    )
+    publicite_consommatrice = models.ForeignKey(
+        'publicites.Publicite', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='credits_utilises',
+        verbose_name='publicité consommatrice',
+    )
+    accorde_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+        related_name='credits_pub_accordes', verbose_name='accordé par',
+    )
+    motif = models.TextField('motif', blank=True)
+    consomme_le = models.DateTimeField('consommé le', null=True, blank=True)
+
+    class Meta:
+        ordering = ['-cree_le']
+        verbose_name = 'crédit de formule publicitaire'
+        verbose_name_plural = 'crédits de formule publicitaire'
+
+    def __str__(self):
+        return f'{self.formule.nom} → {self.partenaire.nom_commerce} ({self.statut})'

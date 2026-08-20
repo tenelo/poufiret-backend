@@ -7,6 +7,8 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.permissions import ADroitDe
+
 from .models import ImpressionPublicite, Publicite
 
 
@@ -30,6 +32,11 @@ def _stats_pub(pub):
         'cible_atteinte': pub.cible_atteinte,
         'debut_diffusion': pub.debut_diffusion,
         'fin_diffusion': pub.fin_diffusion,
+        'partenaire_id': pub.partenaire_id,
+        'nom_partenaire': pub.partenaire.nom_commerce,
+        'partenaire_telephone': pub.partenaire.user.telephone,
+        'formule_id': pub.formule_id,
+        'prix_formule': pub.formule.prix,
     }
 
 
@@ -45,7 +52,7 @@ class StatsPartenaireView(APIView):
         if profil is None:
             return Response({'erreur': True, 'message': 'Reserve aux partenaires.'},
                             status=status.HTTP_403_FORBIDDEN)
-        pubs = Publicite.objects.filter(partenaire=profil).select_related('formule')
+        pubs = Publicite.objects.filter(partenaire=profil).select_related('formule', 'partenaire__user')
         donnees = []
         for pub in pubs:
             if pub.stats_visibles_partenaire:
@@ -62,13 +69,10 @@ class StatsPartenaireView(APIView):
 
 class StatsAdminView(APIView):
     """Vue d'ensemble des publicites (admin / Angular)."""
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, ADroitDe('voir_stats')]
 
     def get(self, request):
-        if not request.user.is_staff:
-            return Response({'erreur': True, 'message': 'Reserve aux administrateurs.'},
-                            status=status.HTTP_403_FORBIDDEN)
-        pubs = Publicite.objects.select_related('formule', 'partenaire')
+        pubs = Publicite.objects.select_related('formule', 'partenaire', 'partenaire__user')
         donnees = [_stats_pub(p) for p in pubs]
         totaux = {
             'nb_publicites': len(donnees),
@@ -85,12 +89,9 @@ class ExportCSVView(APIView):
 
     GET /export/?type=publicites|impressions|profils|sessions
     """
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, ADroitDe('voir_stats', 'exporter_csv')]
 
     def get(self, request):
-        if not request.user.is_staff:
-            return Response({'erreur': True, 'message': 'Reserve aux administrateurs.'},
-                            status=status.HTTP_403_FORBIDDEN)
         type_export = request.query_params.get('type', 'publicites')
         horodatage = timezone.localtime().strftime('%Y%m%d_%H%M')
         reponse = HttpResponse(content_type='text/csv; charset=utf-8')

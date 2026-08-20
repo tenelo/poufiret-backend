@@ -1,7 +1,7 @@
 from django.contrib import admin, messages
 
 from .models import (
-    FormulePublicite, ImagePublicite, ImpressionPublicite,
+    CreditFormulePub, FormulePublicite, ImagePublicite, ImpressionPublicite,
     ParametresPublicite, Publicite,
 )
 
@@ -173,6 +173,13 @@ class PubliciteAdmin(admin.ModelAdmin):
 class ImpressionAdmin(admin.ModelAdmin):
     list_display = ('publicite', 'utilisateur', 'type_affichage', 'minute_session', 'cliquee', 'cree_le')
     list_filter = ('type_affichage', 'cliquee')
+
+
+@admin.register(CreditFormulePub)
+class CreditFormulePubAdmin(admin.ModelAdmin):
+    list_display = ('partenaire', 'formule', 'statut', 'accorde_par', 'cree_le')
+    list_filter = ('statut', 'formule')
+    search_fields = ('partenaire__nom_commerce',)
 
 
 @admin.register(ParametresPublicite)

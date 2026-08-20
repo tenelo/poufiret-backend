@@ -213,7 +213,12 @@ class TransitionPubliciteView(APIView):
         if regle is None:
             return Response({'erreur': True, 'message': 'Action inconnue.'},
                             status=status.HTTP_400_BAD_REQUEST)
-        if regle['admin'] and not request.user.is_staff:
+        est_autorise = request.user.is_superuser or (
+            request.user.is_staff
+            and getattr(getattr(request.user, 'permissions_admin', None),
+                       'valider_publicite', False)
+        )
+        if regle['admin'] and not est_autorise:
             return Response({'erreur': True,
                              'message': 'Réservé aux administrateurs.'},
                             status=status.HTTP_403_FORBIDDEN)

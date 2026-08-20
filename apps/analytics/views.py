@@ -5,6 +5,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from waffle import flag_is_active
 
+from apps.core.permissions import ADroitDe
+
 from .models import ProfilNavigation, TempsSessionUtilisateur
 
 
@@ -74,12 +76,9 @@ class PingSessionView(APIView):
 
 class EngagementAdminView(APIView):
     """Liste des profils de navigation + statut client actif (admin/Angular)."""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats')]
 
     def get(self, request):
-        if not request.user.is_staff:
-            return Response({'detail': 'Réservé aux administrateurs.'},
-                            status=status.HTTP_403_FORBIDDEN)
         profils = ProfilNavigation.objects.select_related('utilisateur').order_by('-derniere_activite')
         donnees = [{
             'utilisateur_id': p.utilisateur_id,
@@ -196,12 +195,9 @@ class StatsConnexionAdminView(APIView):
     distinctes et nombre d'ouvertures sur aujourd'hui / 7 jours / 30 jours.
     Lecture seule, dérivée de TempsSessionUtilisateur et User.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats')]
 
     def get(self, request):
-        if not request.user.is_staff:
-            return Response({'detail': 'Réservé aux administrateurs.'},
-                            status=status.HTTP_403_FORBIDDEN)
         from .stats_connexion import tableau_de_bord
         return Response(tableau_de_bord())
 
@@ -211,12 +207,9 @@ class StatsConnexionExportView(APIView):
 
     Paramètre optionnel ?jours=N pour borner la période (ex. ?jours=30).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats', 'exporter_csv')]
 
     def get(self, request):
-        if not request.user.is_staff:
-            return Response({'detail': 'Réservé aux administrateurs.'},
-                            status=status.HTTP_403_FORBIDDEN)
         from datetime import timedelta
         from apps.core.exports import reponse_csv
         from .stats_connexion import export_sessions_lignes
@@ -250,12 +243,9 @@ class LivraisonStatsClientView(APIView):
 
     Consultations de l'onglet livraison + usages réels (demandeur/destinataire).
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats')]
 
     def get(self, request, user_id=None):
-        if not request.user.is_staff:
-            return Response({'detail': 'Réservé aux administrateurs.'},
-                            status=status.HTTP_403_FORBIDDEN)
         from .stats_livraison import stats_client
         return Response(stats_client(user_id))
 
@@ -265,12 +255,9 @@ class LivraisonStatsPartenaireView(APIView):
 
     Nombre de courses issues d'une commande de ce partenaire.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats')]
 
     def get(self, request, partenaire_id=None):
-        if not request.user.is_staff:
-            return Response({'detail': 'Réservé aux administrateurs.'},
-                            status=status.HTTP_403_FORBIDDEN)
         from .stats_livraison import stats_partenaire
         return Response(stats_partenaire(partenaire_id))
 
@@ -283,12 +270,9 @@ class LivraisonTableauDeBordView(APIView):
     top quartiers de départ, top catégories de partenaire.
     Filtre de période optionnel : ?debut=YYYY-MM-DD&fin=YYYY-MM-DD.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats')]
 
     def get(self, request):
-        if not request.user.is_staff:
-            return Response({'detail': 'Réservé aux administrateurs.'},
-                            status=status.HTTP_403_FORBIDDEN)
         debut, fin, erreur = _bornes_periode(request)
         if erreur:
             return Response({'detail': 'Format de date invalide (attendu YYYY-MM-DD).'},
@@ -303,12 +287,9 @@ class LivraisonTableauDeBordExportView(APIView):
     Mêmes données que LivraisonTableauDeBordView, à plat (section ; clé ; valeur).
     Filtre de période optionnel : ?debut=YYYY-MM-DD&fin=YYYY-MM-DD.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats', 'exporter_csv')]
 
     def get(self, request):
-        if not request.user.is_staff:
-            return Response({'detail': 'Réservé aux administrateurs.'},
-                            status=status.HTTP_403_FORBIDDEN)
         debut, fin, erreur = _bornes_periode(request)
         if erreur:
             return Response({'detail': 'Format de date invalide (attendu YYYY-MM-DD).'},
