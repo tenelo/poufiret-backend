@@ -303,7 +303,11 @@ class SuperviseursView(APIView):
 
     def get(self, request):
         qs = ProfilLivraison.objects.select_related('user', 'departement').filter(
-            user__role=User.Role.SUPERVISEUR_LIVRAISON).order_by('-cree_le')
+            user__role=User.Role.SUPERVISEUR_LIVRAISON)
+        ville = request.query_params.get('ville')
+        if ville:
+            qs = qs.filter(departement_id=ville)
+        qs = qs.order_by('-cree_le')
         return Response([_profil_livraison_dict(p) for p in qs], status=200)
 
     def post(self, request):
