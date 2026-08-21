@@ -13,7 +13,7 @@ Définition retenue :
     apps.livraison.models, 'livree': [] est l'état final du cycle normal).
 """
 from django.db.models import Count, Q, Sum
-from django.db.models.functions import ExtractHour, TruncDay, TruncMonth
+from django.db.models.functions import Coalesce, ExtractHour, TruncDay, TruncMonth
 from django.utils import timezone
 
 from apps.livraison.models import Course
@@ -185,6 +185,56 @@ def stats_par_ville(courses_qs):
     ]
 
 
+def _stats_par_livreur(courses_qs):
+    """Agrège les courses par livreur : volume, taux de réussite, CA généré.
+
+    Exclut les courses sans livreur assigné. Triée par CA décroissant.
+    Agrégation en une seule requête (GROUP BY via values().annotate()) :
+    les jointures vers livreur/user/ville sont déjà exprimées par les
+    lookups `livreur__...`, ce qui évite le N+1 sans avoir besoin d'un
+    select_related() supplémentaire (sans effet sur un queryset .values()).
+    ca_genere passe par Coalesce(..., 0) pour ne jamais être NULL en base
+    et éviter un tri DESC qui remonterait les NULL en tête (comportement
+    par défaut de PostgreSQL).
+    """
+    lignes = (
+        courses_qs.exclude(livreur_id__isnull=True)
+        .values(
+            'livreur_id', 'livreur__user__first_name', 'livreur__user__last_name',
+            'livreur__user__username', 'livreur__user__telephone',
+            'livreur__ville__nom',
+        )
+        .annotate(
+            nb_courses=Count('id'),
+            nb_livrees=Count('id', filter=Q(statut=Course.Statut.LIVREE)),
+            ca_genere=Coalesce(
+                Sum('prix', filter=Q(statut=Course.Statut.LIVREE)), 0),
+        )
+        .order_by('-ca_genere')
+    )
+
+    resultat = []
+    for l in lignes:
+        nb_courses = l['nb_courses']
+        nb_livrees = l['nb_livrees']
+        nom_complet = (
+            f"{l['livreur__user__first_name']} {l['livreur__user__last_name']}"
+        ).strip()
+        resultat.append({
+            'livreur_id': str(l['livreur_id']),
+            'livreur_nom': nom_complet or l['livreur__user__username'],
+            'livreur_telephone': l['livreur__user__telephone'],
+            'ville_nom': l['livreur__ville__nom'] or 'non_precise',
+            'nb_courses': nb_courses,
+            'nb_livrees': nb_livrees,
+            'ca_genere': l['ca_genere'] or 0,
+            'taux_reussite': (
+                round(nb_livrees / nb_courses * 100) if nb_courses else 0
+            ),
+        })
+    return resultat
+
+
 def tableau_de_bord(debut=None, fin=None, ville_id=None):
     """Assemble le tableau de bord complet des stats de livraison.
 
@@ -205,6 +255,10 @@ def tableau_de_bord(debut=None, fin=None, ville_id=None):
         courses_qs = courses_qs.filter(ville_id=ville_id)
     consultations_qs = _consultations_periode(debut, fin)
 
+    ca_total = _ca_total(courses_qs)
+    nb_livrees_total = courses_qs.filter(statut=Course.Statut.LIVREE).count()
+    panier_moyen = round(ca_total / nb_livrees_total) if nb_livrees_total else 0
+
     return {
         'genere_le': timezone.now().isoformat(),
         'periode': {
@@ -212,12 +266,14 @@ def tableau_de_bord(debut=None, fin=None, ville_id=None):
             'fin': fin.isoformat() if fin else None,
         },
         'taux_conversion': _taux_conversion(courses_qs, consultations_qs),
-        'ca_total': _ca_total(courses_qs),
+        'ca_total': ca_total,
+        'panier_moyen': panier_moyen,
         'ca_par_periode': _ca_par_periode(courses_qs),
         'repartition_demandeurs': _repartition_demandeurs(courses_qs),
         'top_villes': _top_villes(courses_qs),
         'top_quartiers_depart': _top_quartiers_depart(courses_qs),
         'top_categories_partenaire': _top_categories_partenaire(courses_qs),
+        'stats_par_livreur': _stats_par_livreur(courses_qs),
     }
 
 
@@ -237,6 +293,7 @@ def export_tableau_de_bord_lignes(debut=None, fin=None):
     lignes.append(['resume', 'ratio_courses_par_consultation',
                     tc['ratio_courses_par_consultation']])
     lignes.append(['resume', 'ca_total_fcfa', donnees['ca_total']])
+    lignes.append(['resume', 'panier_moyen_fcfa', donnees['panier_moyen']])
 
     for l in donnees['ca_par_periode']['par_jour']:
         lignes.append(['ca_par_jour', l['periode'], l['total']])
@@ -253,5 +310,12 @@ def export_tableau_de_bord_lignes(debut=None, fin=None):
         lignes.append(['top_quartiers_depart', l['quartier'], l['nb_courses']])
     for l in donnees['top_categories_partenaire']:
         lignes.append(['top_categories_partenaire', l['categorie'], l['nb_courses']])
+
+    for l in donnees['stats_par_livreur']:
+        prefixe = l['livreur_nom']
+        lignes.append(['stats_par_livreur', f'{prefixe} - nb_courses', l['nb_courses']])
+        lignes.append(['stats_par_livreur', f'{prefixe} - nb_livrees', l['nb_livrees']])
+        lignes.append(['stats_par_livreur', f'{prefixe} - ca_genere', l['ca_genere']])
+        lignes.append(['stats_par_livreur', f'{prefixe} - taux_reussite', l['taux_reussite']])
 
     return entetes, lignes

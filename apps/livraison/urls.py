@@ -7,6 +7,7 @@ from .views import (
 from .vues_bureau import (
     CoursesBureauView, LivreursBureauView, AssignerLivreurBureauView,
     CreerCourseBureauView, CoursesCoordonnateurView, LivreursCoordonnateurView,
+    AssignerLivreurCoordonnateurView,
 )
 from .vues_comptes import (
     LivreursGestionView, LivreurDetailView,
@@ -53,6 +54,9 @@ urlpatterns = [
          name='coordonnateur-courses'),
     path('coordonnateur/livreurs/', LivreursCoordonnateurView.as_view(),
          name='coordonnateur-livreurs'),
+    path('coordonnateur/courses/<uuid:pk>/assigner/',
+         AssignerLivreurCoordonnateurView.as_view(),
+         name='coordonnateur-course-assigner'),
 
     # Statistiques
     path('stats/bureau/', StatsBureauView.as_view(), name='stats-bureau'),

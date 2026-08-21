@@ -95,14 +95,36 @@ class LivreursBureauView(APIView):
         return Response([_livreur_bureau_dict(l) for l in qs], status=200)
 
 
-class AssignerLivreurBureauView(APIView):
-    """POST /livraison/bureau/courses/<pk>/assigner/ — assignation manuelle.
+def _assigner_manuellement(course, livreur):
+    """Cœur commun de l'assignation manuelle (bureau et coordonnateur).
 
-    Body : {"livreur_id": "..."}. Même mécanisme de pose des champs que
-    l'assignation automatique (finaliser_assignation) : livreur, statut
-    ASSIGNEE, assignee_le, puis notifier_transition — pour que le livreur
-    et les écrans de suivi ne voient aucune différence entre une
-    assignation auto et une assignation manuelle du bureau.
+    Pose livreur/statut ASSIGNEE/assignee_le puis notifie — même mécanisme
+    que l'assignation automatique (finaliser_assignation), pour que le
+    livreur et les écrans de suivi ne voient aucune différence entre une
+    assignation auto et une assignation manuelle.
+
+    Ne vérifie ni l'existence ni la ville : l'appelant s'en charge selon
+    son périmètre (cloisonné pour le bureau, national pour le coordonnateur).
+    Retourne (ok, message_erreur) ; message_erreur=None si ok.
+    """
+    if course.statut not in STATUTS_ASSIGNABLES:
+        return False, ("Impossible d'assigner un livreur : course au statut "
+                       f'"{course.get_statut_display()}".')
+
+    course.livreur = livreur
+    course.statut = Course.Statut.ASSIGNEE
+    course.assignee_le = timezone.now()
+    course.save(update_fields=['livreur', 'statut', 'assignee_le'])
+    notifier_transition(course, 'assignee')
+    return True, None
+
+
+class AssignerLivreurBureauView(APIView):
+    """POST /livraison/bureau/courses/<pk>/assigner/ — assignation manuelle,
+    cloisonnée à la ville du gestionnaire.
+
+    Body : {"livreur_id": "..."}. Voir _assigner_manuellement pour le
+    mécanisme de pose des champs.
     """
     permission_classes = [IsAuthenticated, EstGestionnaireLivraison]
 
@@ -126,18 +148,46 @@ class AssignerLivreurBureauView(APIView):
                  'message': 'Livreur introuvable ou hors de votre département.'},
                 status=400)
 
-        if course.statut not in STATUTS_ASSIGNABLES:
+        ok, erreur = _assigner_manuellement(course, livreur)
+        if not ok:
+            return Response({'erreur': True, 'message': erreur}, status=400)
+        return Response(_course_dict(course), status=200)
+
+
+class AssignerLivreurCoordonnateurView(APIView):
+    """POST /livraison/coordonnateur/courses/<pk>/assigner/ — assignation
+    manuelle, toutes villes (coordonnateur).
+
+    Body : {"livreur_id": "..."}. Pas de cloisonnement sur la course : le
+    coordonnateur agit sur n'importe quelle ville. Le livreur choisi doit
+    en revanche appartenir à la MÊME ville que la course (un livreur de
+    Ferké ne peut pas prendre une course de Korhogo).
+    """
+    permission_classes = [IsAuthenticated, EstCoordonnateurLivraison]
+
+    def post(self, request, pk=None):
+        course = Course.objects.filter(pk=pk).first()
+        if course is None:
+            return Response({'erreur': True, 'message': 'Course introuvable.'},
+                            status=404)
+
+        livreur_id = request.data.get('livreur_id')
+        livreur = None
+        if livreur_id:
+            livreur = Livreur.objects.filter(pk=livreur_id).first()
+        if livreur is None:
+            return Response({'erreur': True, 'message': 'Livreur introuvable.'},
+                            status=404)
+
+        if livreur.ville_id != course.ville_id:
             return Response(
                 {'erreur': True,
-                 'message': ('Impossible d\'assigner un livreur : course au '
-                            f'statut "{course.get_statut_display()}".')},
+                 'message': 'Ce livreur est rattaché à une autre ville que la course.'},
                 status=400)
 
-        course.livreur = livreur
-        course.statut = Course.Statut.ASSIGNEE
-        course.assignee_le = timezone.now()
-        course.save(update_fields=['livreur', 'statut', 'assignee_le'])
-        notifier_transition(course, 'assignee')
+        ok, erreur = _assigner_manuellement(course, livreur)
+        if not ok:
+            return Response({'erreur': True, 'message': erreur}, status=400)
         return Response(_course_dict(course), status=200)
 
 
