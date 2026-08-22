@@ -141,6 +141,14 @@ class Publicite(ImagesOptimiseesMixin, ModeleBase):
         'motif de la faveur', blank=True,
         help_text='Ex: "Partenariat", "Lancement", "Compensation".',
     )
+    # ── Masquage côté partenaire (soft delete, pas une suppression admin) ─
+    masquee_par_partenaire = models.BooleanField(
+        'masquée par le partenaire', default=False,
+        help_text=(
+            "Le partenaire l'a retirée de ses propres listes (historique "
+            "et stats conservés). N'affecte pas la modération admin."
+        ),
+    )
 
     class Meta:
         verbose_name = 'publicité'

@@ -1,6 +1,10 @@
 """Vues panier (Module 4 - bloc A1)."""
+from datetime import datetime
+
 from django.contrib.gis.geos import Point # type: ignore
+from django.db.models import Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -10,6 +14,17 @@ from .serializers import PanierSerializer
 from apps.notifications.fcm import notifier_utilisateur
 from apps.livraison.models import Course
 from apps.livraison.views import _numero as _numero_course, finaliser_assignation
+
+
+def _parser_date(valeur):
+    """Parse une date 'YYYY-MM-DD'. Retourne None si absente ou invalide
+    (jamais d'exception — un paramètre mal formé est simplement ignoré)."""
+    if not valeur:
+        return None
+    try:
+        return datetime.strptime(valeur, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None
 
 
 class MesPaniersView(APIView):
@@ -213,7 +228,15 @@ class MesCommandesClientView(APIView):
 
 
 class CommandesPartenaireView(APIView):
-    """GET /orders/commandes/partenaire/ — commandes reçues par le partenaire connecté."""
+    """GET /orders/commandes/partenaire/ — commandes reçues par le partenaire connecté.
+
+    Filtres optionnels (en plus de ?statut=) :
+    - ?date=today : commandes créées aujourd'hui (date du serveur).
+    - ?debut=YYYY-MM-DD&fin=YYYY-MM-DD : intervalle de création (bornes
+      incluses), debut et fin peuvent être fournis seuls. Un paramètre
+      mal formé est ignoré (pas d'erreur), pas de filtrage sur ce champ.
+    Sans aucun de ces paramètres : comportement inchangé.
+    """
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request):
         if not hasattr(request.user, 'profil_partenaire'):
@@ -222,7 +245,59 @@ class CommandesPartenaireView(APIView):
               .select_related('user').prefetch_related('lignes'))
         s = request.query_params.get('statut')
         if s: qs = qs.filter(statut=s)
+
+        if request.query_params.get('date') == 'today':
+            qs = qs.filter(created_at__date=timezone.localdate())
+        else:
+            debut = _parser_date(request.query_params.get('debut'))
+            fin = _parser_date(request.query_params.get('fin'))
+            if debut:
+                qs = qs.filter(created_at__date__gte=debut)
+            if fin:
+                qs = qs.filter(created_at__date__lte=fin)
+
         return Response(CommandeSerializer(qs, many=True, context={'request': request}).data)
+
+
+class ResumeCommandesPartenaireView(APIView):
+    """GET /orders/commandes/partenaire/resume/ — compteur léger pour la
+    cloche de notification (pensé pour un polling fréquent côté front).
+
+    Filtres optionnels identiques à CommandesPartenaireView (?date=today,
+    ?debut=YYYY-MM-DD&fin=YYYY-MM-DD) : quand fournis, nouvelles/
+    en_preparation/acceptees/total/ca portent sur la période demandée —
+    de quoi afficher une seconde rangée de cartes filtrées, en plus de
+    l'appel sans paramètre (compteurs globaux, comportement inchangé).
+    total_aujourdhui reste toujours global (snapshot du jour).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    def get(self, request):
+        if not hasattr(request.user, 'profil_partenaire'):
+            return Response({'erreur': True, 'message': 'Réservé aux partenaires.'}, status=403)
+        qs = Commande.objects.filter(partenaire=request.user.profil_partenaire)
+
+        qs_periode = qs
+        if request.query_params.get('date') == 'today':
+            qs_periode = qs_periode.filter(created_at__date=timezone.localdate())
+        else:
+            debut = _parser_date(request.query_params.get('debut'))
+            fin = _parser_date(request.query_params.get('fin'))
+            if debut:
+                qs_periode = qs_periode.filter(created_at__date__gte=debut)
+            if fin:
+                qs_periode = qs_periode.filter(created_at__date__lte=fin)
+
+        ca = qs_periode.filter(statut=Commande.Statut.LIVREE).aggregate(
+            total=Sum('total'))['total'] or 0
+
+        return Response({
+            'nouvelles': qs_periode.filter(statut=Commande.Statut.NOUVELLE).count(),
+            'en_preparation': qs_periode.filter(statut=Commande.Statut.EN_PREPARATION).count(),
+            'acceptees': qs_periode.filter(statut=Commande.Statut.ACCEPTEE).count(),
+            'total_aujourdhui': qs.filter(created_at__date=timezone.localdate()).count(),
+            'total': qs_periode.count(),
+            'ca': ca,
+        })
 
 
 class CommandeDetailView(APIView):

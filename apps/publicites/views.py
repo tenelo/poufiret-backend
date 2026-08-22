@@ -113,10 +113,16 @@ class BandeauBasView(APIView):
 
 
 class PubliciteDetailView(generics.RetrieveAPIView):
-    """Détail d'une pub (page details_publicites)."""
+    """Détail d'une pub (page details_publicites).
+
+    Exclut les pubs masquées par leur partenaire — cohérence avec le
+    reste de la diffusion mobile (voir _pubs_diffusables), au cas où un
+    client aurait gardé l'id d'une pub masquée après coup.
+    """
     serializer_class = PubliciteDetailSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = Publicite.objects.filter(statut=Publicite.Statut.ACTIVE)
+    queryset = Publicite.objects.filter(
+        statut=Publicite.Statut.ACTIVE).exclude(masquee_par_partenaire=True)
 
 
 class EnregistrerImpressionView(APIView):
@@ -124,7 +130,9 @@ class EnregistrerImpressionView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, pk=None):
-        pub = Publicite.objects.filter(pk=pk, statut=Publicite.Statut.ACTIVE).first()
+        pub = Publicite.objects.filter(
+            pk=pk, statut=Publicite.Statut.ACTIVE,
+            masquee_par_partenaire=False).first()
         if not pub:
             return Response({'erreur': True, 'message': 'Publicité introuvable.'},
                             status=status.HTTP_404_NOT_FOUND)
@@ -235,7 +243,8 @@ class MesPublicitesView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return Publicite.objects.filter(
-            partenaire__user=self.request.user).order_by('-cree_le')
+            partenaire__user=self.request.user,
+        ).exclude(masquee_par_partenaire=True).order_by('-cree_le')
 
     def perform_create(self, serializer):
         profil = getattr(self.request.user, 'profil_partenaire', None)
@@ -263,6 +272,200 @@ class MesPublicitesView(generics.ListCreateAPIView):
                 credits_pub.consommer_credit(profil, credit, pub)
             except ValueError as exc:
                 raise serializers.ValidationError({'credit_id': str(exc)})
+
+
+class ReconduirePubliciteView(APIView):
+    """POST /mes-publicites/<pk>/reconduire/ — reconduit une pub terminée.
+
+    Crée une NOUVELLE Publicite en brouillon, copie du contenu de
+    l'ancienne (titre, description, portée, image, vidéo) ; l'ancienne
+    n'est jamais modifiée, elle reste "terminee" avec ses stats intactes
+    dans l'historique. Body optionnel : {"formule_id": ...} — sinon
+    reprend la formule de l'ancienne pub.
+
+    Choix de copie image/vidéo (signalé) : réutilise la RÉFÉRENCE du
+    fichier déjà stocké (même chemin) plutôt que de dupliquer le fichier
+    physique — le plus simple, et sans risque puisqu'aucun signal ne
+    supprime les fichiers à la suppression d'une Publicite dans ce projet.
+    ImagesOptimiseesMixin ne réoptimise que les fichiers fraîchement
+    uploadés (FieldFile._committed=False) ; une réaffectation du chemin
+    existant est donc traitée comme déjà optimisée et n'est pas retraitée.
+
+    `image_couverture` (multipart, optionnel) : si fournie, remplace
+    l'image copiée de l'ancienne pub. Aucun parser custom nécessaire —
+    MultiPartParser fait partie des DEFAULT_PARSER_CLASSES de DRF, déjà
+    actif sur toutes les vues (c'est ce qui permet déjà l'upload d'image
+    sur MesPublicitesView).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk=None):
+        profil = getattr(request.user, 'profil_partenaire', None)
+        if profil is None:
+            return Response({'erreur': True, 'message': 'Réservé aux partenaires.'},
+                            status=403)
+
+        ancienne = Publicite.objects.filter(
+            pk=pk, partenaire=profil).select_related('formule').first()
+        if ancienne is None:
+            return Response({'erreur': True, 'message': 'Publicité introuvable.'},
+                            status=404)
+
+        if ancienne.statut != Publicite.Statut.TERMINEE:
+            return Response(
+                {'erreur': True,
+                 'message': ('Seule une publicité terminée peut être reconduite '
+                            f'(statut actuel : "{ancienne.get_statut_display()}").')},
+                status=400)
+
+        formule_id = request.data.get('formule_id')
+        if formule_id:
+            try:
+                formule = FormulePublicite.objects.filter(
+                    pk=formule_id, est_active=True).first()
+            except (ValueError, TypeError, DjangoValidationError):
+                formule = None
+            if formule is None:
+                return Response(
+                    {'erreur': True, 'message': 'Formule introuvable ou inactive.'},
+                    status=400)
+        else:
+            formule = ancienne.formule
+
+        nouvelle_image = request.FILES.get('image_couverture')
+        image_a_utiliser = nouvelle_image or ancienne.image_couverture.name
+
+        nouvelle = Publicite.objects.create(
+            partenaire=profil,
+            formule=formule,
+            titre=ancienne.titre,
+            description=ancienne.description,
+            image_couverture=image_a_utiliser,
+            video=ancienne.video.name if ancienne.video else None,
+            portee=ancienne.portee,
+        )
+
+        return Response(
+            PubliciteCreationSerializer(nouvelle, context={'request': request}).data,
+            status=201)
+
+
+class ModifierImagePubliciteView(APIView):
+    """POST /mes-publicites/<pk>/image/ (multipart) — remplace l'image de
+    couverture d'une publicité. Body : image_couverture (fichier, requis).
+
+    Règle métier :
+    - brouillon / en_attente_paiement / en_attente_validation : remplace
+      simplement l'image, statut inchangé.
+    - rejetee : remplace l'image ET repasse en brouillon. Choix signalé :
+      TRANSITIONS (services.py) n'autorise 'soumettre' que depuis
+      brouillon — sans repasser par là, une pub rejetée resterait
+      définitivement bloquée une fois son image corrigée. Repasser en
+      brouillon est donc le seul choix qui laisse le partenaire
+      resoumettre normalement via le cycle existant.
+    - active : remplace l'image, repasse en en_attente_validation (sort
+      de la diffusion en attendant la revalidation admin de la nouvelle
+      image) et vide debut_diffusion/fin_diffusion — symétrique de ce que
+      pose services.activer_publicite() à l'activation (ces deux champs
+      ne sont pertinents que pendant une diffusion active ; on ne
+      réinvente pas leur calcul, on se contente de les vider, la
+      prochaine validation admin les recalculera via activer_publicite()
+      comme pour toute activation). Journalisé (best-effort, même
+      mécanisme que apps.publicites.credits.consommer_credit).
+    - terminee : refusée (400) — il faut passer par Reconduire.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk=None):
+        profil = getattr(request.user, 'profil_partenaire', None)
+        if profil is None:
+            return Response({'erreur': True, 'message': 'Réservé aux partenaires.'},
+                            status=403)
+
+        pub = Publicite.objects.filter(pk=pk, partenaire=profil).first()
+        if pub is None:
+            return Response({'erreur': True, 'message': 'Publicité introuvable.'},
+                            status=404)
+
+        if pub.statut == Publicite.Statut.TERMINEE:
+            return Response(
+                {'erreur': True,
+                 'message': 'Une pub terminée ne se modifie pas, utilisez Reconduire.'},
+                status=400)
+
+        nouvelle_image = request.FILES.get('image_couverture')
+        if not nouvelle_image:
+            return Response({'erreur': True, 'message': 'image_couverture requis.'},
+                            status=400)
+
+        ancien_statut = pub.statut
+        pub.image_couverture = nouvelle_image
+        champs = ['image_couverture', 'modifie_le']
+
+        if ancien_statut == Publicite.Statut.REJETEE:
+            pub.statut = Publicite.Statut.BROUILLON
+            champs.append('statut')
+        elif ancien_statut == Publicite.Statut.ACTIVE:
+            pub.statut = Publicite.Statut.EN_ATTENTE_VALIDATION
+            pub.debut_diffusion = None
+            pub.fin_diffusion = None
+            champs += ['statut', 'debut_diffusion', 'fin_diffusion']
+
+        pub.save(update_fields=champs)
+
+        if ancien_statut == Publicite.Statut.ACTIVE:
+            try:
+                from apps.administration.moderation import _journaliser
+                _journaliser(
+                    request.user, profil.user, 'modifier_image_pub',
+                    f"Pub « {pub.titre} » : image modifiée, repassée en "
+                    "attente de validation.",
+                )
+            except Exception:
+                pass
+
+        return Response(
+            PubliciteCreationSerializer(pub, context={'request': request}).data,
+            status=200)
+
+
+class MasquerPubliciteView(APIView):
+    """POST /mes-publicites/<pk>/masquer/ — masquage côté partenaire (soft
+    delete) : la pub disparaît des listes/stats du partenaire, mais reste
+    en base intégralement (historique, stats globales, modération admin).
+
+    Fonctionne quel que soit le statut (brouillon, active, terminée...) —
+    ce n'est pas une transition de cycle de vie, juste une visibilité.
+    N'affecte ni les vues admin (StatsAdminView, ExportCSVView,
+    ChangerFormulePubliciteView, FaveurPubliciteView...) ni la diffusion
+    mobile (déjà traitée séparément via masquee_par_partenaire).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk=None):
+        profil = getattr(request.user, 'profil_partenaire', None)
+        if profil is None:
+            return Response({'erreur': True, 'message': 'Réservé aux partenaires.'},
+                            status=403)
+
+        pub = Publicite.objects.filter(pk=pk, partenaire=profil).first()
+        if pub is None:
+            return Response({'erreur': True, 'message': 'Publicité introuvable.'},
+                            status=404)
+
+        pub.masquee_par_partenaire = True
+        pub.save(update_fields=['masquee_par_partenaire', 'modifie_le'])
+
+        try:
+            from apps.administration.moderation import _journaliser
+            _journaliser(
+                request.user, profil.user, 'masquer_pub',
+                f"Pub « {pub.titre} » masquée par le partenaire.",
+            )
+        except Exception:
+            pass
+
+        return Response({'detail': 'Publicité retirée de vos listes.'}, status=200)
 
 
 class TransitionPubliciteView(APIView):

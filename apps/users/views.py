@@ -163,7 +163,16 @@ class MonProfilPartenaireView(generics.RetrieveUpdateAPIView):
 
 
 class MesCategoriesView(generics.ListAPIView):
-    """GET /auth/mes-categories/ — categories du partenaire connecte."""
+    """GET /auth/mes-categories/ — categories du partenaire connecte.
+
+    POST /auth/mes-categories/ — { categorie_id } : ajoute le partenaire à
+    une catégorie globale existante (aucune création de catégorie ici,
+    aucune validation admin, aucun quota — le partenaire choisit librement
+    et peut en cumuler plusieurs). La liste des catégories globales
+    disponibles est celle déjà exposée par GET /catalogue/categories/
+    (CategorieViewSet, public) ; le front calcule les catégories restantes
+    en comparant avec cette liste-ci (mes-categories).
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_class(self):
@@ -179,9 +188,45 @@ class MesCategoriesView(generics.ListAPIView):
                 .select_related('categorie')
                 .order_by('-est_principale', 'categorie__nom'))
 
+    def post(self, request):
+        from apps.catalog.models import Categorie, PartenaireCategorie
+        from .serializers import MaCategorieSerializer
+
+        profil = getattr(request.user, 'profil_partenaire', None)
+        if profil is None:
+            return Response({'erreur': True, 'message': 'Réservé aux partenaires.'},
+                            status=403)
+
+        categorie_id = request.data.get('categorie_id')
+        if not categorie_id:
+            return Response({'erreur': True, 'message': 'categorie_id requis.'},
+                            status=400)
+
+        categorie = Categorie.objects.filter(pk=categorie_id, est_active=True).first()
+        if categorie is None:
+            return Response({'erreur': True, 'message': 'Catégorie introuvable.'},
+                            status=400)
+
+        if PartenaireCategorie.objects.filter(
+                partenaire=profil, categorie=categorie).exists():
+            return Response(
+                {'erreur': True, 'message': 'Vous avez déjà cette catégorie.'},
+                status=400)
+
+        lien = PartenaireCategorie.objects.create(partenaire=profil, categorie=categorie)
+        return Response(
+            MaCategorieSerializer(lien, context={'request': request}).data, status=201)
+
 
 class MaCategorieDetailView(generics.RetrieveUpdateAPIView):
-    """PATCH /auth/mes-categories/<pk>/ — image de couverture par categorie."""
+    """GET/PATCH /auth/mes-categories/<pk>/ — image de couverture par catégorie.
+
+    DELETE /auth/mes-categories/<pk>/ — retire cette catégorie du profil.
+    Garde-fou : refuse si c'est la dernière catégorie du partenaire (un
+    partenaire doit toujours en garder au moins une). Si des articles sont
+    encore classés dans cette catégorie, le retrait est autorisé (les
+    articles restent inchangés) mais un avertissement est renvoyé.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_class(self):
@@ -194,6 +239,38 @@ class MaCategorieDetailView(generics.RetrieveUpdateAPIView):
         if profil is None:
             return PartenaireCategorie.objects.none()
         return PartenaireCategorie.objects.filter(partenaire=profil)
+
+    def delete(self, request, *args, **kwargs):
+        from apps.catalog.models import Article, PartenaireCategorie
+
+        profil = getattr(request.user, 'profil_partenaire', None)
+        if profil is None:
+            return Response({'erreur': True, 'message': 'Réservé aux partenaires.'},
+                            status=403)
+
+        lien = self.get_queryset().filter(
+            pk=kwargs.get('pk')).select_related('categorie').first()
+        if lien is None:
+            return Response({'erreur': True, 'message': 'Catégorie introuvable.'},
+                            status=404)
+
+        if PartenaireCategorie.objects.filter(partenaire=profil).count() <= 1:
+            return Response(
+                {'erreur': True,
+                 'message': 'Vous devez conserver au moins une catégorie.'},
+                status=400)
+
+        nb_articles = Article.objects.filter(
+            partenaire=profil, categorie=lien.categorie, est_actif=True).count()
+        lien.delete()
+
+        data = {'detail': 'Catégorie retirée.'}
+        if nb_articles:
+            data['avertissement'] = (
+                f"{nb_articles} article(s) restent classés dans cette catégorie "
+                "(non affectés, mais elle n'apparaît plus dans votre profil)."
+            )
+        return Response(data, status=200)
 
 
 class DemanderOTPView(APIView):

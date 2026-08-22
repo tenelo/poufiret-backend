@@ -84,11 +84,19 @@ def minute_cible_interstitiel(utilisateur, params=None):
 
 
 def _pubs_diffusables():
-    """Pubs actives : dans la periode, ou hors periode mais cible non atteinte."""
+    """Pubs actives : dans la periode, ou hors periode mais cible non atteinte.
+
+    Exclut aussi les pubs masquées par leur partenaire (masquage
+    volontaire côté partenaire, mais par sécurité on ne les diffuse pas :
+    voir Publicite.masquee_par_partenaire) — seul point d'entrée de la
+    diffusion mobile (carrousel/interstitiel/bandeau/page publicités),
+    donc suffisant pour couvrir tous ces emplacements en un seul endroit.
+    """
     maintenant = timezone.now()
     candidates = (
         Publicite.objects
         .filter(statut=Publicite.Statut.ACTIVE, debut_diffusion__lte=maintenant)
+        .exclude(masquee_par_partenaire=True)
         .select_related('formule', 'partenaire', 'partenaire__departement__region')
     )
     return [

@@ -52,7 +52,8 @@ class StatsPartenaireView(APIView):
         if profil is None:
             return Response({'erreur': True, 'message': 'Reserve aux partenaires.'},
                             status=status.HTTP_403_FORBIDDEN)
-        pubs = Publicite.objects.filter(partenaire=profil).select_related('formule', 'partenaire__user')
+        pubs = Publicite.objects.filter(partenaire=profil).exclude(
+            masquee_par_partenaire=True).select_related('formule', 'partenaire__user')
         donnees = []
         for pub in pubs:
             if pub.stats_visibles_partenaire:
