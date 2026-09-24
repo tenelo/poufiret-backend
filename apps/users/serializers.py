@@ -1,6 +1,7 @@
 """
 Serializers de l'app users : authentification et profil.
 """
+from django.contrib.gis.geos import Point
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -21,7 +22,7 @@ class UtilisateurSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'telephone', 'username', 'first_name', 'last_name',
+            'id', 'telephone', 'first_name', 'last_name', 'email',
             'role', 'est_verifie', 'pin_par_defaut', 'langue_preferee', 'token_fcm',
             'departement', 'departement_nom', 'region_nom',
             'tranche_age', 'sexe', 'espace',
@@ -254,6 +255,31 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
         source='get_type_partenaire_display', read_only=True)
     statut_libelle = serializers.CharField(
         source='get_statut_display', read_only=True)
+    departement_nom = serializers.CharField(
+        source='departement.nom', read_only=True, default='')
+    region_nom = serializers.CharField(
+        source='departement.region.nom', read_only=True, default='')
+
+    # Lecture ET écriture : latitude/longitude ne sont pas des champs du
+    # modèle (le modèle porte un seul gis_models.PointField `localisation`,
+    # x=longitude, y=latitude). En lecture, to_representation() les dérive
+    # de `localisation`. En écriture, update() les recompose en Point.
+    # `departement`, lui, reste piloté par l'administration : il n'est PAS
+    # touché ici, toujours en read_only_fields.
+    latitude = serializers.FloatField(
+        required=False, allow_null=True, min_value=-90, max_value=90,
+        error_messages={
+            'min_value': 'La latitude doit être comprise entre -90 et 90.',
+            'max_value': 'La latitude doit être comprise entre -90 et 90.',
+        },
+    )
+    longitude = serializers.FloatField(
+        required=False, allow_null=True, min_value=-180, max_value=180,
+        error_messages={
+            'min_value': 'La longitude doit être comprise entre -180 et 180.',
+            'max_value': 'La longitude doit être comprise entre -180 et 180.',
+        },
+    )
 
     class Meta:
         model = ProfilPartenaire
@@ -266,13 +292,53 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
             'statut', 'statut_libelle', 'est_visible', 'badge_certifie',
             'est_faveur', 'plan_libelle', 'abonnement_fin', 'nb_vues',
             'nb_photos_par_article', 'nb_articles_max',
+            'departement', 'departement_nom', 'region_nom',
+            # Lecture + écriture (voir latitude/longitude ci-dessus)
+            'latitude', 'longitude',
         ]
         read_only_fields = [
             'id', 'statut', 'statut_libelle', 'est_visible', 'badge_certifie',
             'est_faveur', 'plan_libelle', 'abonnement_fin', 'nb_vues',
             'type_partenaire_libelle', 'nb_photos_par_article',
             'nb_articles_max',
+            'departement', 'departement_nom', 'region_nom',
         ]
+
+    def to_representation(self, instance):
+        """latitude/longitude ne sont pas des attributs du modèle : sans
+        cet override, la lecture par défaut de ces FloatField écrirait
+        (via getattr) `instance.latitude`, qui n'existe pas. On les dérive
+        donc explicitement de `instance.localisation` (PointField)."""
+        data = super().to_representation(instance)
+        data['latitude'] = instance.localisation.y if instance.localisation else None
+        data['longitude'] = instance.localisation.x if instance.localisation else None
+        return data
+
+    def update(self, instance, validated_data):
+        """Règle d'écriture du point GPS (les 4 cas) :
+        - latitude ET longitude fournis (non null) -> localisation = Point.
+        - les deux explicitement null -> localisation = None (effacée).
+        - un seul des deux fourni (l'autre absent, ou un seul des deux
+          null quand l'autre a une valeur) -> 400, incohérent.
+        - aucun des deux présent dans le body -> localisation inchangée
+          (comportement PATCH partiel standard : validated_data ne
+          contient alors ni 'latitude' ni 'longitude').
+        """
+        lat_fourni = 'latitude' in validated_data
+        lng_fourni = 'longitude' in validated_data
+        lat = validated_data.pop('latitude', None)
+        lng = validated_data.pop('longitude', None)
+
+        if lat_fourni or lng_fourni:
+            if not (lat_fourni and lng_fourni) or (lat is None) != (lng is None):
+                raise serializers.ValidationError({
+                    'latitude': ['latitude et longitude doivent être fournis ensemble.'],
+                    'longitude': ['latitude et longitude doivent être fournis ensemble.'],
+                })
+            instance.localisation = None if lat is None else Point(lng, lat, srid=4326)
+            instance.save(update_fields=['localisation', 'updated_at'])
+
+        return super().update(instance, validated_data)
 
 
 class MaCategorieSerializer(serializers.ModelSerializer):
@@ -454,6 +520,118 @@ class DefinirPINSerializer(serializers.Serializer):
         self._otp.est_utilise = True
         self._otp.pin_consomme = True
         self._otp.save(update_fields=['est_utilise', 'pin_consomme', 'modifie_le'])
+        self.user = user
+        return user
+
+
+class FirebaseInscriptionSerializer(serializers.Serializer):
+    """
+    Inscription via Firebase Phone Auth (Option A : un seul appel).
+    Remplace le flux OTP interne (demander/verifier + definir-pin) : le
+    numero est deja prouve par Firebase, on ne verifie que l'idToken recu.
+    """
+    id_token = serializers.CharField(write_only=True)
+    password = serializers.CharField(min_length=4, max_length=4, write_only=True)
+    prenom = serializers.CharField(required=False, allow_blank=True)
+    nom = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_password(self, value):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.core.validateurs import valider_pin
+        try:
+            return valider_pin(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(e.messages)
+
+    def validate_id_token(self, value):
+        import logging
+        from apps.core.firebase import verifier_id_token
+        logger = logging.getLogger('poufiret.firebase')
+        try:
+            decoded = verifier_id_token(value)
+        except Exception as e:
+            logger.warning('idToken Firebase invalide/expiré (inscription) : %s', e)
+            raise serializers.ValidationError("Jeton Firebase invalide ou expiré.")
+        telephone = decoded.get('phone_number')
+        if not telephone:
+            raise serializers.ValidationError(
+                "Ce jeton Firebase ne contient pas de numéro de téléphone vérifié.")
+        self._telephone = telephone
+        return value
+
+    def validate(self, attrs):
+        if User.objects.filter(telephone=self._telephone).exists():
+            raise serializers.ValidationError(
+                "Ce compte existe déjà, connectez-vous.")
+        return attrs
+
+    def save(self, **kwargs):
+        pin = self.validated_data['password']
+        user = User(
+            telephone=self._telephone,
+            username=self._telephone,
+            first_name=self.validated_data.get('prenom', ''),
+            last_name=self.validated_data.get('nom', ''),
+            role=User.Role.CLIENT,
+            est_verifie=True,
+            pin_par_defaut=False,
+        )
+        user.set_password(pin)
+        user.save()
+        NumeroVerifie.objects.get_or_create(
+            telephone=self._telephone,
+            defaults={'source': NumeroVerifie.Source.FIREBASE},
+        )
+        self.user = user
+        return user
+
+
+class FirebaseReinitPinSerializer(serializers.Serializer):
+    """
+    Reinitialisation du PIN via Firebase Phone Auth (Option A : un seul appel).
+    Le numero est deja prouve par Firebase ; le compte doit deja exister.
+    """
+    id_token = serializers.CharField(write_only=True)
+    password = serializers.CharField(min_length=4, max_length=4, write_only=True)
+
+    def validate_password(self, value):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.core.validateurs import valider_pin
+        try:
+            return valider_pin(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(e.messages)
+
+    def validate_id_token(self, value):
+        import logging
+        from apps.core.firebase import verifier_id_token
+        logger = logging.getLogger('poufiret.firebase')
+        try:
+            decoded = verifier_id_token(value)
+        except Exception as e:
+            logger.warning('idToken Firebase invalide/expiré (réinit PIN) : %s', e)
+            raise serializers.ValidationError("Jeton Firebase invalide ou expiré.")
+        telephone = decoded.get('phone_number')
+        if not telephone:
+            raise serializers.ValidationError(
+                "Ce jeton Firebase ne contient pas de numéro de téléphone vérifié.")
+        self._telephone = telephone
+        return value
+
+    def validate(self, attrs):
+        try:
+            self._user = User.objects.get(telephone=self._telephone)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Aucun compte pour ce numéro.")
+        return attrs
+
+    def save(self, **kwargs):
+        pin = self.validated_data['password']
+        user = self._user
+        user.set_password(pin)
+        user.pin_par_defaut = False
+        user.est_verifie = True
+        user.save(update_fields=['password', 'pin_par_defaut', 'est_verifie'])
         self.user = user
         return user
 

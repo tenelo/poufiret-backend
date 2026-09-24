@@ -26,6 +26,10 @@ class JournalModeration(ModeleBase):
         ACCEPTER_PARTENAIRE = 'accepter_partenaire', 'Demande partenaire acceptée'
         REJETER_PARTENAIRE = 'rejeter_partenaire', 'Demande partenaire rejetée'
         CREER_PARTENAIRE = 'creer_partenaire', 'Création d\'un partenaire (démarcheur)'
+        PUB_PAIEMENT_OK = 'pub_paiement_ok', 'Publicité : paiement confirmé'
+        PUB_VALIDER = 'pub_valider', 'Publicité validée'
+        PUB_REJETER = 'pub_rejeter', 'Publicité rejetée'
+        PUB_TERMINER = 'pub_terminer', 'Publicité terminée'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.
@@ -128,12 +132,18 @@ class PermissionsAdmin(ModeleBase):
     # ── F. Consultation & données ────────────────────────────────────
     voir_stats = models.BooleanField('voir les stats', default=False)
     voir_indicateurs = models.BooleanField('voir les indicateurs partenaires', default=False)
+    voir_interventions = models.BooleanField(
+        'voir les demandes d\'intervention (tous artisans)', default=False)
     lire_journal = models.BooleanField('lire le journal d\'audit', default=False)
     exporter_csv = models.BooleanField('exporter en CSV', default=False)
 
     # ── G. Gestion ────────────────────────────────────────────────────
     gerer_admins = models.BooleanField(
         'gérer les comptes admins (créer, éditer capacités, révoquer)',
+        default=False,
+    )
+    gerer_geographie = models.BooleanField(
+        'gérer la géographie (régions, départements, localités, quartiers)',
         default=False,
     )
 

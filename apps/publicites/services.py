@@ -286,6 +286,38 @@ TRANSITIONS = {
     },
 }
 
+# Code JournalModeration.Action correspondant a chaque transition admin
+# (valeurs <= 20 caracteres : JournalModeration.action est un CharField(20)).
+_ACTIONS_JOURNAL = {
+    'confirmer_paiement': 'pub_paiement_ok',
+    'valider': 'pub_valider',
+    'rejeter': 'pub_rejeter',
+    'terminer': 'pub_terminer',
+}
+
+
+def journaliser_transition(acteur, pub, action, message):
+    """Trace une transition admin de pub dans le journal d'audit existant
+    (JournalModeration, meme mecanisme que les autres actions du projet).
+
+    Best-effort : n'empeche jamais la transition elle-meme si l'ecriture
+    du journal echoue (meme pattern que les autres journalisations du
+    projet, ex. apps.publicites.credits.consommer_credit).
+    Ne journalise que les transitions admin (soumettre, faite par le
+    partenaire, n'est pas concernee).
+    """
+    code = _ACTIONS_JOURNAL.get(action)
+    if code is None:
+        return
+    try:
+        from apps.administration.moderation import _journaliser
+        _journaliser(
+            acteur, pub.partenaire.user, code,
+            f'Publicité « {pub.titre} » (id {pub.pk}) — {message}',
+        )
+    except Exception:
+        pass
+
 
 def quota_formule_disponible(pub):
     """Vrai si la formule n'a pas atteint son quota d'annonceurs simultanes."""

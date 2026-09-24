@@ -14,6 +14,8 @@ Définition retenue avec Tenelo :
 
 Ces fonctions alimenteront aussi le dashboard super-admin G5 côté Angular.
 """
+import statistics
+
 from django.contrib.auth import get_user_model
 from django.db.models import Count
 from django.utils import timezone
@@ -111,6 +113,100 @@ def tableau_de_bord():
             'trente_jours': ouvertures(il_y_a_30j),
         },
     }
+
+
+def duree_sessions(depuis=None):
+    """Indicateurs de durée de session : globale, médiane, par utilisateur,
+    par jour.
+
+    `depuis` : datetime optionnelle bornant la période (None = toutes les
+    sessions, comme export_sessions_lignes).
+
+    Règle de calcul (identique à TempsSessionUtilisateur.duree_secondes,
+    réutilisée telle quelle, pas de nouveau calcul inventé) : durée =
+    dernier_ping - debut, en secondes, jamais négative.
+
+    Sessions sans fin : AUCUNE exclusion. Une session encore ouverte
+    (est_active=True) a un dernier_ping mis à jour par le heartbeat
+    (PingSessionView, toutes les 60s) — dernier_ping - debut mesure donc
+    une durée réellement écoulée et fiable, pas une valeur incomplète à
+    écarter. C'est aussi le choix déjà fait par export_sessions_lignes,
+    qui inclut toutes les sessions (colonne 'active' informative
+    seulement, jamais un filtre) : on reste cohérent avec l'existant
+    plutôt que d'introduire une nouvelle règle.
+    """
+    qs = TempsSessionUtilisateur.objects.select_related('utilisateur')
+    if depuis is not None:
+        qs = qs.filter(debut__gte=depuis)
+
+    durees = []
+    par_utilisateur = {}
+    par_jour_brut = {}
+
+    for s in qs.iterator():
+        d = max(0, int((s.dernier_ping - s.debut).total_seconds()))
+        durees.append(d)
+
+        u = s.utilisateur
+        entry = par_utilisateur.get(u.id)
+        if entry is None:
+            entry = par_utilisateur[u.id] = {
+                'utilisateur_id': u.id,
+                'telephone': getattr(u, 'telephone', ''),
+                'nom': u.get_full_name() or u.username or getattr(u, 'telephone', ''),
+                'nb_sessions': 0,
+                'duree_totale_secondes': 0,
+            }
+        entry['nb_sessions'] += 1
+        entry['duree_totale_secondes'] += d
+
+        jour = timezone.localtime(s.debut).date().isoformat()
+        bucket = par_jour_brut.setdefault(jour, {'total': 0, 'n': 0})
+        bucket['total'] += d
+        bucket['n'] += 1
+
+    nb_sessions = len(durees)
+    moyenne = round(statistics.mean(durees), 1) if durees else 0.0
+    mediane = round(statistics.median(durees), 1) if durees else 0.0
+
+    par_utilisateur_liste = []
+    for entry in par_utilisateur.values():
+        entry['duree_moyenne_secondes'] = round(
+            entry['duree_totale_secondes'] / entry['nb_sessions'], 1)
+        par_utilisateur_liste.append(entry)
+    # Tri par défaut : durée totale décroissante (engagement le plus fort
+    # en tête) ; liste plate, librement re-triable côté front.
+    par_utilisateur_liste.sort(key=lambda e: -e['duree_totale_secondes'])
+
+    par_jour = [
+        {
+            'date': jour,
+            'duree_moyenne_secondes': round(b['total'] / b['n'], 1),
+            'nb_sessions': b['n'],
+        }
+        for jour, b in sorted(par_jour_brut.items())
+    ]
+
+    return {
+        'duree_moyenne_globale_secondes': moyenne,
+        'duree_mediane_globale_secondes': mediane,
+        'nb_sessions': nb_sessions,
+        'par_utilisateur': par_utilisateur_liste,
+        'par_jour': par_jour,
+    }
+
+
+def export_duree_sessions_lignes(depuis=None):
+    """Prépare (entetes, lignes) pour l'export CSV des durées par utilisateur."""
+    donnees = duree_sessions(depuis)
+    entetes = ['utilisateur_id', 'telephone', 'nom', 'nb_sessions',
+               'duree_moyenne_secondes', 'duree_totale_secondes']
+    lignes = [
+        [e['utilisateur_id'], e['telephone'], e['nom'], e['nb_sessions'],
+         e['duree_moyenne_secondes'], e['duree_totale_secondes']]
+        for e in donnees['par_utilisateur']
+    ]
+    return entetes, lignes
 
 
 def export_sessions_lignes(depuis=None):

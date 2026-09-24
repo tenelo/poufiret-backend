@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from .views import (DashboardG5View, AppareilsExportView, ModerationView,
                     JournalModerationView, JournalExportView,
@@ -8,7 +8,10 @@ from .views import (DashboardG5View, AppareilsExportView, ModerationView,
                     ChangerFormulePubliciteView, RecherchePartenairesView,
                     CreditsPartenaireView, CreditDetailView,
                     RechercheComptesView, AdminsListView,
-                    CreerAdminView, AdminDetailView)
+                    CreerAdminView, AdminDetailView,
+                    InterventionsAdminView, InterventionsAdminExportView,
+                    PartenairesListeAdminView, PartenairesListeAdminExportView,
+                    ConnexionsAdminView, ConnexionsAdminExportView)
 
 app_name = 'administration'
 
@@ -21,6 +24,9 @@ urlpatterns = [
     path('moderation/journal/export/', JournalExportView.as_view(), name='moderation-journal-export'),
     path('partenaires/', IndicateursPartenairesView.as_view(), name='partenaires'),
     path('partenaires/export/', PartenairesExportView.as_view(), name='partenaires-export'),
+    path('partenaires/liste/', PartenairesListeAdminView.as_view(), name='partenaires-liste'),
+    path('partenaires/liste/export/', PartenairesListeAdminExportView.as_view(),
+         name='partenaires-liste-export'),
     path('partenaires/<int:pk>/faveur/', FaveurView.as_view(), name='partenaire-faveur'),
     path('publicites/<uuid:pk>/faveur/', FaveurPubliciteView.as_view(), name='publicite-faveur'),
     path('publicites/<uuid:pk>/formule/', ChangerFormulePubliciteView.as_view(), name='publicite-formule'),
@@ -32,4 +38,11 @@ urlpatterns = [
     path('admins/creer/', CreerAdminView.as_view(), name='admins-creer'),
     path('admins/<int:pk>/', AdminDetailView.as_view(), name='admin-detail'),
     path('demandes-partenariat/', DemandesPartenariatView.as_view(), name='demandes-partenariat'),
+    path('interventions/', InterventionsAdminView.as_view(), name='interventions'),
+    path('interventions/export/', InterventionsAdminExportView.as_view(),
+         name='interventions-export'),
+    path('connexions-admin/', ConnexionsAdminView.as_view(), name='connexions-admin'),
+    path('connexions-admin/export/', ConnexionsAdminExportView.as_view(),
+         name='connexions-admin-export'),
+    path('geo/', include('apps.geo.admin_urls')),
 ]

@@ -33,5 +33,8 @@ class QuartiersView(generics.ListAPIView):
         qs = Quartier.objects.filter(est_actif=True)
         dep = self.request.query_params.get('departement')
         if dep:
-            qs = qs.filter(departement_id=dep)
+            # Quartier est desormais rattache a une Localite (elle-meme
+            # rattachee au departement) — contrat de l'URL inchange, seul
+            # le chemin ORM change (voir apps.geo.models.Localite).
+            qs = qs.filter(localite__departement_id=dep)
         return qs.order_by('ordre', 'nom')

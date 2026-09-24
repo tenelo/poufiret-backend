@@ -479,7 +479,7 @@ class TransitionPubliciteView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk=None, action=None):
-        from .services import TRANSITIONS, appliquer_transition
+        from .services import TRANSITIONS, appliquer_transition, journaliser_transition
 
         regle = TRANSITIONS.get(action)
         if regle is None:
@@ -510,4 +510,5 @@ class TransitionPubliciteView(APIView):
             code = (status.HTTP_409_CONFLICT if 'Quota' in message
                     else status.HTTP_400_BAD_REQUEST)
             return Response({'erreur': True, 'message': message}, status=code)
+        journaliser_transition(request.user, pub, action, message)
         return Response({'statut': pub.statut, 'message': message})

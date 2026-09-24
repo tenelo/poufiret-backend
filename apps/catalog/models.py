@@ -125,6 +125,24 @@ class Categorie(ImagesOptimiseesMixin, models.Model):
         return self.nom
 
 
+def annoter_nb_partenaires(queryset):
+    """Annote nb_via_liaison / nb_via_articles sur un queryset de Categorie.
+
+    Factorise le calcul utilise par CategorieViewSet (racines) et par
+    CategorieSerializer.get_enfants (enfants imbriques), pour que
+    nb_partenaires soit toujours juste, a n'importe quel niveau de la
+    hierarchie, sans requete N+1 par categorie.
+    """
+    from django.db.models import Count, Q
+    return queryset.annotate(
+        nb_via_liaison=Count('liens_partenaires__partenaire', distinct=True,
+            filter=Q(liens_partenaires__partenaire__statut='actif')),
+        nb_via_articles=Count('articles__partenaire', distinct=True,
+            filter=Q(articles__est_actif=True,
+                     articles__partenaire__statut='actif')),
+    )
+
+
 class PartenaireCategorie(ImagesOptimiseesMixin, models.Model):
     """
     Lien plusieurs-à-plusieurs entre commerçants et catégories.

@@ -25,21 +25,24 @@ class District(models.Model):
 
 
 class Region(models.Model):
-    nom = models.CharField('nom', max_length=100)
+    nom = models.CharField('nom', max_length=100, unique=True)
     district = models.ForeignKey(
         District, on_delete=models.PROTECT,
         related_name='regions', verbose_name='district',
     )
     ordre = models.PositiveIntegerField('ordre d\'affichage', default=0)
+    est_actif = models.BooleanField(
+        'actif', default=True,
+        help_text='Décocher pour masquer cette région du choix des '
+                  'utilisateurs sans la supprimer.',
+    )
+    cree_le = models.DateTimeField('créé le', auto_now_add=True, null=True)
+    modifie_le = models.DateTimeField('modifié le', auto_now=True, null=True)
 
     class Meta:
         verbose_name = 'région'
         verbose_name_plural = 'régions'
         ordering = ['ordre', 'nom']
-        constraints = [
-            models.UniqueConstraint(
-                fields=['nom', 'district'], name='unique_region_district'),
-        ]
 
     def __str__(self):
         return self.nom
@@ -57,6 +60,8 @@ class Departement(models.Model):
         help_text='Décocher pour masquer ce département du choix des '
                   'utilisateurs sans le supprimer.',
     )
+    cree_le = models.DateTimeField('créé le', auto_now_add=True, null=True)
+    modifie_le = models.DateTimeField('modifié le', auto_now=True, null=True)
 
     class Meta:
         verbose_name = 'département'
@@ -76,20 +81,52 @@ class Departement(models.Model):
         return self.region.district
 
 
+class Localite(models.Model):
+    """Localité (ville, commune, sous-préfecture...) d'un département.
+
+    Niveau intermédiaire entre Département et Quartier, ajouté pour la
+    gestion admin détaillée de la géographie (voir apps.geo.admin_views).
+    """
+    nom = models.CharField('nom', max_length=120)
+    departement = models.ForeignKey(
+        Departement, on_delete=models.PROTECT,
+        related_name='localites', verbose_name='département',
+    )
+    ordre = models.PositiveIntegerField("ordre d'affichage", default=0)
+    est_actif = models.BooleanField('actif', default=True)
+    cree_le = models.DateTimeField('créé le', auto_now_add=True, null=True)
+    modifie_le = models.DateTimeField('modifié le', auto_now=True, null=True)
+
+    class Meta:
+        verbose_name = 'localité'
+        verbose_name_plural = 'localités'
+        ordering = ['ordre', 'nom']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['nom', 'departement'],
+                name='unique_localite_departement'),
+        ]
+
+    def __str__(self):
+        return f'{self.nom} ({self.departement})'
+
+
 class Quartier(models.Model):
-    """Quartier d'un département (niveau le plus fin, saisi en livraison).
+    """Quartier d'une localité (niveau le plus fin, saisi en livraison).
 
     Sert à l'autocomplétion des points de retrait/livraison. Enrichissable
     au fil de l'eau (comme les mots-clés de recherche) : on démarre avec les
     quartiers connus et on complète à mesure.
     """
     nom = models.CharField('nom', max_length=120)
-    departement = models.ForeignKey(
-        Departement, on_delete=models.PROTECT,
-        related_name='quartiers', verbose_name='département',
+    localite = models.ForeignKey(
+        Localite, on_delete=models.PROTECT,
+        related_name='quartiers', verbose_name='localité',
     )
     ordre = models.PositiveIntegerField("ordre d'affichage", default=0)
     est_actif = models.BooleanField('actif', default=True)
+    cree_le = models.DateTimeField('créé le', auto_now_add=True, null=True)
+    modifie_le = models.DateTimeField('modifié le', auto_now=True, null=True)
 
     class Meta:
         verbose_name = 'quartier'
@@ -97,10 +134,10 @@ class Quartier(models.Model):
         ordering = ['ordre', 'nom']
         constraints = [
             models.UniqueConstraint(
-                fields=['nom', 'departement'],
-                name='unique_quartier_departement'),
+                fields=['nom', 'localite'],
+                name='unique_quartier_localite'),
         ]
 
     def __str__(self):
-        return f'{self.nom} ({self.departement})'
+        return f'{self.nom} ({self.localite})'
 

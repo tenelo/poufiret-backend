@@ -659,6 +659,7 @@ class NumeroVerifie(ModeleBase):
     """
     class Source(models.TextChoices):
         OTP = 'otp', _('OTP validé par SMS')
+        FIREBASE = 'firebase', _('Vérifié via Firebase Phone Auth')
         ADMIN = 'admin', _('Créé par un admin')
         DEMARCHEUR = 'demarcheur', _('Pré-saisi par un démarcheur')
         MIGRATION = 'migration', _('Compte préexistant migré')

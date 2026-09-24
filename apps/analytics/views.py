@@ -224,6 +224,53 @@ class StatsConnexionExportView(APIView):
         return reponse_csv('stats_connexion_sessions', entetes, lignes)
 
 
+def _depuis_jours(request):
+    """Lit ?jours=N (même pattern que StatsConnexionExportView). Retourne
+    une datetime bornant la période, ou None (= toutes les sessions) si le
+    paramètre est absent ou invalide."""
+    from datetime import timedelta
+    jours = request.query_params.get('jours')
+    if not jours:
+        return None
+    try:
+        return timezone.now() - timedelta(days=int(jours))
+    except (ValueError, TypeError):
+        return None
+
+
+class DureeSessionsAdminView(APIView):
+    """GET /analytics/admin/duree-sessions/ — durée moyenne/médiane des
+    sessions (globale, par utilisateur, par jour), même capacité que
+    StatsConnexionAdminView.
+
+    Endpoint dédié plutôt qu'une extension de /admin/stats-connexion/ :
+    ce dernier reste un tableau de bord léger (compteurs), alors que
+    `par_utilisateur` ici peut lister potentiellement tous les
+    utilisateurs ayant une session — mieux vaut ne pas alourdir chaque
+    appel au dashboard de connexion avec cette liste.
+
+    Paramètre optionnel ?jours=N pour borner la période (ex. ?jours=30) ;
+    sans paramètre, calcul sur toutes les sessions (global).
+    """
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats')]
+
+    def get(self, request):
+        from .stats_connexion import duree_sessions
+        return Response(duree_sessions(_depuis_jours(request)))
+
+
+class DureeSessionsExportView(APIView):
+    """Export CSV des durées de session par utilisateur, mêmes filtres que
+    DureeSessionsAdminView, même capacité que StatsConnexionExportView."""
+    permission_classes = [IsAuthenticated, ADroitDe('voir_stats', 'exporter_csv')]
+
+    def get(self, request):
+        from apps.core.exports import reponse_csv
+        from .stats_connexion import export_duree_sessions_lignes
+        entetes, lignes = export_duree_sessions_lignes(_depuis_jours(request))
+        return reponse_csv('duree_sessions', entetes, lignes)
+
+
 def _bornes_periode(request):
     """Lit ?debut=YYYY-MM-DD&fin=YYYY-MM-DD. Retourne (debut, fin, erreur)."""
     from datetime import datetime

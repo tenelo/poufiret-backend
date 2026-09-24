@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from .models import (
     Categorie, Article, ArticleImage, ArticleVideo, Variante, Supplement,
-    Panorama, Logement, Vehicule,
+    Panorama, Logement, Vehicule, annoter_nb_partenaires,
 )
 
 
@@ -18,14 +18,22 @@ class CategorieSerializer(serializers.ModelSerializer):
                   'types_partenaire']
 
     def get_nb_partenaires(self, obj):
+        # Categorie "groupe" (a des enfants actifs) : l'app ne s'en sert pas,
+        # elle se base sur le nb_partenaires de chaque enfant. On renvoie
+        # explicitement null plutôt qu'un total pour ne pas laisser croire
+        # que c'est un decompte direct de partenaires sur le groupe lui-même.
+        if obj.enfants.filter(est_active=True).exists():
+            return None
         a = getattr(obj, 'nb_via_liaison', None)
         b = getattr(obj, 'nb_via_articles', None)
         if a is None and b is None:
-            return None  # contexte sans annotation (ex: enfants imbriqués)
+            return None  # contexte sans annotation
         return max(a or 0, b or 0)
 
     def get_enfants(self, obj):
-        e = obj.enfants.filter(est_active=True).order_by('ordre', 'nom')
+        e = annoter_nb_partenaires(
+            obj.enfants.filter(est_active=True)
+        ).order_by('ordre', 'nom')
         return CategorieSerializer(e, many=True, context=self.context).data
 
 

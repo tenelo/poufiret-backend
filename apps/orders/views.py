@@ -212,6 +212,22 @@ class ValiderPanierView(APIView):
                 note_speciale=l.note_speciale,
             )
         panier.delete()  # vide le panier
+
+        # Notifie le partenaire une fois la commande réellement persistée
+        # (après commit, pour ne jamais notifier une commande qui serait
+        # finalement annulée par un rollback plus loin dans ce bloc atomic).
+        transaction.on_commit(lambda: notifier_utilisateur(
+            commande.partenaire.user,
+            request.user.get_full_name() or 'Nouvelle commande',
+            f'Nouvelle commande {commande.numero} reçue.',
+            data={
+                'type': 'commande',
+                'commande_id': str(commande.id),
+                'statut': str(commande.statut),
+            },
+            request=request,
+        ))
+
         return Response(CommandeSerializer(commande, context={'request': request}).data,
                         status=status.HTTP_201_CREATED)
 
@@ -333,7 +349,9 @@ def _notifier_transition_commande(commande, cible, acteur_est_client, request):
             notifier_utilisateur(
                 dest, 'Commande annulee',
                 f'La commande {num} a ete annulee par le client.',
-                data={'type': 'commande', 'id': str(commande.id)}, request=request)
+                data={'type': 'commande', 'commande_id': str(commande.id),
+                     'statut': str(commande.statut)},
+                request=request)
         return
     libelle = _LIBELLES_COMMANDE.get(cible)
     if libelle:
@@ -341,7 +359,9 @@ def _notifier_transition_commande(commande, cible, acteur_est_client, request):
         notifier_utilisateur(
             commande.user, 'Suivi de commande',
             f'Votre commande {num} {libelle}.',
-            data={'type': 'commande', 'id': str(commande.id)}, request=request)
+            data={'type': 'commande', 'commande_id': str(commande.id),
+                 'statut': str(commande.statut)},
+            request=request)
 
 
 class TransitionCommandeView(APIView):

@@ -13,6 +13,7 @@ from .serializers import (
     VitrinePartenaireSerializer,
     DemandeOTPSerializer, VerifierOTPSerializer, DefinirPINSerializer,
     ChangerPINSerializer,
+    FirebaseInscriptionSerializer, FirebaseReinitPinSerializer,
     CreerPartenaireParAdminSerializer,
 )
 
@@ -309,6 +310,42 @@ class DefinirPINView(APIView):
 
     def post(self, request):
         serializer = DefinirPINSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'utilisateur': UtilisateurSerializer(user).data,
+        }, status=status.HTTP_200_OK)
+
+
+class FirebaseInscriptionView(APIView):
+    """POST /auth/firebase/inscription/ — inscription via Firebase Phone Auth
+    (Option A, un seul appel). Public. Remplace demander-otp + verifier-otp +
+    definir-pin : le numero est deja prouve par l'idToken Firebase recu."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = FirebaseInscriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'utilisateur': UtilisateurSerializer(user).data,
+        }, status=status.HTTP_200_OK)
+
+
+class FirebaseReinitPinView(APIView):
+    """POST /auth/firebase/reinit-pin/ — reinitialise le PIN via Firebase
+    Phone Auth (Option A, un seul appel). Public. Le compte doit deja
+    exister pour le numero prouve par l'idToken."""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = FirebaseReinitPinSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         refresh = RefreshToken.for_user(user)

@@ -126,13 +126,15 @@ class PubliciteAdmin(admin.ModelAdmin):
         """Applique une transition depuis un bouton de la liste."""
         from django.shortcuts import redirect
         from .models import Publicite
-        from .services import appliquer_transition
+        from .services import appliquer_transition, journaliser_transition
 
         pub = Publicite.objects.filter(pk=pk).select_related('formule').first()
         if pub is None:
             self.message_user(request, 'Publicité introuvable.', messages.ERROR)
         else:
             ok, message = appliquer_transition(pub, action)
+            if ok:
+                journaliser_transition(request.user, pub, action, message)
             self.message_user(
                 request, f'{pub.titre} — {message}',
                 messages.SUCCESS if ok else messages.WARNING)

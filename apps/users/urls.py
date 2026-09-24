@@ -6,6 +6,7 @@ from .views import (
     MesAppareilsView, RevoquerAppareilView, DevenirPartenaireView, MonProfilPartenaireView, MesCategoriesView, MaCategorieDetailView,
     VitrinePartenaireView,
     DemanderOTPView, VerifierOTPView, DefinirPINView, ChangerPINView,
+    FirebaseInscriptionView, FirebaseReinitPinView,
     CreerPartenaireParAdminView,
 )
 
@@ -16,6 +17,8 @@ urlpatterns = [
     path('otp/verifier/', VerifierOTPView.as_view(), name='otp-verifier'),
     path('pin/definir/', DefinirPINView.as_view(), name='pin-definir'),
     path('pin/changer/', ChangerPINView.as_view(), name='pin-changer'),
+    path('firebase/inscription/', FirebaseInscriptionView.as_view(), name='firebase-inscription'),
+    path('firebase/reinit-pin/', FirebaseReinitPinView.as_view(), name='firebase-reinit-pin'),
     path('rafraichir/', TokenRefreshView.as_view(), name='rafraichir'),
     path('deconnexion/', DeconnexionView.as_view(), name='deconnexion'),
     path('moi/', MonProfilView.as_view(), name='moi'),

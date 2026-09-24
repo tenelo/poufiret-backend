@@ -7,7 +7,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from apps.core.permissions import EstPartenaireProprietaireOuLectureSeule
 from .models import (
     Categorie, Article, VueArticle, ArticleImage, ArticleVideo, Variante,
-    Supplement, Panorama, Logement, Vehicule,
+    Supplement, Panorama, Logement, Vehicule, annoter_nb_partenaires,
 )
 from .serializers import (
     CategorieSerializer, ArticleListeSerializer, ArticleDetailSerializer,
@@ -26,19 +26,12 @@ class CategorieViewSet(viewsets.ReadOnlyModelViewSet):
     lookup_field = 'slug'
 
     def get_queryset(self):
-        from django.db.models import Count, Q
         qs = Categorie.objects.filter(est_archivee=False)
         if self.action == 'list':
             qs = qs.filter(parent__isnull=True)
         # Nombre de partenaires actifs : rattachés via PartenaireCategorie
         # OU ayant au moins un article actif dans la catégorie (logique annuaire).
-        qs = qs.annotate(
-            nb_via_liaison=Count('liens_partenaires__partenaire', distinct=True,
-                filter=Q(liens_partenaires__partenaire__statut='actif')),
-            nb_via_articles=Count('articles__partenaire', distinct=True,
-                filter=Q(articles__est_actif=True,
-                         articles__partenaire__statut='actif')),
-        )
+        qs = annoter_nb_partenaires(qs)
         return qs.order_by('ordre', 'nom')
 
 

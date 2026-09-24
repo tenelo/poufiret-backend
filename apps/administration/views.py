@@ -20,11 +20,14 @@ from apps.core.permissions import EstAdmin, EstSuperAdmin, ADroitDe, PeutGererAd
 from apps.core.exports import reponse_csv
 from apps.core.validateurs import generer_pin_aleatoire
 from . import services, moderation, faveurs, partenaires
-from apps.users.models import ProfilPartenaire, PlanAbonnement
+from apps.users.models import ProfilPartenaire, PlanAbonnement, SessionAppareil
 from apps.users.serializers import MonProfilPartenaireSerializer
 from apps.publicites.models import CreditFormulePub, FormulePublicite, Publicite
 from apps.publicites import credits as credits_pub
+from apps.messaging.models import DemandeIntervention
 from .models import JournalModeration, PermissionsAdmin
+from .serializers import (InterventionAdminSerializer, PartenaireListeAdminSerializer,
+                          ConnexionAdminSerializer)
 
 User = get_user_model()
 
@@ -603,16 +606,21 @@ def _admin_dict(u, noms_capacites=None):
     }
 
 
-def _filtrer_anti_escalade(capacites_payload, acteur):
-    """Retire `gerer_admins` du payload si l'acteur n'est pas super-admin.
+CAPACITES_PRIVILEGIEES = {'gerer_admins', 'gerer_geographie'}
 
-    gerer_admins est privilégié : seul un is_superuser peut le poser/retirer.
-    Un admin-gestionnaire non-superuser voit toute tentative sur ce champ
-    ignorée silencieusement (la cible garde sa valeur actuelle).
+
+def _filtrer_anti_escalade(capacites_payload, acteur):
+    """Retire les capacités privilégiées du payload si l'acteur n'est pas
+    super-admin (CAPACITES_PRIVILEGIEES).
+
+    Ces capacités sont sensibles : seul un is_superuser peut les poser/
+    retirer. Un admin-gestionnaire non-superuser voit toute tentative sur
+    ces champs ignorée silencieusement (la cible garde sa valeur actuelle).
     """
     if acteur.is_superuser:
         return dict(capacites_payload)
-    return {k: v for k, v in capacites_payload.items() if k != 'gerer_admins'}
+    return {k: v for k, v in capacites_payload.items()
+            if k not in CAPACITES_PRIVILEGIEES}
 
 
 class AdminsListView(APIView):
@@ -807,3 +815,263 @@ class AdminDetailView(APIView):
             pass
 
         return Response({'detail': 'Admin révoqué.'}, status=status.HTTP_200_OK)
+
+
+def _interventions_qs(request):
+    """Queryset commun (filtres ?statut=/?q=) pour la liste et l'export
+    admin des demandes d'intervention. Recherche large volontaire (numéro,
+    téléphone client, nom du commerce artisan), cohérente avec
+    RecherchePartenairesView/RechercheComptesView du même module."""
+    qs = DemandeIntervention.objects.select_related(
+        'user', 'artisan').order_by('-created_at')
+    statut = request.query_params.get('statut')
+    if statut:
+        qs = qs.filter(statut=statut)
+    q = request.query_params.get('q')
+    if q:
+        qs = qs.filter(
+            Q(numero__icontains=q)
+            | Q(user__telephone__icontains=q)
+            | Q(artisan__nom_commerce__icontains=q)
+        )
+    return qs
+
+
+class InterventionsAdminView(APIView):
+    """GET /administration/interventions/ — supervision en LECTURE SEULE de
+    toutes les demandes d'intervention, tous artisans confondus (le client
+    ne voit que les siennes via /messaging/interventions/, l'artisan les
+    siennes via /messaging/interventions/artisan/ ; ceci est la vue admin
+    transverse qui manquait).
+
+    Filtres optionnels : ?statut=<en_attente|acceptee|refusee|en_cours|
+    terminee|annulee> et ?q=<texte> (numéro, téléphone client, nom_commerce
+    artisan). Liste complète triée par -created_at (pas de pagination DRF :
+    ce module n'en utilise nulle part ailleurs, cf. JournalModerationView).
+    """
+    permission_classes = [IsAuthenticated, ADroitDe('voir_interventions')]
+
+    def get(self, request):
+        qs = _interventions_qs(request)
+        donnees = InterventionAdminSerializer(qs, many=True).data
+        return Response({'total': len(donnees), 'resultats': donnees})
+
+
+class InterventionsAdminExportView(APIView):
+    """GET /administration/interventions/export/ — export CSV des demandes
+    d'intervention, mêmes filtres et mêmes champs que InterventionsAdminView."""
+    permission_classes = [IsAuthenticated, ADroitDe('voir_interventions')]
+
+    def get(self, request):
+        qs = _interventions_qs(request)
+        entetes = [
+            'id', 'numero', 'statut', 'type_intervention', 'type_libre',
+            'description', 'urgence', 'client_telephone', 'client_nom',
+            'artisan_id', 'artisan_nom', 'artisan_type', 'adresse_snapshot',
+            'latitude', 'longitude', 'cree_le', 'acceptee_le', 'terminee_le',
+        ]
+
+        def _fmt(dt):
+            from django.utils import timezone
+            return timezone.localtime(dt).strftime('%Y-%m-%d %H:%M:%S') if dt else ''
+
+        lignes = []
+        for d in qs:
+            lignes.append([
+                d.id, d.numero, d.get_statut_display(), d.type_intervention,
+                d.type_libre, d.description, d.get_urgence_display(),
+                d.user.telephone,
+                d.user.get_full_name() or d.user.username or d.user.telephone,
+                d.artisan_id, d.artisan.nom_commerce,
+                d.artisan.get_type_partenaire_display(),
+                d.adresse_snapshot, d.latitude, d.longitude,
+                _fmt(d.created_at), _fmt(d.acceptee_le), _fmt(d.terminee_le),
+            ])
+        return reponse_csv('interventions', entetes, lignes)
+
+
+def _partenaires_liste_qs(request):
+    """Queryset commun (filtres ?q=/?type=/?statut=/?departement=) pour la
+    liste plate admin des partenaires et son export CSV.
+
+    ?departement accepte soit un id (entier), soit un nom (icontains) —
+    le front peut envoyer l'un ou l'autre selon ce qu'il a sous la main.
+    """
+    qs = ProfilPartenaire.objects.select_related(
+        'user', 'plan', 'departement',
+    ).prefetch_related('liens_categories__categorie').order_by('nom_commerce')
+
+    q = request.query_params.get('q')
+    if q:
+        qs = qs.filter(
+            Q(nom_commerce__icontains=q)
+            | Q(user__telephone__icontains=q)
+            | Q(telephone_pro__icontains=q)
+        )
+    type_partenaire = request.query_params.get('type')
+    if type_partenaire:
+        qs = qs.filter(type_partenaire=type_partenaire)
+    statut = request.query_params.get('statut')
+    if statut:
+        qs = qs.filter(statut=statut)
+    departement = request.query_params.get('departement')
+    if departement:
+        try:
+            qs = qs.filter(departement_id=int(departement))
+        except (ValueError, TypeError):
+            qs = qs.filter(departement__nom__icontains=departement)
+    return qs
+
+
+class PartenairesListeAdminView(APIView):
+    """GET /administration/partenaires/liste/ — liste PLATE (une ligne par
+    partenaire), pour une table filtrable côté admin. Complémentaire de
+    IndicateursPartenairesView (agrégats uniquement) et de
+    RecherchePartenairesView (recherche minimaliste, capacité différente,
+    plafonnée à 20 résultats) — aucun des deux n'expose ce contrat.
+
+    Filtres optionnels : ?q=<texte> (nom_commerce / téléphone compte /
+    téléphone pro), ?type=<type_partenaire>, ?statut=<statut>,
+    ?departement=<id ou nom>. Tri par défaut : nom_commerce. Liste
+    complète, pas de pagination DRF (même convention que le reste du
+    module admin).
+    """
+    permission_classes = [IsAuthenticated, ADroitDe('voir_indicateurs')]
+
+    def get(self, request):
+        qs = _partenaires_liste_qs(request)
+        donnees = PartenaireListeAdminSerializer(qs, many=True).data
+        return Response({'total': len(donnees), 'resultats': donnees})
+
+
+class PartenairesListeAdminExportView(APIView):
+    """GET /administration/partenaires/liste/export/ — export CSV de la
+    liste plate, mêmes filtres et mêmes colonnes que PartenairesListeAdminView.
+
+    Distinct de PartenairesExportView (export existant, colonnes plus
+    restreintes, pas de catégories catalogue) — non modifié.
+    """
+    permission_classes = [IsAuthenticated, ADroitDe('voir_indicateurs')]
+
+    def get(self, request):
+        qs = _partenaires_liste_qs(request)
+        entetes = [
+            'id', 'nom_commerce', 'type', 'categories', 'ville', 'quartier',
+            'departement', 'telephone_compte', 'telephone_pro', 'whatsapp',
+            'statut', 'visible', 'certifie', 'faveur', 'plan',
+            'abonnement_fin', 'nb_vues', 'cree_le',
+        ]
+        lignes = []
+        for p in qs:
+            lignes.append([
+                p.id, p.nom_commerce, p.get_type_partenaire_display(),
+                ', '.join(l.categorie.nom for l in p.liens_categories.all()),
+                p.ville, p.quartier, getattr(p.departement, 'nom', ''),
+                getattr(p.user, 'telephone', ''), p.telephone_pro, p.whatsapp,
+                p.get_statut_display(),
+                'oui' if p.est_visible else 'non',
+                'oui' if p.badge_certifie else 'non',
+                'oui' if p.est_faveur else 'non',
+                getattr(p.plan, 'libelle', ''),
+                p.abonnement_fin.strftime('%Y-%m-%d') if p.abonnement_fin else '',
+                p.nb_vues,
+                p.created_at.strftime('%Y-%m-%d %H:%M:%S') if p.created_at else '',
+            ])
+        return reponse_csv('partenaires_liste', entetes, lignes)
+
+
+def _depuis_jours(request):
+    """Lit ?jours=N (même pattern que StatsConnexionExportView côté
+    analytics). Retourne une datetime bornant la période, ou None (= tout
+    l'historique) si le paramètre est absent ou invalide."""
+    from datetime import timedelta
+    from django.utils import timezone as tz
+    jours = request.query_params.get('jours')
+    if not jours:
+        return None
+    try:
+        return tz.now() - timedelta(days=int(jours))
+    except (ValueError, TypeError):
+        return None
+
+
+def _connexions_admin_qs(request):
+    """Queryset commun (filtres ?jours=/?q=/?utilisateur=) pour la trace
+    des connexions admin et son export CSV.
+
+    Cloisonné aux comptes is_staff=True uniquement — c'est la garde qui
+    empêche d'exposer les connexions des clients/partenaires/livreurs.
+    """
+    qs = SessionAppareil.objects.filter(
+        user__is_staff=True).select_related('user').order_by('-cree_le')
+
+    depuis = _depuis_jours(request)
+    if depuis is not None:
+        qs = qs.filter(cree_le__gte=depuis)
+
+    utilisateur = request.query_params.get('utilisateur')
+    if utilisateur:
+        try:
+            qs = qs.filter(user_id=int(utilisateur))
+        except (ValueError, TypeError):
+            qs = qs.none()
+
+    q = request.query_params.get('q')
+    if q:
+        qs = qs.filter(
+            Q(user__telephone__icontains=q)
+            | Q(user__first_name__icontains=q)
+            | Q(user__last_name__icontains=q)
+            | Q(user__username__icontains=q)
+        )
+    return qs
+
+
+class ConnexionsAdminView(APIView):
+    """GET /administration/connexions-admin/ — trace des connexions des
+    comptes admin (is_staff=True) uniquement, une ligne par connexion
+    (SessionAppareil), triée -cree_le.
+
+    Filtres optionnels : ?jours=N (fenêtre glissante), ?q=<texte>
+    (téléphone/nom), ?utilisateur=<id> (une seule personne). Liste
+    complète, pas de pagination DRF (même convention que le reste du
+    module admin).
+    """
+    permission_classes = [IsAuthenticated, ADroitDe('lire_journal')]
+
+    def get(self, request):
+        qs = _connexions_admin_qs(request)
+        donnees = ConnexionAdminSerializer(qs, many=True).data
+        return Response({'total': len(donnees), 'resultats': donnees})
+
+
+class ConnexionsAdminExportView(APIView):
+    """GET /administration/connexions-admin/export/ — export CSV de la
+    trace des connexions admin, mêmes filtres et mêmes colonnes que
+    ConnexionsAdminView."""
+    permission_classes = [IsAuthenticated, ADroitDe('lire_journal')]
+
+    def get(self, request):
+        from django.utils import timezone as tz
+
+        qs = _connexions_admin_qs(request)
+        entetes = [
+            'id', 'utilisateur_id', 'telephone', 'nom', 'superadmin',
+            'date_connexion', 'adresse_ip', 'plateforme', 'appareil_nom',
+            'active', 'derniere_activite',
+        ]
+        lignes = []
+        for s in qs:
+            u = s.user
+            lignes.append([
+                str(s.id), u.id, u.telephone,
+                u.get_full_name() or u.username or u.telephone,
+                'oui' if u.is_superuser else 'non',
+                tz.localtime(s.cree_le).strftime('%Y-%m-%d %H:%M:%S'),
+                s.adresse_ip or '',
+                s.get_plateforme_display(),
+                s.appareil_nom,
+                'oui' if s.est_active else 'non',
+                tz.localtime(s.derniere_activite_le).strftime('%Y-%m-%d %H:%M:%S'),
+            ])
+        return reponse_csv('connexions_admin', entetes, lignes)

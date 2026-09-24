@@ -47,9 +47,12 @@ def _config_securite():
 
 def valider_pin(valeur):
     """
-    Valide un PIN Poufiret : exactement 4 chiffres, pas un PIN trivial.
+    Valide un PIN Poufiret : exactement 4 chiffres.
     A utiliser a l'inscription, au changement et a la reinitialisation.
     Leve ValidationError sinon.
+
+    N'importe quelle combinaison de 4 chiffres est acceptee (0000, 1111,
+    1234...) : la liste de PIN interdits n'est plus appliquee ici.
     """
     if valeur is None or not re.fullmatch(r'\d{4}', str(valeur)):
         raise ValidationError(
@@ -57,12 +60,7 @@ def valider_pin(valeur):
             code='pin_format',
         )
     valeur = str(valeur)
-    pins_interdits, bloquer_suites = _config_securite()
-    if valeur in pins_interdits:
-        raise ValidationError(
-            _('Ce code PIN est trop facile a deviner. Choisissez-en un autre.'),
-            code='pin_trivial',
-        )
+    _pins_interdits, bloquer_suites = _config_securite()
     if bloquer_suites and _est_suite(valeur):
         raise ValidationError(
             _('Evitez les suites de chiffres (1234, 4321...). '

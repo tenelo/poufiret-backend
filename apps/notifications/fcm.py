@@ -2,28 +2,14 @@
 Inerte tant que le flag waffle 'fcm_actif' est off OU que la clé n'est pas configurée.
 Le jour de l'activation : poser FIREBASE_CREDENTIALS (chemin du JSON) dans .env + activer le flag.
 """
-import json
-from django.conf import settings
-
-_app = None  # instance Firebase initialisée à la demande
 
 
 def _init():
-    """Initialise Firebase une seule fois. Retourne None si pas de clé configurée."""
-    global _app
-    if _app is not None:
-        return _app
-    cred_path = getattr(settings, 'FIREBASE_CREDENTIALS', '')
-    if not cred_path:
-        return None
-    try:
-        import firebase_admin
-        from firebase_admin import credentials
-        cred = credentials.Certificate(cred_path)
-        _app = firebase_admin.initialize_app(cred)
-        return _app
-    except Exception:
-        return None
+    """Initialise Firebase (délègue à apps.core.firebase, source unique
+    d'initialisation du SDK — partagée avec la vérification d'idToken côté
+    auth). Retourne None si pas de clé configurée."""
+    from apps.core.firebase import obtenir_app_firebase
+    return obtenir_app_firebase()
 
 
 def envoyer_notification(token_fcm, titre, corps, data=None):

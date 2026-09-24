@@ -74,7 +74,22 @@ class StatsAdminView(APIView):
 
     def get(self, request):
         pubs = Publicite.objects.select_related('formule', 'partenaire', 'partenaire__user')
-        donnees = [_stats_pub(p) for p in pubs]
+        donnees = []
+        for p in pubs:
+            d = _stats_pub(p)
+            # Média (lecture seule, URL absolue) : _stats_pub reste inchangée
+            # (partagée avec StatsPartenaireView) — ajout scopé à cette seule
+            # vue admin, même logique de construction d'URL que les
+            # ImageField/FileField sérialisés avec context={'request': ...}
+            # côté partenaire (request.build_absolute_uri).
+            d['image_couverture'] = (
+                request.build_absolute_uri(p.image_couverture.url)
+                if p.image_couverture else None
+            )
+            d['video'] = (
+                request.build_absolute_uri(p.video.url) if p.video else None
+            )
+            donnees.append(d)
         totaux = {
             'nb_publicites': len(donnees),
             'nb_actives': sum(1 for p in pubs if p.statut == Publicite.Statut.ACTIVE),
