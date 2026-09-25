@@ -17,12 +17,24 @@ class CategorieSerializer(serializers.ModelSerializer):
                   'est_active', 'nb_partenaires', 'enfants',
                   'types_partenaire']
 
+    @staticmethod
+    def _enfants_actifs(obj):
+        """Enfants actifs annotes et tries : lus depuis le prefetch
+        (prefetch_enfants_actifs, 0 requete) quand il est present, sinon
+        requete directe (detail hors viewset, niveaux au-dela du prefetch)."""
+        pre = getattr(obj, 'enfants_actifs', None)
+        if pre is None:
+            pre = list(annoter_nb_partenaires(
+                obj.enfants.filter(est_active=True)).order_by('ordre', 'nom'))
+            obj.enfants_actifs = pre  # evite de relire pour nb_partenaires
+        return pre
+
     def get_nb_partenaires(self, obj):
         # Categorie "groupe" (a des enfants actifs) : l'app ne s'en sert pas,
         # elle se base sur le nb_partenaires de chaque enfant. On renvoie
         # explicitement null plutôt qu'un total pour ne pas laisser croire
         # que c'est un decompte direct de partenaires sur le groupe lui-même.
-        if obj.enfants.filter(est_active=True).exists():
+        if self._enfants_actifs(obj):
             return None
         a = getattr(obj, 'nb_via_liaison', None)
         b = getattr(obj, 'nb_via_articles', None)
@@ -31,10 +43,8 @@ class CategorieSerializer(serializers.ModelSerializer):
         return max(a or 0, b or 0)
 
     def get_enfants(self, obj):
-        e = annoter_nb_partenaires(
-            obj.enfants.filter(est_active=True)
-        ).order_by('ordre', 'nom')
-        return CategorieSerializer(e, many=True, context=self.context).data
+        return CategorieSerializer(
+            self._enfants_actifs(obj), many=True, context=self.context).data
 
 
 class ArticleImageSerializer(serializers.ModelSerializer):

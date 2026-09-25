@@ -4,10 +4,15 @@ from .views import (
     BandeauBasView, CarrouselView, EnregistrerImpressionView, FormulesView,
     InterstitielView, MesCreditsView, MesPublicitesView, PagePublicitesView,
     PubliciteDetailView, TransitionPubliciteView, ReconduirePubliciteView,
-    ModifierImagePubliciteView, MasquerPubliciteView,
+    ModifierImagePubliciteView, MasquerPubliciteView, AnnulerSoumissionView,
 )
 
-from .stats import ExportCSVView, StatsAdminView, StatsPartenaireView
+from .stats import (ExportCSVView, FormulesQuotasAdminView, StatsAdminView,
+                    StatsPartenaireView)
+from .views_admin import (
+    FormuleGestionDetailView, FormuleGestionListCreateView,
+    ParametresPubliciteAdminView,
+)
 
 app_name = 'publicites'
 
@@ -16,6 +21,13 @@ urlpatterns = [
     path('mes-stats/', StatsPartenaireView.as_view(), name='mes-stats'),
     path('admin/stats/', StatsAdminView.as_view(), name='admin-stats'),
     path('admin/export/', ExportCSVView.as_view(), name='admin-export'),
+    path('admin/formules/', FormulesQuotasAdminView.as_view(), name='admin-formules'),
+    path('admin/formules/gestion/', FormuleGestionListCreateView.as_view(),
+         name='admin-formules-gestion'),
+    path('admin/formules/gestion/<uuid:pk>/', FormuleGestionDetailView.as_view(),
+         name='admin-formule-gestion-detail'),
+    path('admin/parametres/', ParametresPubliciteAdminView.as_view(),
+         name='admin-parametres'),
     path('carrousel/', CarrouselView.as_view(), name='carrousel'),
     path('interstitiel/', InterstitielView.as_view(), name='interstitiel'),
     path('bandeau-bas/', BandeauBasView.as_view(), name='bandeau-bas'),
@@ -26,6 +38,8 @@ urlpatterns = [
          name='mes-publicites-image'),
     path('mes-publicites/<uuid:pk>/masquer/', MasquerPubliciteView.as_view(),
          name='mes-publicites-masquer'),
+    path('mes-publicites/<uuid:pk>/annuler-soumission/', AnnulerSoumissionView.as_view(),
+         name='mes-publicites-annuler-soumission'),
     path('mes-credits/', MesCreditsView.as_view(), name='mes-credits'),
     path('', PagePublicitesView.as_view(), name='liste'),
     path('<uuid:pk>/', PubliciteDetailView.as_view(), name='detail'),

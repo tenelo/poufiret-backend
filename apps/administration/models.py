@@ -30,6 +30,13 @@ class JournalModeration(ModeleBase):
         PUB_VALIDER = 'pub_valider', 'Publicité validée'
         PUB_REJETER = 'pub_rejeter', 'Publicité rejetée'
         PUB_TERMINER = 'pub_terminer', 'Publicité terminée'
+        PUB_ANNULER = 'pub_annuler', 'Publicité : soumission annulée'
+        PUB_FORMULE_CREER = 'pub_formule_creer', 'Formule pub créée'
+        PUB_FORMULE_MODIF = 'pub_formule_modif', 'Formule pub modifiée'
+        PUB_FORMULE_SUPPR = 'pub_formule_suppr', 'Formule pub supprimée'
+        PUB_FORMULE_DESACT = 'pub_formule_desact', 'Formule pub désactivée'
+        PUB_FORMULE_REACT = 'pub_formule_react', 'Formule pub réactivée'
+        PUB_PARAMETRES_MAJ = 'pub_parametres_maj', 'Paramètres pub modifiés'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.
@@ -144,6 +151,10 @@ class PermissionsAdmin(ModeleBase):
     )
     gerer_geographie = models.BooleanField(
         'gérer la géographie (régions, départements, localités, quartiers)',
+        default=False,
+    )
+    gerer_formules_pub = models.BooleanField(
+        'gérer les formules et paramètres de publicité',
         default=False,
     )
 

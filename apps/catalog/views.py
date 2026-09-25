@@ -4,10 +4,12 @@ from django.db.models import F
 from rest_framework import viewsets, generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from apps.core.pagination import StandardPagination
 from apps.core.permissions import EstPartenaireProprietaireOuLectureSeule
 from .models import (
     Categorie, Article, VueArticle, ArticleImage, ArticleVideo, Variante,
     Supplement, Panorama, Logement, Vehicule, annoter_nb_partenaires,
+    prefetch_enfants_actifs,
 )
 from .serializers import (
     CategorieSerializer, ArticleListeSerializer, ArticleDetailSerializer,
@@ -20,10 +22,19 @@ def _article_possede_par(article, user):
     return article.partenaire.user_id == user.id
 
 
+class CategoriePagination(StandardPagination):
+    """Meme enveloppe que le reste de l'API ({count, next, previous, results}),
+    mais 100 par page au lieu de 20 : la liste des categories racines ne doit
+    jamais etre tronquee silencieusement au-dela de 20 (?page_size= reste
+    accepte, plafonne a 100)."""
+    page_size = 100
+
+
 class CategorieViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CategorieSerializer
     permission_classes = [permissions.AllowAny]
     lookup_field = 'slug'
+    pagination_class = CategoriePagination
 
     def get_queryset(self):
         qs = Categorie.objects.filter(est_archivee=False)
@@ -32,6 +43,8 @@ class CategorieViewSet(viewsets.ReadOnlyModelViewSet):
         # Nombre de partenaires actifs : rattachés via PartenaireCategorie
         # OU ayant au moins un article actif dans la catégorie (logique annuaire).
         qs = annoter_nb_partenaires(qs)
+        # Enfants charges en une requete par niveau (au lieu d'une par categorie).
+        qs = qs.prefetch_related(prefetch_enfants_actifs())
         return qs.order_by('ordre', 'nom')
 
 

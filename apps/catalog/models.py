@@ -143,6 +143,22 @@ def annoter_nb_partenaires(queryset):
     )
 
 
+def prefetch_enfants_actifs(niveaux=3):
+    """Prefetch des enfants actifs (to_attr='enfants_actifs'), deja annotes
+    pour nb_partenaires et tries (ordre, nom), sur `niveaux` niveaux.
+
+    Remplace une requete par categorie (get_enfants) par une seule requete
+    par niveau. Un niveau sans parent a charger ne genere aucune requete ;
+    au-dela de `niveaux`, CategorieSerializer retombe sur la requete directe.
+    """
+    from django.db.models import Prefetch
+    qs = annoter_nb_partenaires(
+        Categorie.objects.filter(est_active=True)).order_by('ordre', 'nom')
+    if niveaux > 1:
+        qs = qs.prefetch_related(prefetch_enfants_actifs(niveaux - 1))
+    return Prefetch('enfants', queryset=qs, to_attr='enfants_actifs')
+
+
 class PartenaireCategorie(ImagesOptimiseesMixin, models.Model):
     """
     Lien plusieurs-à-plusieurs entre commerçants et catégories.

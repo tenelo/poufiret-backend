@@ -229,6 +229,8 @@ class Notification(models.Model):
         ABONNEMENT_EXPIRE = 'abonnement_expire', _('Abonnement expirant')
         SIGNALEMENT_TRAITE = 'signalement_traite', _('Signalement traité')
         SYSTEME = 'systeme', _('Message système')
+        PUB_SOUMISE = 'pub_soumise', _('Campagne pub soumise')
+        PUB_A_VALIDER = 'pub_a_valider', _('Campagne pub à valider')
 
     user = models.ForeignKey(
         User, on_delete=models.CASCADE,

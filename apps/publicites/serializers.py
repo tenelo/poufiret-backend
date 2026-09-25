@@ -31,7 +31,8 @@ class PubliciteListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Publicite
         fields = ['id', 'titre', 'image_couverture', 'partenaire_id',
-                  'duree_affichage_secondes', 'priorite']
+                  'duree_affichage_secondes', 'priorite', 'fin_diffusion']
+        read_only_fields = ['fin_diffusion']
 
 
 class PubliciteDetailSerializer(serializers.ModelSerializer):
@@ -62,19 +63,11 @@ class PubliciteCreationSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Cette formule n\'est plus disponible.')
         if donnees.get('video') and formule and not formule.video_autorisee:
             raise serializers.ValidationError('Votre formule n\'autorise pas la vidéo.')
-        portee = donnees.get('portee')
-        if portee:
-            from apps.users.models import Portee
-            requete = self.context.get('request')
-            profil = getattr(getattr(requete, 'user', None),
-                             'profil_partenaire', None)
-            portee_forfait = getattr(profil, 'portee', Portee.DEPARTEMENT)
-            if Portee.rang(portee) < Portee.rang(portee_forfait):
-                raise serializers.ValidationError({
-                    'portee': (
-                        'La portée choisie est déjà couverte par votre '
-                        'forfait. Choisissez une portée supérieure ou '
-                        'laissez celle du forfait.'
-                    )
-                })
+        # Portee effective = MAX(forfait, choisie) : jamais d'erreur pour une
+        # portee absente/egale/inferieure au forfait, on stocke celle du forfait.
+        from .services import portee_a_appliquer
+        requete = self.context.get('request')
+        profil = getattr(getattr(requete, 'user', None),
+                         'profil_partenaire', None)
+        donnees['portee'] = portee_a_appliquer(profil, donnees.get('portee'))
         return donnees

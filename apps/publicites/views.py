@@ -335,6 +335,17 @@ class ReconduirePubliciteView(APIView):
         nouvelle_image = request.FILES.get('image_couverture')
         image_a_utiliser = nouvelle_image or ancienne.image_couverture.name
 
+        # Portee : body optionnel `portee`, sinon celle de l'ancienne pub ;
+        # dans tous les cas MAX(forfait actuel, portee) — jamais d'erreur
+        # pour une portee inferieure au forfait.
+        from apps.users.models import Portee
+        from .services import portee_a_appliquer
+        portee_demandee = request.data.get('portee')
+        if portee_demandee and portee_demandee not in Portee.values:
+            return Response({'erreur': True, 'message': 'Portée invalide.'},
+                            status=400)
+        portee = portee_a_appliquer(profil, portee_demandee or ancienne.portee)
+
         nouvelle = Publicite.objects.create(
             partenaire=profil,
             formule=formule,
@@ -342,7 +353,7 @@ class ReconduirePubliciteView(APIView):
             description=ancienne.description,
             image_couverture=image_a_utiliser,
             video=ancienne.video.name if ancienne.video else None,
-            portee=ancienne.portee,
+            portee=portee,
         )
 
         return Response(
@@ -466,6 +477,39 @@ class MasquerPubliciteView(APIView):
             pass
 
         return Response({'detail': 'Publicité retirée de vos listes.'}, status=200)
+
+
+class AnnulerSoumissionView(APIView):
+    """POST /mes-publicites/<pk>/annuler-soumission/ — le partenaire
+    proprietaire annule la soumission d'une de ses pubs.
+
+    Autorise seulement si la pub est soumise (en attente de paiement), pas
+    encore activee et sans paiement confirme : elle repasse en brouillon.
+    Transition journalisee comme les autres (JournalModeration, pub_annuler).
+    Autres cas : 400 avec un message francais (voir
+    services.raison_refus_annulation). Pub d'un autre partenaire : 404.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk=None):
+        from .services import appliquer_transition, journaliser_transition
+        profil = getattr(request.user, 'profil_partenaire', None)
+        if profil is None:
+            return Response({'erreur': True, 'message': 'Réservé aux partenaires.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        pub = (Publicite.objects.filter(pk=pk, partenaire=profil)
+               .select_related('formule', 'paiement').first())
+        if pub is None:
+            return Response({'erreur': True, 'message': 'Publicité introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        ok, message = appliquer_transition(pub, 'annuler_soumission')
+        if not ok:
+            return Response({'erreur': True, 'message': message},
+                            status=status.HTTP_400_BAD_REQUEST)
+        journaliser_transition(request.user, pub, 'annuler_soumission', message)
+        return Response({'id': str(pub.id), 'statut': pub.statut,
+                         'message': 'Soumission annulée : la publicité est '
+                                    'repassée en brouillon.'})
 
 
 class TransitionPubliciteView(APIView):

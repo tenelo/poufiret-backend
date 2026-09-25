@@ -1,5 +1,6 @@
 import csv
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.utils import timezone
@@ -9,7 +10,7 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import ADroitDe
 
-from .models import ImpressionPublicite, Publicite
+from .models import FormulePublicite, ImpressionPublicite, Publicite
 
 
 def _stats_pub(pub):
@@ -68,12 +69,91 @@ class StatsPartenaireView(APIView):
         return Response({'publicites': donnees})
 
 
+def _publicites_admin_qs(request, avec_statut=True):
+    """Publicites vues par l'admin : JAMAIS les brouillons (le partenaire
+    seul voit les siens). Filtres optionnels : ?formule=<uuid>,
+    ?partenaire=<id>, ?search= (titre / nom du partenaire), ?portee=
+    (portee EFFECTIVE = MAX(forfait, achetee)) et, si avec_statut, ?statut=
+    (un ou plusieurs, repete ou separe par des virgules).
+
+    Retourne (queryset, erreur) ; erreur est un message francais (400) ou None.
+    """
+    qs = (Publicite.objects.exclude(statut=Publicite.Statut.BROUILLON)
+          .select_related('formule', 'partenaire__user', 'partenaire__plan'))
+    p = request.query_params
+
+    formule = p.get('formule')
+    if formule:
+        try:
+            qs = qs.filter(formule_id=formule)
+        except (ValueError, DjangoValidationError):
+            return qs.none(), 'Formule invalide.'
+    partenaire = p.get('partenaire')
+    if partenaire:
+        try:
+            qs = qs.filter(partenaire_id=int(partenaire))
+        except (ValueError, TypeError):
+            return qs.none(), 'Partenaire invalide.'
+    search = (p.get('search') or '').strip()
+    if search:
+        qs = qs.filter(Q(titre__icontains=search)
+                       | Q(partenaire__nom_commerce__icontains=search))
+    portee = p.get('portee')
+    if portee:
+        if portee not in ('departement', 'region', 'district'):
+            return qs.none(), 'Portée invalide (departement, region ou district).'
+        district = Q(portee='district') | Q(partenaire__plan__portee='district')
+        if portee == 'district':
+            qs = qs.filter(district)
+        elif portee == 'region':
+            qs = qs.filter(Q(portee='region') | Q(partenaire__plan__portee='region')
+                           ).exclude(district)
+        else:
+            qs = qs.exclude(Q(portee__in=['region', 'district'])
+                            | Q(partenaire__plan__portee__in=['region', 'district']))
+    if avec_statut:
+        valeurs = []
+        for brut in p.getlist('statut'):
+            valeurs += [v.strip() for v in brut.split(',') if v.strip()]
+        if valeurs:
+            connus = {v for v, _ in Publicite.Statut.choices}
+            inconnus = [v for v in valeurs if v not in connus]
+            if inconnus:
+                return qs.none(), f'Statut inconnu : {", ".join(inconnus)}.'
+            qs = qs.filter(statut__in=valeurs)
+    return qs, None
+
+
+def _compteurs_statut(request):
+    """Nombre de pubs par statut (hors brouillon), pour les onglets.
+
+    Respecte les filtres formule/partenaire/search/portee mais PAS le filtre
+    statut, afin que chaque onglet affiche son propre total. 1 requete.
+    """
+    qs, _ = _publicites_admin_qs(request, avec_statut=False)
+    compteurs = {v: 0 for v, _ in Publicite.Statut.choices
+                 if v != Publicite.Statut.BROUILLON}
+    for statut, n in qs.order_by().values_list('statut').annotate(n=Count('id')):
+        compteurs[statut] = n
+    compteurs['total'] = sum(compteurs.values())
+    return compteurs
+
+
 class StatsAdminView(APIView):
-    """Vue d'ensemble des publicites (admin / Angular)."""
+    """Vue d'ensemble des publicites (admin / Angular). Brouillons exclus.
+
+    GET ?statut=active,terminee (ou repete) &formule=<uuid> &partenaire=<id>
+        &search=<titre|partenaire> &portee=departement|region|district
+    Reponse : {totaux, compteurs_statut, publicites}. `compteurs_statut`
+    ignore le filtre statut (onglets).
+    """
     permission_classes = [permissions.IsAuthenticated, ADroitDe('voir_stats')]
 
     def get(self, request):
-        pubs = Publicite.objects.select_related('formule', 'partenaire', 'partenaire__user')
+        pubs, erreur = _publicites_admin_qs(request)
+        if erreur:
+            return Response({'erreur': True, 'message': erreur},
+                            status=status.HTTP_400_BAD_REQUEST)
         donnees = []
         for p in pubs:
             d = _stats_pub(p)
@@ -89,6 +169,8 @@ class StatsAdminView(APIView):
             d['video'] = (
                 request.build_absolute_uri(p.video.url) if p.video else None
             )
+            d['portee'] = p.portee
+            d['portee_effective'] = p.portee_effective
             donnees.append(d)
         totaux = {
             'nb_publicites': len(donnees),
@@ -97,7 +179,42 @@ class StatsAdminView(APIView):
             'total_personnes_touchees': sum(d['nb_personnes_touchees'] for d in donnees),
             'total_clics': sum(d['nb_clics'] for d in donnees),
         }
-        return Response({'totaux': totaux, 'publicites': donnees})
+        return Response({'totaux': totaux,
+                         'compteurs_statut': _compteurs_statut(request),
+                         'publicites': donnees})
+
+
+class FormulesQuotasAdminView(APIView):
+    """Suivi admin des quotas par formule (toutes les formules, actives ou non).
+
+    quota_partenaires = nombre maximal de pubs au statut active EN MEME TEMPS
+    sur la formule. Une seule requete agregee (annotate), sans N+1.
+    nb_en_attente = soumises pas encore activees (en attente de paiement +
+    en attente de validation) ; brouillons jamais comptes.
+    """
+    permission_classes = [permissions.IsAuthenticated, ADroitDe('voir_stats')]
+
+    def get(self, request):
+        Statut = Publicite.Statut
+        formules = FormulePublicite.objects.annotate(
+            nb_actives=Count('publicites', filter=Q(publicites__statut=Statut.ACTIVE)),
+            nb_attente_paiement=Count(
+                'publicites', filter=Q(publicites__statut=Statut.EN_ATTENTE_PAIEMENT)),
+            nb_attente_validation=Count(
+                'publicites', filter=Q(publicites__statut=Statut.EN_ATTENTE_VALIDATION)),
+        ).order_by('prix')
+        return Response({'formules': [{
+            'id': str(f.id),
+            'nom': f.nom,
+            'prix': f.prix,
+            'est_active': f.est_active,
+            'quota_partenaires': f.quota_partenaires,
+            'nb_actives': f.nb_actives,
+            'places_restantes': max(0, f.quota_partenaires - f.nb_actives),
+            'nb_en_attente': f.nb_attente_paiement + f.nb_attente_validation,
+            'nb_en_attente_paiement': f.nb_attente_paiement,
+            'nb_en_attente_validation': f.nb_attente_validation,
+        } for f in formules]})
 
 
 class ExportCSVView(APIView):
@@ -121,7 +238,8 @@ class ExportCSVView(APIView):
             writer.writerow(['id', 'titre', 'partenaire', 'formule', 'prix', 'statut',
                              'personnes_touchees', 'impressions', 'clics',
                              'debut_diffusion', 'fin_diffusion'])
-            for p in Publicite.objects.select_related('formule', 'partenaire'):
+            for p in (Publicite.objects.exclude(statut=Publicite.Statut.BROUILLON)
+                      .select_related('formule', 'partenaire')):
                 writer.writerow([p.id, p.titre, p.partenaire.nom_commerce, p.formule.nom,
                                  p.formule.prix, p.statut, p.nb_personnes_touchees,
                                  p.nb_impressions, p.nb_clics,
@@ -130,7 +248,9 @@ class ExportCSVView(APIView):
         elif type_export == 'impressions':
             writer.writerow(['id', 'publicite', 'utilisateur', 'type_affichage',
                              'minute_session', 'cliquee', 'date'])
-            qs = ImpressionPublicite.objects.select_related('publicite', 'utilisateur')
+            qs = (ImpressionPublicite.objects
+                  .exclude(publicite__statut=Publicite.Statut.BROUILLON)
+                  .select_related('publicite', 'utilisateur'))
             for i in qs.iterator():
                 writer.writerow([i.id, i.publicite.titre,
                                  i.utilisateur.telephone if i.utilisateur else 'anonyme',

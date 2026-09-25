@@ -1,9 +1,29 @@
+import logging
 from datetime import timedelta
 
 from django.db.models import Avg, Count, F
 from django.utils import timezone
 
+from apps.users.models import Portee
+
 from .models import ImpressionPublicite, ParametresPublicite, Publicite, TypeAffichage
+
+logger = logging.getLogger('poufiret.notifications')
+
+
+def portee_a_appliquer(profil, demandee=None):
+    """Portee stockee pour une campagne : MAX(forfait du partenaire, demandee).
+
+    Une portee absente, egale ou inferieure au forfait n'est jamais une
+    erreur : la campagne prend simplement celle du forfait (une pub ne
+    descend jamais sous le forfait, voir Publicite.portee_effective). Une
+    portee superieure est conservee. Source unique pour la creation et la
+    reconduction.
+    """
+    forfait = getattr(profil, 'portee', Portee.DEPARTEMENT)
+    if demandee and Portee.rang(demandee) > Portee.rang(forfait):
+        return demandee
+    return forfait
 
 
 def est_heure_affluence(params=None):
@@ -259,6 +279,12 @@ TRANSITIONS = {
         'admin': False,
         'libelle': 'Soumettre',
     },
+    'annuler_soumission': {
+        'depuis': [Publicite.Statut.EN_ATTENTE_PAIEMENT],
+        'vers': Publicite.Statut.BROUILLON,
+        'admin': False,
+        'libelle': 'Annuler la soumission',
+    },
     'confirmer_paiement': {
         'depuis': [Publicite.Statut.EN_ATTENTE_PAIEMENT],
         'vers': Publicite.Statut.EN_ATTENTE_VALIDATION,
@@ -293,6 +319,7 @@ _ACTIONS_JOURNAL = {
     'valider': 'pub_valider',
     'rejeter': 'pub_rejeter',
     'terminer': 'pub_terminer',
+    'annuler_soumission': 'pub_annuler',
 }
 
 
@@ -303,8 +330,8 @@ def journaliser_transition(acteur, pub, action, message):
     Best-effort : n'empeche jamais la transition elle-meme si l'ecriture
     du journal echoue (meme pattern que les autres journalisations du
     projet, ex. apps.publicites.credits.consommer_credit).
-    Ne journalise que les transitions admin (soumettre, faite par le
-    partenaire, n'est pas concernee).
+    Journalise les transitions admin et l'annulation de soumission par le
+    partenaire ; soumettre n'est pas concernee.
     """
     code = _ACTIONS_JOURNAL.get(action)
     if code is None:
@@ -319,12 +346,50 @@ def journaliser_transition(acteur, pub, action, message):
         pass
 
 
+def nb_actives_formule(formule, exclure=None):
+    """Nombre de pubs au statut active en meme temps sur CETTE formule
+    (tous partenaires confondus), sans compter `exclure` (la pub en cours
+    d'activation)."""
+    qs = Publicite.objects.filter(formule=formule, statut=Publicite.Statut.ACTIVE)
+    if exclure is not None:
+        qs = qs.exclude(pk=exclure.pk)
+    return qs.count()
+
+
 def quota_formule_disponible(pub):
     """Vrai si la formule n'a pas atteint son quota d'annonceurs simultanes."""
-    nb_actives = Publicite.objects.filter(
-        formule=pub.formule, statut=Publicite.Statut.ACTIVE,
-    ).exclude(pk=pub.pk).count()
-    return nb_actives < pub.formule.quota_partenaires
+    return nb_actives_formule(pub.formule, exclure=pub) < pub.formule.quota_partenaires
+
+
+def raison_refus_annulation(pub):
+    """Message francais si la soumission ne peut pas etre annulee, sinon None.
+
+    Annulable seulement si la pub est soumise (en attente de paiement), pas
+    encore activee, et sans paiement confirme.
+    """
+    Statut = Publicite.Statut
+    refus = {
+        Statut.BROUILLON: "Cette publicité n'a pas été soumise : il n'y a rien à annuler.",
+        Statut.EN_ATTENTE_VALIDATION: (
+            'Le paiement de cette publicité est déjà confirmé : la '
+            'soumission ne peut plus être annulée.'),
+        Statut.ACTIVE: (
+            'Cette publicité est déjà active : la soumission ne peut plus '
+            'être annulée.'),
+        Statut.TERMINEE: (
+            'Cette publicité est terminée : la soumission ne peut plus être '
+            'annulée.'),
+        Statut.REJETEE: (
+            'Cette publicité a été rejetée : sa soumission ne peut pas être '
+            'annulée.'),
+    }
+    if pub.statut in refus:
+        return refus[pub.statut]
+    paiement = pub.paiement
+    if paiement is not None and paiement.statut == 'confirme':
+        return ('Un paiement est déjà confirmé pour cette publicité : la '
+                'soumission ne peut plus être annulée.')
+    return None
 
 
 def activer_publicite(pub):
@@ -338,6 +403,59 @@ def activer_publicite(pub):
                             'modifie_le'])
 
 
+def _notifier_admins_pub(pub, type_notif, titre, message):
+    """Notification in-app (apps.moderation.models.Notification, réutilisé
+    tel quel — aucun nouveau modèle) aux admins habilités à valider les
+    pubs, sur soumission ou confirmation de paiement.
+
+    Best-effort : n'empêche JAMAIS la transition si l'écriture échoue
+    (try/except + log), même esprit que journaliser_transition. Hors
+    périmètre : pas de push FCM vers les admins (PWA Angular).
+    """
+    try:
+        from django.db.models import Q
+
+        from apps.moderation.models import Notification
+        from apps.users.models import User
+
+        destinataires = User.objects.filter(is_active=True).filter(
+            Q(is_superuser=True)
+            | Q(is_staff=True, permissions_admin__valider_publicite=True))
+        Notification.objects.bulk_create([
+            Notification(
+                user=u, type=type_notif, titre=titre, contenu=message,
+                data={'publicite_id': str(pub.id), 'statut_publicite': pub.statut},
+            ) for u in destinataires
+        ])
+    except Exception:
+        logger.exception(
+            'Notification admin pub %s (%s) : échec, transition non bloquée.',
+            pub.pk, type_notif)
+
+
+def _notifier_transition_pub(pub, vers):
+    """Déclenche la notification adaptée selon le nouvel état atteint.
+
+    Appelé depuis le coeur meme d'appliquer_transition (pas par chaque
+    appelant, contrairement a journaliser_transition qui a besoin de
+    l'acteur) : couvre ainsi TOUTES les routes qui passent par cette
+    fonction — API partenaire (soumettre), admin (confirmer_paiement),
+    et les boutons de transition du Django admin (apps/publicites/admin.py
+    ::vue_transition, qui appelle aussi appliquer_transition). N'est PAS
+    déclenché si un admin édite le champ `statut` à la main dans le
+    formulaire Django admin, en dehors de ces boutons — cas non couvert,
+    signalé au rapport.
+    """
+    if vers == Publicite.Statut.EN_ATTENTE_PAIEMENT:
+        _notifier_admins_pub(
+            pub, 'pub_soumise', 'Nouvelle campagne soumise',
+            f'{pub.titre} — {pub.partenaire.nom_commerce} ({pub.formule.nom})')
+    elif vers == Publicite.Statut.EN_ATTENTE_VALIDATION:
+        _notifier_admins_pub(
+            pub, 'pub_a_valider', 'Campagne prête à valider',
+            f'{pub.titre} — {pub.partenaire.nom_commerce}')
+
+
 def appliquer_transition(pub, action):
     """Applique une transition de statut.
 
@@ -347,6 +465,10 @@ def appliquer_transition(pub, action):
     regle = TRANSITIONS.get(action)
     if regle is None:
         return False, 'Action inconnue.'
+    if action == 'annuler_soumission':
+        raison = raison_refus_annulation(pub)
+        if raison:
+            return False, raison
     if pub.statut not in regle['depuis']:
         return False, (f'Transition impossible depuis '
                        f'"{pub.get_statut_display()}".')
@@ -358,11 +480,17 @@ def appliquer_transition(pub, action):
     )
     if activation:
         if not quota_formule_disponible(pub):
-            return False, ('Quota de la formule atteint : '
-                           'activation impossible pour le moment.')
+            quota = pub.formule.quota_partenaires
+            return False, (
+                f'Quota de la formule « {pub.formule.nom} » atteint '
+                f'({nb_actives_formule(pub.formule, exclure=pub)}/{quota} '
+                f'campagne(s) active(s) en même temps). Activation impossible '
+                f'tant qu\'une campagne active de cette formule n\'est pas '
+                f'terminée.')
         activer_publicite(pub)
         return True, 'Publicite activee, diffusion lancee.'
 
     pub.statut = vers
     pub.save(update_fields=['statut', 'modifie_le'])
+    _notifier_transition_pub(pub, vers)
     return True, f'Statut : {pub.get_statut_display()}.'
