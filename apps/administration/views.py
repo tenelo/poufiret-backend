@@ -606,7 +606,8 @@ def _admin_dict(u, noms_capacites=None):
     }
 
 
-CAPACITES_PRIVILEGIEES = {'gerer_admins', 'gerer_geographie', 'gerer_formules_pub'}
+CAPACITES_PRIVILEGIEES = {'gerer_admins', 'gerer_geographie', 'gerer_formules_pub',
+                          'gerer_commandes'}
 
 
 def _filtrer_anti_escalade(capacites_payload, acteur):

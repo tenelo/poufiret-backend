@@ -37,6 +37,7 @@ class JournalModeration(ModeleBase):
         PUB_FORMULE_DESACT = 'pub_formule_desact', 'Formule pub désactivée'
         PUB_FORMULE_REACT = 'pub_formule_react', 'Formule pub réactivée'
         PUB_PARAMETRES_MAJ = 'pub_parametres_maj', 'Paramètres pub modifiés'
+        PUB_STATS_VISIBLES = 'pub_stats_visibles', 'Stats pub : visibilité partenaire'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.
@@ -155,6 +156,10 @@ class PermissionsAdmin(ModeleBase):
     )
     gerer_formules_pub = models.BooleanField(
         'gérer les formules et paramètres de publicité',
+        default=False,
+    )
+    gerer_commandes = models.BooleanField(
+        'gérer les commandes (centre de gestion admin)',
         default=False,
     )
 

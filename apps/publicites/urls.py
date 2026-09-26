@@ -8,7 +8,8 @@ from .views import (
 )
 
 from .stats import (ExportCSVView, FormulesQuotasAdminView, StatsAdminView,
-                    StatsPartenaireView)
+                    StatistiquesGlobalesAdminView, StatsPartenaireView,
+                    StatsVisiblesAdminView)
 from .views_admin import (
     FormuleGestionDetailView, FormuleGestionListCreateView,
     ParametresPubliciteAdminView,
@@ -21,7 +22,11 @@ urlpatterns = [
     path('mes-stats/', StatsPartenaireView.as_view(), name='mes-stats'),
     path('admin/stats/', StatsAdminView.as_view(), name='admin-stats'),
     path('admin/export/', ExportCSVView.as_view(), name='admin-export'),
+    path('admin/statistiques/', StatistiquesGlobalesAdminView.as_view(),
+         name='admin-statistiques'),
     path('admin/formules/', FormulesQuotasAdminView.as_view(), name='admin-formules'),
+    path('admin/<uuid:pk>/stats-visibles/', StatsVisiblesAdminView.as_view(),
+         name='admin-stats-visibles'),
     path('admin/formules/gestion/', FormuleGestionListCreateView.as_view(),
          name='admin-formules-gestion'),
     path('admin/formules/gestion/<uuid:pk>/', FormuleGestionDetailView.as_view(),

@@ -1,7 +1,10 @@
 import csv
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Count, Q
+from datetime import datetime, timedelta
+
+from django.db.models import Count, Q, Sum
+from django.db.models.functions import ExtractHour, TruncDate
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import permissions, status
@@ -10,10 +13,13 @@ from rest_framework.views import APIView
 
 from apps.core.permissions import ADroitDe
 
-from .models import FormulePublicite, ImpressionPublicite, Publicite
+from apps.users.models import Portee
+
+from .models import (FormulePublicite, ImpressionPublicite, Publicite,
+                     TypeAffichage, nb_clients_actifs)
 
 
-def _stats_pub(pub):
+def _stats_pub(pub, nb_actifs=None):
     impressions = ImpressionPublicite.objects.filter(publicite=pub)
     par_type = dict(
         impressions.values_list('type_affichage')
@@ -30,7 +36,7 @@ def _stats_pub(pub):
         'taux_clic': round(pub.nb_clics / pub.nb_impressions * 100, 2) if pub.nb_impressions else 0,
         'impressions_par_type': par_type,
         'cible_pourcentage': pub.formule.cible_pourcentage_actifs,
-        'cible_atteinte': pub.cible_atteinte,
+        'cible_atteinte': pub.cible_atteinte_pour(nb_actifs),
         'debut_diffusion': pub.debut_diffusion,
         'fin_diffusion': pub.fin_diffusion,
         'partenaire_id': pub.partenaire_id,
@@ -41,10 +47,26 @@ def _stats_pub(pub):
     }
 
 
-class StatsPartenaireView(APIView):
-    """Stats des pubs du partenaire connecte.
+STATUTS_AVEC_STATS = (Publicite.Statut.ACTIVE, Publicite.Statut.TERMINEE)
 
-    Chaque pub n'est detaillee que si stats_visibles_partenaire est True.
+
+def stats_visibles_effectif(pub):
+    """Vrai si le partenaire voit les stats de cette pub : campagne active
+    ou terminée ET visibilité non masquée par l'admin. Brouillon, en
+    attente et rejetée : jamais de stats (rien n'a été diffusé)."""
+    return pub.statut in STATUTS_AVEC_STATS and pub.stats_visibles_partenaire
+
+
+class StatsPartenaireView(APIView):
+    """Stats des pubs du partenaire connecte (GET /publicites/mes-stats/).
+
+    Stats detaillees (impressions, personnes touchees, clics, taux de clic...)
+    quand stats_visibles est vrai : statut active/terminee ET
+    stats_visibles_partenaire=True (par defaut ; l'admin peut masquer
+    campagne par campagne). Sinon : reponse allegee avec stats_disponibles
+    False. Dans les deux cas : stats_visibles (bool effectif) et
+    statut_libelle. Il n'existe pas de serie d'evolution dans les donnees
+    actuelles (compteurs cumules seulement) : rien n'est invente ici.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -57,16 +79,55 @@ class StatsPartenaireView(APIView):
             masquee_par_partenaire=True).select_related('formule', 'partenaire__user')
         donnees = []
         for pub in pubs:
-            if pub.stats_visibles_partenaire:
-                donnees.append(_stats_pub(pub))
+            visible = stats_visibles_effectif(pub)
+            if visible:
+                d = _stats_pub(pub)
             else:
-                donnees.append({
+                d = {
                     'id': str(pub.id), 'titre': pub.titre,
                     'formule': pub.formule.nom, 'statut': pub.statut,
                     'stats_disponibles': False,
                     'message': 'Statistiques bientot disponibles.',
-                })
+                }
+            d['stats_visibles'] = visible
+            d['statut_libelle'] = pub.get_statut_display()
+            donnees.append(d)
         return Response({'publicites': donnees})
+
+
+class StatsVisiblesAdminView(APIView):
+    """POST /publicites/admin/<uuid>/stats-visibles/ {"visible": bool} —
+    l'admin masque ou rend visibles les stats d'une campagne au partenaire.
+    Permission de validation des pubs (valider_publicite). Journalise
+    (pub_stats_visibles). Les brouillons ne sont pas visibles de l'admin (404)."""
+    permission_classes = [permissions.IsAuthenticated, ADroitDe('valider_publicite')]
+
+    def post(self, request, pk=None):
+        visible = request.data.get('visible')
+        if not isinstance(visible, bool):
+            return Response(
+                {'erreur': True, 'message': 'Le champ "visible" doit être true ou false.'},
+                status=status.HTTP_400_BAD_REQUEST)
+        pub = (Publicite.objects.exclude(statut=Publicite.Statut.BROUILLON)
+               .select_related('partenaire__user').filter(pk=pk).first())
+        if pub is None:
+            return Response({'erreur': True, 'message': 'Publicité introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        if pub.stats_visibles_partenaire != visible:
+            pub.stats_visibles_partenaire = visible
+            pub.save(update_fields=['stats_visibles_partenaire', 'modifie_le'])
+            try:
+                from apps.administration.moderation import _journaliser
+                _journaliser(
+                    request.user, pub.partenaire.user, 'pub_stats_visibles',
+                    f'Stats de la pub « {pub.titre} » (id {pub.pk}) '
+                    f'{"rendues visibles" if visible else "masquées"} '
+                    f'pour le partenaire.')
+            except Exception:
+                pass
+        return Response({'id': str(pub.id),
+                         'stats_visibles_partenaire': pub.stats_visibles_partenaire,
+                         'stats_visibles': stats_visibles_effectif(pub)})
 
 
 def _publicites_admin_qs(request, avec_statut=True):
@@ -155,8 +216,17 @@ class StatsAdminView(APIView):
             return Response({'erreur': True, 'message': erreur},
                             status=status.HTTP_400_BAD_REQUEST)
         donnees = []
+        # Nombre de clients actifs calculé UNE fois (évite un parcours des
+        # profils par campagne) et seulement si une formule a une cible.
+        nb_actifs = (nb_clients_actifs()
+                     if any(p.formule.cible_pourcentage_actifs for p in pubs) else None)
         for p in pubs:
-            d = _stats_pub(p)
+            # Mêmes champs et mêmes noms que StatsPartenaireView (stats
+            # détaillées) : impressions, personnes touchées, clics, taux de
+            # clic, impressions_par_type, cible_atteinte…
+            d = _stats_pub(p, nb_actifs)
+            d['statut_libelle'] = p.get_statut_display()
+            d['stats_visibles'] = stats_visibles_effectif(p)
             # Média (lecture seule, URL absolue) : _stats_pub reste inchangée
             # (partagée avec StatsPartenaireView) — ajout scopé à cette seule
             # vue admin, même logique de construction d'URL que les
@@ -170,6 +240,7 @@ class StatsAdminView(APIView):
                 request.build_absolute_uri(p.video.url) if p.video else None
             )
             d['portee'] = p.portee
+            d['stats_visibles_partenaire'] = p.stats_visibles_partenaire
             d['portee_effective'] = p.portee_effective
             donnees.append(d)
         totaux = {
@@ -182,6 +253,169 @@ class StatsAdminView(APIView):
         return Response({'totaux': totaux,
                          'compteurs_statut': _compteurs_statut(request),
                          'publicites': donnees})
+
+
+def _parser_date(valeur):
+    if not valeur:
+        return None
+    try:
+        return datetime.strptime(valeur[:10], '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _taux(clics, impressions):
+    return round(clics / impressions * 100, 1) if impressions else 0.0
+
+
+class StatistiquesGlobalesAdminView(APIView):
+    """GET /publicites/admin/statistiques/?du=&au=&formule=&partenaire=&portee=
+    — statistiques globales des campagnes (défaut : 30 derniers jours).
+
+    Définitions (cohérentes avec les compteurs par campagne) : une
+    *impression* = une ligne ImpressionPublicite (les clics en sont aussi,
+    comme pour Publicite.nb_impressions) ; un *clic* = ligne cliquee=True ;
+    *personnes touchées* = utilisateurs connectés distincts sur la période.
+    Brouillons toujours exclus ; ?portee= = portée EFFECTIVE (filtres
+    partagés avec la liste admin, _publicites_admin_qs).
+    Agrégé en base : 1 requête par dimension (jour, type, heure, campagne)
+    et roll-up par campagne (bornée par le nombre de campagnes, pas
+    d'impressions) pour formule/partenaire/portée. Sans N+1.
+    """
+    permission_classes = [permissions.IsAuthenticated, ADroitDe('voir_stats')]
+
+    def get(self, request):
+        p = request.query_params
+        au = _parser_date(p.get('au')) or timezone.localdate()
+        du = _parser_date(p.get('du')) or (au - timedelta(days=30))
+        if du > au:
+            return Response({'erreur': True, 'message': 'La date de début est postérieure à la date de fin.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        pubs, erreur = _publicites_admin_qs(request, avec_statut=False)
+        if erreur:
+            return Response({'erreur': True, 'message': erreur},
+                            status=status.HTTP_400_BAD_REQUEST)
+        pubs = pubs.order_by()
+        imps = ImpressionPublicite.objects.filter(
+            publicite__in=pubs.values('pk'),
+            cree_le__date__gte=du, cree_le__date__lte=au).order_by()
+        clic = Q(cliquee=True)
+
+        # ── Global + par campagne (2 requêtes) ──
+        globaux = imps.aggregate(
+            impressions=Count('id'), clics=Count('id', filter=clic),
+            personnes=Count('utilisateur', distinct=True))
+        par_campagne = {r['publicite_id']: r for r in imps.values('publicite_id').annotate(
+            impressions=Count('id'), clics=Count('id', filter=clic),
+            personnes=Count('utilisateur', distinct=True))}
+        infos = {pub.pk: pub for pub in Publicite.objects.filter(
+            pk__in=par_campagne).select_related('formule', 'partenaire__plan')}
+
+        # ── Revenus estimés : campagnes ACTIVÉES sur la période, hors faveurs ──
+        activees = pubs.filter(debut_diffusion__date__gte=du, debut_diffusion__date__lte=au,
+                               est_faveur=False)
+        revenus_par_formule = {str(r['formule_id']): r['revenus'] or 0 for r in activees.order_by().values(
+            'formule_id').annotate(revenus=Sum('formule__prix'))}
+        revenus_total = sum(revenus_par_formule.values())
+
+        # ── Cible atteinte : campagnes diffusées AYANT une cible ──
+        nb_actifs = None
+        nb_cible_atteinte = 0
+        avec_cible = [pub for pub in infos.values() if pub.formule.cible_pourcentage_actifs]
+        if avec_cible:
+            nb_actifs = nb_clients_actifs()
+            nb_cible_atteinte = sum(1 for pub in avec_cible if pub.cible_atteinte_pour(nb_actifs))
+
+        # ── Roll-up par formule / partenaire / portée (à partir des campagnes) ──
+        par_formule, par_partenaire, par_portee = {}, {}, {}
+        for pk, r in par_campagne.items():
+            pub = infos[pk]
+            f = par_formule.setdefault(str(pub.formule_id), {
+                'id': str(pub.formule_id), 'nom': pub.formule.nom,
+                'nb_campagnes': 0, 'impressions': 0, 'clics': 0})
+            f['nb_campagnes'] += 1; f['impressions'] += r['impressions']; f['clics'] += r['clics']
+            pt = par_partenaire.setdefault(pub.partenaire_id, {
+                'id': pub.partenaire_id, 'nom': pub.partenaire.nom_commerce,
+                'nb_campagnes': 0, 'impressions': 0, 'clics': 0})
+            pt['nb_campagnes'] += 1; pt['impressions'] += r['impressions']; pt['clics'] += r['clics']
+            po = par_portee.setdefault(pub.portee_effective, {'nb_campagnes': 0, 'impressions': 0})
+            po['nb_campagnes'] += 1; po['impressions'] += r['impressions']
+
+        # formules avec revenus mais sans impression sur la période : incluses
+        noms = {str(f.pk): f.nom for f in FormulePublicite.objects.filter(
+            pk__in=[fid for fid in revenus_par_formule if fid not in par_formule])}
+        for fid in revenus_par_formule:
+            par_formule.setdefault(fid, {'id': fid, 'nom': noms.get(fid, ''),
+                                         'nb_campagnes': 0, 'impressions': 0, 'clics': 0})
+        for f in par_formule.values():
+            f['taux_clic'] = _taux(f['clics'], f['impressions'])
+            f['revenus'] = revenus_par_formule.get(f['id'], 0)
+
+        # ── Séries (jour, type, heure) ──
+        jours = {r['j']: r for r in imps.annotate(j=TruncDate('cree_le')).values('j').annotate(
+            impressions=Count('id'), clics=Count('id', filter=clic))}
+        par_jour, jour = [], du
+        if (au - du).days <= 366:
+            while jour <= au:
+                r = jours.get(jour)
+                par_jour.append({'date': str(jour), 'impressions': r['impressions'] if r else 0,
+                                 'clics': r['clics'] if r else 0})
+                jour += timedelta(days=1)
+        else:  # période très longue : uniquement les jours avec activité
+            par_jour = [{'date': str(j), 'impressions': r['impressions'], 'clics': r['clics']}
+                        for j, r in sorted(jours.items())]
+
+        types = {r['type_affichage']: r for r in imps.values('type_affichage').annotate(
+            impressions=Count('id'), clics=Count('id', filter=clic))}
+        par_type_affichage = [{
+            'type': v, 'libelle': l,
+            'impressions': types.get(v, {}).get('impressions', 0),
+            'clics': types.get(v, {}).get('clics', 0),
+        } for v, l in TypeAffichage.choices]
+
+        heures = {r['h']: r['impressions'] for r in imps.annotate(h=ExtractHour('cree_le')).values(
+            'h').annotate(impressions=Count('id'))}
+        par_heure = [{'heure': h, 'impressions': heures.get(h, 0)} for h in range(24)]
+
+        portees = [{'portee': v, 'libelle': l,
+                    'nb_campagnes': par_portee.get(v, {}).get('nb_campagnes', 0),
+                    'impressions': par_portee.get(v, {}).get('impressions', 0)}
+                   for v, l in Portee.choices]
+
+        # ── Top 10 campagnes par impressions ──
+        top = sorted(par_campagne.items(), key=lambda kv: -kv[1]['impressions'])[:10]
+        top_campagnes = [{
+            'id': str(pk), 'titre': infos[pk].titre,
+            'partenaire_nom': infos[pk].partenaire.nom_commerce,
+            'formule_nom': infos[pk].formule.nom, 'statut': infos[pk].statut,
+            'statut_libelle': infos[pk].get_statut_display(),
+            'impressions': r['impressions'], 'personnes_touchees': r['personnes'],
+            'clics': r['clics'], 'taux_clic': _taux(r['clics'], r['impressions']),
+            'cible_pourcentage': infos[pk].formule.cible_pourcentage_actifs,
+            'cible_atteinte': infos[pk].cible_atteinte_pour(nb_actifs),
+        } for pk, r in top]
+
+        return Response({
+            'kpis': {
+                'campagnes_actives': pubs.filter(statut=Publicite.Statut.ACTIVE).count(),
+                'campagnes_diffusees': len(par_campagne),
+                'annonceurs': len({infos[pk].partenaire_id for pk in par_campagne}),
+                'impressions': globaux['impressions'],
+                'personnes_touchees': globaux['personnes'],
+                'clics': globaux['clics'],
+                'taux_clic': _taux(globaux['clics'], globaux['impressions']),
+                'revenus_estimes': revenus_total,
+                'campagnes_cible_atteinte': nb_cible_atteinte,
+            },
+            'par_jour': par_jour,
+            'par_type_affichage': par_type_affichage,
+            'par_formule': sorted(par_formule.values(), key=lambda f: -f['impressions']),
+            'par_partenaire': sorted(par_partenaire.values(), key=lambda x: -x['impressions'])[:10],
+            'par_portee': portees,
+            'par_heure': par_heure,
+            'top_campagnes': top_campagnes,
+        })
 
 
 class FormulesQuotasAdminView(APIView):

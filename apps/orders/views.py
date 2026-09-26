@@ -12,8 +12,6 @@ from apps.catalog.models import Article, Variante, Supplement
 from .models import Panier, LignePanier
 from .serializers import PanierSerializer
 from apps.notifications.fcm import notifier_utilisateur
-from apps.livraison.models import Course
-from apps.livraison.views import _numero as _numero_course, finaliser_assignation
 
 
 def _parser_date(valeur):
@@ -120,21 +118,12 @@ class ViderPanierView(APIView):
 from django.db import transaction
 from django.utils import timezone
 from datetime import datetime
-from .models import Commande, LigneCommande
+from .models import Commande, LigneCommande, HistoriqueCommande
 from .serializers import CommandeSerializer
-
-# Transitions autorisées du workflow
-TRANSITIONS = {
-    'nouvelle': ['acceptee', 'refusee', 'annulee'],
-    'acceptee': ['en_preparation', 'annulee'],
-    'en_preparation': ['prete', 'annulee'],
-    'prete': ['en_livraison', 'livree', 'expiree'],
-    'en_livraison': ['livree'],
-    'livree': [],
-    'refusee': [],
-    'annulee': [],
-    'expiree': [],
-}
+from .services import (
+    TRANSITIONS, DemandeLivreurInvalide, LivraisonEnCoursError,
+    _notifier_admins_commande, appliquer_transition_commande, demander_livreur,
+)
 
 
 def _numero_commande():
@@ -226,6 +215,13 @@ class ValiderPanierView(APIView):
                 'statut': str(commande.statut),
             },
             request=request,
+        ))
+        # Notification admin (centre de gestion) — même point central que
+        # la notification partenaire ci-dessus, après commit également.
+        transaction.on_commit(lambda: _notifier_admins_commande(
+            commande, 'commande_nouvelle', 'Nouvelle commande',
+            f'{commande.numero} — {request.user.get_full_name() or request.user.telephone} '
+            f'→ {commande.partenaire.nom_commerce} ({int(commande.total)} FCFA)',
         ))
 
         return Response(CommandeSerializer(commande, context={'request': request}).data,
@@ -339,35 +335,15 @@ _LIBELLES_COMMANDE = {
 }
 
 
-def _notifier_transition_commande(commande, cible, acteur_est_client, request):
-    """Notifie la bonne partie apres un changement de statut de commande."""
-    num = commande.numero
-    if cible == 'annulee' and acteur_est_client:
-        # Le client a annule -> on previent le partenaire.
-        dest = getattr(commande.partenaire, 'user', None)
-        if dest:
-            notifier_utilisateur(
-                dest, 'Commande annulee',
-                f'La commande {num} a ete annulee par le client.',
-                data={'type': 'commande', 'commande_id': str(commande.id),
-                     'statut': str(commande.statut)},
-                request=request)
-        return
-    libelle = _LIBELLES_COMMANDE.get(cible)
-    if libelle:
-        # Transition faite par le partenaire -> on previent le client.
-        notifier_utilisateur(
-            commande.user, 'Suivi de commande',
-            f'Votre commande {num} {libelle}.',
-            data={'type': 'commande', 'commande_id': str(commande.id),
-                 'statut': str(commande.statut)},
-            request=request)
-
-
 class TransitionCommandeView(APIView):
     """POST /orders/commandes/<id>/transition/ — change le statut selon le workflow.
     Body: statut (cible), raison_refus? Le partenaire gère accept/refus/prepa/prete/livraison;
-    le client peut annuler une commande encore 'nouvelle'."""
+    le client peut annuler une commande encore 'nouvelle'.
+
+    Délègue à services.appliquer_transition_commande (source unique,
+    partagée avec le centre de gestion admin) pour l'application du
+    changement, l'historisation et les notifications — logique de garde
+    d'accès et ordre des vérifications inchangés."""
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk=None):
@@ -388,16 +364,15 @@ class TransitionCommandeView(APIView):
             if not (c.statut == 'nouvelle' and cible == 'annulee'):
                 return Response({'erreur': True,
                     'message': "En tant que client, vous ne pouvez qu'annuler une commande non encore acceptée."}, status=403)
+            role = HistoriqueCommande.ActeurRole.CLIENT
+        else:
+            role = HistoriqueCommande.ActeurRole.PARTENAIRE
 
-        c.statut = cible
-        now = timezone.now()
-        if cible == 'acceptee': c.acceptee_le = now
-        elif cible == 'prete': c.prete_le = now
-        elif cible == 'livree': c.livree_le = now
-        elif cible == 'refusee': c.raison_refus = request.data.get('raison_refus', '')
-        elif cible == 'annulee': c.annulee_par = u
-        c.save()
-        _notifier_transition_commande(c, cible, est_client and not est_part, request)
+        ok, message = appliquer_transition_commande(
+            c, cible, u, role,
+            commentaire=request.data.get('raison_refus', ''), request=request)
+        if not ok:
+            return Response({'erreur': True, 'message': message}, status=400)
         return Response(CommandeSerializer(c, context={'request': request}).data)
 
 
@@ -405,81 +380,28 @@ class CommanderLivreurView(APIView):
     """POST /orders/commandes/<pk>/livreur/ — le partenaire proprietaire
     declenche une course de livraison pour une commande prete.
 
-    Cree la course (A = partenaire, B = client), herite du prix
-    (frais_livraison), tente l'assignation, puis passe la commande en
-    livraison. Point B = localisation_livraison capturee au checkout.
-    """
+    Délègue à services.demander_livreur (source unique, partagée avec le
+    centre de gestion admin) — mêmes gardes, même ordre, même comportement."""
     permission_classes = [permissions.IsAuthenticated]
 
     @transaction.atomic
     def post(self, request, pk=None):
         commande = get_object_or_404(Commande, pk=pk)
 
-        # ── Garde 1 : proprietaire ──
         profil = getattr(request.user, 'profil_partenaire', None)
         if profil is None or commande.partenaire_id != profil.pk:
             return Response(
                 {'erreur': True, 'message': "Vous n'etes pas le partenaire de cette commande."},
                 status=403)
 
-        # ── Garde 2 : mode livraison ──
-        if commande.mode_livraison != 'livraison':
+        try:
+            course, resultat = demander_livreur(commande, request.user, type_demandeur='partenaire')
+        except LivraisonEnCoursError as exc:
             return Response(
-                {'erreur': True, 'message': "Cette commande n'est pas en mode livraison."},
-                status=400)
-
-        # ── Garde 4 : pas de course active ──
-        course_active = commande.courses.exclude(
-            statut__in=['annulee', 'refusee']).order_by('-cree_le').first()
-        if course_active is not None:
-            return Response(
-                {'erreur': True, 'message': "Une course est deja en cours pour cette commande.",
-                 'course_numero': course_active.numero},
+                {'erreur': True, 'message': str(exc), 'course_numero': exc.numero_course},
                 status=409)
-
-        # ── Garde 3 : statut prete ──
-        if commande.statut != Commande.Statut.PRETE:
-            return Response(
-                {'erreur': True,
-                 'message': "La commande doit etre prete avant d'appeler un livreur."},
-                status=400)
-
-        # ── Garde 5 : GPS partenaire (point A) present ──
-        if profil.localisation is None:
-            return Response(
-                {'erreur': True,
-                 'message': "Votre commerce n'a pas de position GPS. Renseignez-la d'abord."},
-                status=400)
-
-        # ── Creation de la course ──
-        client = commande.user
-        course = Course.objects.create(
-            numero=_numero_course(),
-            demandeur=request.user,
-            type_demandeur='partenaire',
-            ville=profil.departement,
-            commande=commande,
-            contact_user=client,  # destinataire connu : pas de lookup async
-            # Point A = partenaire (retrait)
-            a_quartier=profil.quartier or profil.nom_commerce,
-            a_nom_contact=profil.nom_commerce,
-            a_telephone_contact=profil.telephone_pro or request.user.telephone,
-            a_position=profil.localisation,
-            # Point B = client (livraison)
-            b_quartier=commande.adresse_snapshot or '—',
-            b_nom_contact=client.get_full_name() or client.telephone,
-            b_telephone_contact=client.telephone,
-            b_position=commande.localisation_livraison,
-            description_colis=commande.numero,
-            prix=int(commande.frais_livraison or 0),
-        )
-
-        # ── Assignation (fonction commune) ──
-        resultat = finaliser_assignation(course)
-
-        # ── Transition commande -> en livraison ──
-        commande.statut = Commande.Statut.EN_LIVRAISON
-        commande.save(update_fields=['statut'])
+        except DemandeLivreurInvalide as exc:
+            return Response({'erreur': True, 'message': str(exc)}, status=400)
 
         return Response({
             'course': {

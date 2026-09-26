@@ -71,6 +71,12 @@ class FormulePublicite(ModeleBase):
         return f'{self.nom} — {self.prix} FCFA'
 
 
+def nb_clients_actifs():
+    """Nombre de clients actifs (ProfilNavigation.est_client_actif)."""
+    from apps.analytics.models import ProfilNavigation
+    return sum(1 for p in ProfilNavigation.objects.all() if p.est_client_actif)
+
+
 class Publicite(ImagesOptimiseesMixin, ModeleBase):
     """Campagne publicitaire d'un partenaire."""
     champs_images = ('image_couverture',)
@@ -125,7 +131,11 @@ class Publicite(ImagesOptimiseesMixin, ModeleBase):
     nb_impressions = models.PositiveIntegerField('impressions totales', default=0)
     nb_clics = models.PositiveIntegerField('clics', default=0)
     stats_visibles_partenaire = models.BooleanField(
-        'stats visibles par le partenaire', default=False,
+        'stats visibles par le partenaire', default=True,
+        help_text=(
+            'Visibles par défaut pour les pubs actives et terminées ; '
+            "l'admin peut les masquer campagne par campagne."
+        ),
     )
     # ── Faveur (campagne offerte, geste commercial EstAdmin) ─────────
     est_faveur = models.BooleanField(
@@ -160,18 +170,26 @@ class Publicite(ImagesOptimiseesMixin, ModeleBase):
             models.Index(fields=['statut', 'debut_diffusion']),
         ]
 
-    @property
-    def cible_atteinte(self):
-        """True si la cible % de clients actifs est atteinte (ou pas de cible)."""
+    def cible_atteinte_pour(self, nb_actifs=None):
+        """True si la cible % de clients actifs est atteinte (ou pas de cible).
+
+        `nb_actifs` (nombre de clients actifs, voir nb_clients_actifs) peut
+        être fourni pour évaluer plusieurs campagnes sans reparcourir tous
+        les profils à chaque fois ; s'il est absent, il est calculé (et
+        seulement si la formule a une cible)."""
         cible = self.formule.cible_pourcentage_actifs
         if not cible:
             return True
-        from apps.analytics.models import ProfilNavigation
-        profils = ProfilNavigation.objects.all()
-        nb_actifs = sum(1 for p in profils if p.est_client_actif)
+        if nb_actifs is None:
+            nb_actifs = nb_clients_actifs()
         if nb_actifs == 0:
             return False
         return (self.nb_personnes_touchees / nb_actifs) * 100 >= cible
+
+    @property
+    def cible_atteinte(self):
+        """True si la cible % de clients actifs est atteinte (ou pas de cible)."""
+        return self.cible_atteinte_pour()
 
     @property
     def portee_effective(self):

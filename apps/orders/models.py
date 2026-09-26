@@ -316,4 +316,72 @@ class LigneCommande(models.Model):
     def __str__(self):
         return f"{self.quantite} × {self.nom_article}"
 
-    
+
+# ═══════════════════════════════════════════════════════════════════════
+# HISTORIQUE ET NOTES ADMIN (centre de gestion des commandes)
+# ═══════════════════════════════════════════════════════════════════════
+
+class HistoriqueCommande(models.Model):
+    """Trace CHAQUE changement de statut d'une commande, quel que soit le
+    chemin (client, partenaire, admin) — écrite depuis le point central
+    apps.orders.services.appliquer_transition_commande, jamais directement
+    par les vues. N'existait pas avant le centre de gestion admin (additif).
+    """
+    class ActeurRole(models.TextChoices):
+        CLIENT = 'client', _('Client')
+        PARTENAIRE = 'partenaire', _('Partenaire')
+        ADMIN = 'admin', _('Admin')
+
+    commande = models.ForeignKey(
+        Commande, on_delete=models.CASCADE,
+        related_name='historique', verbose_name=_('commande'),
+    )
+    statut = models.CharField(
+        _('statut atteint'), max_length=20, choices=Commande.Statut.choices,
+    )
+    acteur = models.ForeignKey(
+        User, on_delete=models.SET_NULL,
+        blank=True, null=True, related_name='+',
+        verbose_name=_('acteur'),
+    )
+    acteur_role = models.CharField(
+        _('rôle de l\'acteur'), max_length=12, choices=ActeurRole.choices,
+    )
+    commentaire = models.TextField(_('commentaire'), blank=True)
+    cree_le = models.DateTimeField(_('créé le'), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('historique de commande')
+        verbose_name_plural = _('historiques de commande')
+        ordering = ['cree_le']
+        indexes = [
+            models.Index(fields=['commande', 'cree_le']),
+        ]
+
+    def __str__(self):
+        return f'{self.commande.numero} → {self.statut} ({self.get_acteur_role_display()})'
+
+
+class NoteAdminCommande(models.Model):
+    """Note interne sur une commande, visible UNIQUEMENT par les admins
+    habilités (jamais par le client ni le partenaire) — centre de gestion
+    admin. Additif, sans lien avec notes_client/notes_partenaire."""
+    commande = models.ForeignKey(
+        Commande, on_delete=models.CASCADE,
+        related_name='notes_admin', verbose_name=_('commande'),
+    )
+    auteur = models.ForeignKey(
+        User, on_delete=models.SET_NULL,
+        blank=True, null=True, related_name='+',
+        verbose_name=_('auteur'),
+    )
+    texte = models.TextField(_('texte'))
+    cree_le = models.DateTimeField(_('créé le'), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('note admin sur commande')
+        verbose_name_plural = _('notes admin sur commandes')
+        ordering = ['-cree_le']
+
+    def __str__(self):
+        return f'Note sur {self.commande.numero} — {self.texte[:40]}'

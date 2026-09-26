@@ -231,6 +231,7 @@ class Notification(models.Model):
         SYSTEME = 'systeme', _('Message système')
         PUB_SOUMISE = 'pub_soumise', _('Campagne pub soumise')
         PUB_A_VALIDER = 'pub_a_valider', _('Campagne pub à valider')
+        COMMANDE_ANNULEE_CLIENT = 'commande_annulee_client', _('Commande annulée par le client')
 
     user = models.ForeignKey(
         User, on_delete=models.CASCADE,

@@ -6,8 +6,23 @@ from .views import (
     ResumeCommandesPartenaireView,
     CommandeDetailView, TransitionCommandeView, CommanderLivreurView,
 )
+from .views_admin import (
+    CommandeAdminDetailView, CommandesAdminListView,
+    DemanderLivreurAdminView, ExportAdminCommandesView,
+    MetaAdminCommandesView, NotesAdminCommandeView, StatsAdminCommandesView,
+    TransitionAdminView,
+)
 
 urlpatterns = [
+    path('admin/meta/', MetaAdminCommandesView.as_view(), name='admin-meta'),
+    path('admin/stats/', StatsAdminCommandesView.as_view(), name='admin-stats'),
+    path('admin/commandes/export/', ExportAdminCommandesView.as_view(), name='admin-commandes-export'),
+    path('admin/commandes/', CommandesAdminListView.as_view(), name='admin-commandes'),
+    path('admin/commandes/<int:pk>/', CommandeAdminDetailView.as_view(), name='admin-commande-detail'),
+    path('admin/commandes/<int:pk>/transition/', TransitionAdminView.as_view(), name='admin-commande-transition'),
+    path('admin/commandes/<int:pk>/demander-livreur/', DemanderLivreurAdminView.as_view(),
+         name='admin-commande-demander-livreur'),
+    path('admin/commandes/<int:pk>/notes/', NotesAdminCommandeView.as_view(), name='admin-commande-notes'),
     path('paniers/', MesPaniersView.as_view(), name='paniers'),
     path('paniers/ajouter/', AjouterLigneView.as_view(), name='panier-ajouter'),
     path('paniers/<int:pk>/valider/', ValiderPanierView.as_view(), name='panier-valider'),
