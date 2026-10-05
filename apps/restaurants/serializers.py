@@ -47,6 +47,10 @@ class ProfilRestaurantSerializer(serializers.ModelSerializer):
     adresse = serializers.CharField(source='partenaire.adresse', read_only=True)
     quartier = serializers.CharField(source='partenaire.quartier', read_only=True)
     ville = serializers.CharField(source='partenaire.ville', read_only=True)
+    localite_id = serializers.IntegerField(source='partenaire.localite.id', read_only=True, default=None)
+    localite_nom = serializers.CharField(source='partenaire.localite.nom', read_only=True, default=None)
+    quartier_id = serializers.IntegerField(source='partenaire.quartier_geo.id', read_only=True, default=None)
+    quartier_nom = serializers.CharField(source='partenaire.quartier_geo.nom', read_only=True, default=None)
     telephone_pro = serializers.CharField(source='partenaire.telephone_pro', read_only=True)
     whatsapp = serializers.CharField(source='partenaire.whatsapp', read_only=True)
 
@@ -60,7 +64,8 @@ class ProfilRestaurantSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProfilRestaurant
         fields = ['id', 'partenaire_id', 'nom_commerce', 'logo', 'photo_couverture',
-                  'adresse', 'quartier', 'ville', 'telephone_pro', 'whatsapp',
+                  'adresse', 'quartier', 'ville', 'localite_id', 'localite_nom',
+                  'quartier_id', 'quartier_nom', 'telephone_pro', 'whatsapp',
                   'ferme_exceptionnellement', 'motif_fermeture', 'ferme_jusqu_au',
                   'services', 'delai_preparation_min', 'adresse_reperes',
                   'facebook', 'instagram', 'tiktok', 'specialites',

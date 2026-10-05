@@ -21,6 +21,8 @@ from .admin_serializers import (
     QuartierAdminSerializer, RegionAdminSerializer,
 )
 from .models import Departement, District, Localite, Quartier, Region
+from .rapprochement import appliquer, compteurs, lignes_a_traiter
+from apps.users.models import ProfilPartenaire
 
 _PERMISSION = [permissions.IsAuthenticated, ADroitDe('gerer_geographie')]
 
@@ -364,3 +366,63 @@ class QuartierOptionsView(APIView):
         if localite:
             qs = qs.filter(localite_id=localite)
         return Response({'resultats': list(qs.values('id', 'nom'))})
+
+
+# ── Rapprochement des villes/quartiers texte des partenaires ─────────
+
+class RapprochementPartenairesView(APIView):
+    """GET /administration/geo/rapprochement-partenaires/?statut=exact|proposition|aucun|tous
+    Partenaires non encore rapprochés (ceux déjà rattachés sont comptés, pas listés)."""
+    permission_classes = _PERMISSION
+
+    def get(self, request):
+        statut = request.query_params.get('statut', 'tous')
+        if statut not in ('exact', 'proposition', 'aucun', 'tous'):
+            return Response({'erreur': True, 'message': f'Statut inconnu : {statut}.'}, status=400)
+        profils = (ProfilPartenaire.objects
+                   .select_related('departement', 'localite', 'quartier_geo')
+                   .order_by('nom_commerce'))
+        lignes, rapproches = lignes_a_traiter(profils)
+        resultats = [l for l in lignes if statut in ('tous', l['statut'])]
+        return Response({'resultats': resultats,
+                         'compteurs': compteurs(lignes, rapproches)})
+
+
+class RapprochementPartenaireView(APIView):
+    """POST /administration/geo/rapprochement-partenaires/<partenaire_id>/
+    {"localite_id", "quartier_id"?} — applique, avec la même règle de cohérence."""
+    permission_classes = _PERMISSION
+
+    def post(self, request, partenaire_id):
+        profil = (ProfilPartenaire.objects.select_related('departement', 'localite', 'quartier_geo', 'user')
+                  .filter(pk=partenaire_id).first())
+        if profil is None:
+            return Response({'erreur': True, 'message': 'Partenaire introuvable.'}, status=404)
+        localite = _objet_par_id(Localite, request.data.get('localite_id'))
+        if localite is None:
+            return Response({'erreur': True, 'details': {'localite_id': ['Localité introuvable ou absente.']}},
+                            status=400)
+        quartier = None
+        if request.data.get('quartier_id') not in (None, ''):
+            quartier = _objet_par_id(Quartier, request.data.get('quartier_id'))
+            if quartier is None:
+                return Response({'erreur': True, 'details': {'quartier_id': ['Quartier introuvable.']}},
+                                status=400)
+        erreurs = appliquer(profil, localite, quartier, acteur=request.user,
+                            motif='Rapprochement géographique (admin)')
+        if erreurs:
+            return Response({'erreur': True, 'details': erreurs}, status=400)
+        return Response({
+            'partenaire_id': profil.id,
+            'localite': {'id': localite.id, 'nom': localite.nom},
+            'quartier': {'id': quartier.id, 'nom': quartier.nom} if quartier else None,
+            'ville': profil.ville,
+            'quartier_texte': profil.quartier,
+        })
+
+
+def _objet_par_id(modele, valeur):
+    try:
+        return modele.objects.filter(pk=int(valeur)).first()
+    except (TypeError, ValueError):
+        return None

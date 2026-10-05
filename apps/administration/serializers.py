@@ -54,6 +54,10 @@ class PartenaireListeAdminSerializer(serializers.ModelSerializer):
         source='departement.nom', read_only=True, default='')
     telephone_compte = serializers.CharField(source='user.telephone', read_only=True)
     plan_libelle = serializers.CharField(source='plan.libelle', read_only=True, default='')
+    localite_id = serializers.IntegerField(source='localite.id', read_only=True, default=None)
+    localite_nom = serializers.CharField(source='localite.nom', read_only=True, default=None)
+    quartier_id = serializers.IntegerField(source='quartier_geo.id', read_only=True, default=None)
+    quartier_nom = serializers.CharField(source='quartier_geo.nom', read_only=True, default=None)
 
     class Meta:
         model = ProfilPartenaire
@@ -61,7 +65,8 @@ class PartenaireListeAdminSerializer(serializers.ModelSerializer):
             'id', 'nom_commerce',
             'type_partenaire', 'type_partenaire_libelle',
             'categories',
-            'ville', 'quartier', 'departement_nom',
+            'ville', 'quartier', 'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom',
+            'departement_nom',
             'telephone_compte', 'telephone_pro', 'whatsapp',
             'statut', 'statut_libelle', 'est_visible', 'badge_certifie', 'est_faveur',
             'plan_libelle', 'abonnement_fin', 'nb_vues', 'created_at',

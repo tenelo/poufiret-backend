@@ -42,6 +42,7 @@ class JournalModeration(ModeleBase):
         RESTO_PLAT_MODIF = 'resto_plat_modif', 'Plat modifié (admin)'
         RESTO_MENU_MODIF = 'resto_menu_modif', 'Menu modifié (admin)'
         PARTENAIRE_TELEPHONE_MODIF = 'partenaire_telephone_modif', 'Numéro de connexion partenaire modifié'
+        GEO_RAPPROCHEMENT_PARTENAIRE = 'geo_rapprochement_partenaire', 'Géographie partenaire rapprochée'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.

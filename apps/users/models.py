@@ -348,6 +348,18 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
         help_text=_('Département du commerce. Remplace progressivement le '
                     'champ texte « ville ».'),
     )
+    localite = models.ForeignKey(
+        'geo.Localite', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='partenaires',
+        verbose_name=_('localité'),
+        help_text=_('Choisie dans la géographie. Synchronise le champ texte « ville ».'),
+    )
+    quartier_geo = models.ForeignKey(
+        'geo.Quartier', on_delete=models.PROTECT,
+        null=True, blank=True, related_name='partenaires',
+        verbose_name=_('quartier (géographie)'),
+        help_text=_('Choisi dans la géographie. Synchronise le champ texte « quartier ».'),
+    )
     description_acces = models.TextField(
         _('comment trouver le partenaire'),
         blank=True,
@@ -467,6 +479,17 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
             models.Index(fields=['ville']),
             models.Index(fields=['type_partenaire']),
         ]
+
+    def save(self, *args, **kwargs):
+        # ville/quartier texte suivent toujours la géographie choisie.
+        if self.localite_id:
+            self.ville = self.localite.nom
+        if self.quartier_geo_id:
+            self.quartier = self.quartier_geo.nom
+        champs = kwargs.get('update_fields')
+        if champs is not None and {'localite', 'quartier_geo'} & set(champs):
+            kwargs['update_fields'] = list({*champs, 'ville', 'quartier'})
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.nom_commerce} — {self.user.telephone}"

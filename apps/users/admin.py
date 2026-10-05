@@ -195,7 +195,7 @@ class ProfilPartenaireAdmin(admin.ModelAdmin):
     )
     list_editable = ('statut', 'est_visible', 'badge_certifie', 'est_faveur')
     autocomplete_fields = ('user', 'plan', 'faveur_accordee_par')
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'ville', 'quartier')
     ordering = ('-created_at',)
 
     fieldsets = (
@@ -203,8 +203,8 @@ class ProfilPartenaireAdmin(admin.ModelAdmin):
             'fields': ('user', 'nom_commerce', 'description', 'logo', 'photo_couverture'),
         }),
         (_('Localisation'), {
-            'fields': ('adresse', 'quartier', 'secteur', 'departement', 'ville',
-                       'description_acces', 'localisation'),
+            'fields': ('adresse', 'departement', 'localite', 'quartier_geo', 'ville', 'quartier',
+                       'secteur', 'description_acces', 'localisation'),
         }),
         (_('Contact professionnel'), {
             'fields': ('telephone_pro', 'whatsapp', 'email_pro'),

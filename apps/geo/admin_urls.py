@@ -6,6 +6,7 @@ Distinctes des routes publiques (apps.geo.urls, INCHANGÉES).
 from django.urls import path
 
 from .admin_views import (
+    RapprochementPartenaireView, RapprochementPartenairesView,
     DepartementAdminDetailView, DepartementAdminExportView,
     DepartementAdminListCreateView, DepartementOptionsView,
     DistrictOptionsView,
@@ -41,4 +42,9 @@ urlpatterns = [
     path('quartiers/options/', QuartierOptionsView.as_view(), name='quartiers-options'),
     path('quartiers/export/', QuartierAdminExportView.as_view(), name='quartiers-export'),
     path('quartiers/<int:pk>/', QuartierAdminDetailView.as_view(), name='quartier-detail'),
+
+    path('rapprochement-partenaires/', RapprochementPartenairesView.as_view(),
+         name='rapprochement-partenaires'),
+    path('rapprochement-partenaires/<int:partenaire_id>/', RapprochementPartenaireView.as_view(),
+         name='rapprochement-partenaire'),
 ]

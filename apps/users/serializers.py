@@ -6,6 +6,28 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, SessionAppareil, ProfilPartenaire, NumeroVerifie, CodeOTP
+from apps.geo.coherence import verifier_coherence
+from apps.geo.models import Localite, Quartier
+
+
+def _champs_geo():
+    return (
+        serializers.PrimaryKeyRelatedField(
+            source='localite', queryset=Localite.objects.filter(est_actif=True),
+            required=False, allow_null=True),
+        serializers.PrimaryKeyRelatedField(
+            source='quartier_geo', queryset=Quartier.objects.filter(est_actif=True),
+            required=False, allow_null=True),
+    )
+
+
+def _verifier_geo(attrs, departement, localite_actuelle=None, quartier_actuel=None):
+    localite = attrs['localite'] if 'localite' in attrs else localite_actuelle
+    quartier = attrs['quartier_geo'] if 'quartier_geo' in attrs else quartier_actuel
+    erreurs = verifier_coherence(departement, localite, quartier)
+    if erreurs:
+        raise serializers.ValidationError(erreurs)
+    return attrs
 
 
 class UtilisateurSerializer(serializers.ModelSerializer):
@@ -140,12 +162,22 @@ class DevenirPartenaireSerializer(serializers.ModelSerializer):
         help_text="IDs des categories. La premiere devient la principale. "
                   "Si vide, deduite du type_partenaire.",
     )
+    localite_id, quartier_id = _champs_geo()
 
     class Meta:
         model = ProfilPartenaire
         fields = ['type_partenaire', 'nom_commerce', 'description', 'adresse',
                   'quartier', 'secteur', 'ville', 'departement',
+                  'localite_id', 'quartier_id',
                   'telephone_pro', 'whatsapp', 'email_pro', 'categories']
+        read_only_fields = ['quartier', 'ville']
+
+    def validate(self, attrs):
+        departement = attrs.get('departement')
+        localite = attrs.get('localite')
+        if departement is None and localite is not None:
+            attrs['departement'] = departement = localite.departement
+        return _verifier_geo(attrs, departement)
 
     def validate_categories(self, ids):
         from apps.catalog.models import Categorie
@@ -214,6 +246,10 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
         source='departement.nom', read_only=True, default='')
     region = serializers.CharField(
         source='departement.region.nom', read_only=True, default='')
+    localite_id = serializers.IntegerField(source='localite.id', read_only=True, default=None)
+    localite_nom = serializers.CharField(source='localite.nom', read_only=True, default=None)
+    quartier_id = serializers.IntegerField(source='quartier_geo.id', read_only=True, default=None)
+    quartier_nom = serializers.CharField(source='quartier_geo.nom', read_only=True, default=None)
 
     class Meta:
         model = ProfilPartenaire
@@ -221,6 +257,7 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
             'id', 'nom_commerce', 'type_partenaire', 'type_partenaire_libelle',
             'description', 'logo', 'photo_couverture',
             'adresse', 'quartier', 'secteur', 'ville', 'departement', 'region', 'description_acces',
+            'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom',
             'telephone_pro', 'whatsapp', 'email_pro',
             'nombre_likes', 'nb_vues', 'est_like_par_moi', 'est_favori_par_moi',
         ]
@@ -271,6 +308,10 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
     # de `localisation`. En écriture, update() les recompose en Point.
     # `departement`, lui, reste piloté par l'administration : il n'est PAS
     # touché ici, toujours en read_only_fields.
+    localite_id, quartier_id = _champs_geo()
+    localite_nom = serializers.CharField(source='localite.nom', read_only=True, default=None)
+    quartier_nom = serializers.CharField(source='quartier_geo.nom', read_only=True, default=None)
+
     latitude = serializers.FloatField(
         required=False, allow_null=True, min_value=-90, max_value=90,
         error_messages={
@@ -292,6 +333,7 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
             'id', 'nom_commerce', 'description', 'logo', 'photo_couverture',
             'type_partenaire', 'type_partenaire_libelle',
             'adresse', 'quartier', 'secteur', 'ville', 'description_acces',
+            'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom',
             'telephone_pro', 'whatsapp', 'email_pro',
             # Lecture seule : pilotes par l'administration
             'statut', 'statut_libelle', 'est_visible', 'badge_certifie',
@@ -307,7 +349,12 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
             'type_partenaire_libelle', 'nb_photos_par_article',
             'nb_articles_max', 'portee_forfait',
             'departement', 'departement_nom', 'region_nom',
+            'quartier', 'ville',
         ]
+
+    def validate(self, attrs):
+        return _verifier_geo(attrs, self.instance.departement,
+                             self.instance.localite, self.instance.quartier_geo)
 
     def to_representation(self, instance):
         """latitude/longitude ne sont pas des attributs du modèle : sans
@@ -694,9 +741,8 @@ class CreerPartenaireParAdminSerializer(serializers.Serializer):
     nom_commerce = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True)
     adresse = serializers.CharField(required=False, allow_blank=True)
-    quartier = serializers.CharField(required=False, allow_blank=True)
     secteur = serializers.CharField(required=False, allow_blank=True)
-    ville = serializers.CharField(required=False, allow_blank=True)
+    localite_id, quartier_id = _champs_geo()
     departement = serializers.PrimaryKeyRelatedField(
         queryset=__import__('apps.geo.models', fromlist=['Departement']).Departement.objects.all(),
         required=False, allow_null=True,
@@ -733,6 +779,13 @@ class CreerPartenaireParAdminSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 f'Categories inconnues ou inactives : {inconnues}')
         return ids
+
+    def validate(self, attrs):
+        departement = attrs.get('departement')
+        localite = attrs.get('localite')
+        if departement is None and localite is not None:
+            attrs['departement'] = departement = localite.departement
+        return _verifier_geo(attrs, departement)
 
     def create(self, validated_data):
         import random
