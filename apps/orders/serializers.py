@@ -7,16 +7,28 @@ from .models import Panier, LignePanier
 class LignePanierSerializer(serializers.ModelSerializer):
     article_nom = serializers.CharField(source='article.nom', read_only=True)
     prix_ligne = serializers.SerializerMethodField()
+    variante_nom = serializers.SerializerMethodField()
+    options = serializers.SerializerMethodField()
 
     class Meta:
         model = LignePanier
-        fields = ['id', 'article', 'article_nom', 'variante_id', 'supplements',
-                  'quantite', 'prix_unitaire', 'prix_ligne', 'note_speciale', 'created_at']
+        fields = ['id', 'article', 'article_nom', 'variante_id', 'variante_nom',
+                  'supplements', 'options', 'ligne_menu', 'quantite', 'prix_unitaire',
+                  'prix_ligne', 'note_speciale', 'created_at']
         read_only_fields = ['prix_unitaire']
 
     def get_prix_ligne(self, obj):
         supp = sum(s.get('prix', 0) for s in (obj.supplements or []))
         return (obj.prix_unitaire + supp) * obj.quantite
+
+    def get_variante_nom(self, obj):
+        if not obj.variante_id:
+            return None
+        return Variante.objects.filter(pk=obj.variante_id).values_list('nom', flat=True).first()
+
+    def get_options(self, obj):
+        return [{'nom': s.get('nom', ''), 'prix_supplement': s.get('prix', 0)}
+                for s in (obj.supplements or [])]
 
 
 class PanierSerializer(serializers.ModelSerializer):

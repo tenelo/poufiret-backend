@@ -58,6 +58,7 @@ LOCAL_APPS = [
     'apps.geo',
     'apps.version',
     'apps.administration',
+    'apps.restaurants',
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

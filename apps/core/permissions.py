@@ -7,7 +7,11 @@ def _partenaire_de(obj):
     if p is not None:
         return p
     art = getattr(obj, 'article', None)
-    return getattr(art, 'partenaire', None) if art is not None else None
+    if art is not None:
+        return art.partenaire
+    # OptionGroupe (apps.catalog) : remonte via son GroupeOption.article.
+    groupe = getattr(obj, 'groupe', None)
+    return _partenaire_de(groupe) if groupe is not None else None
 
 
 class LectureSeuleOuAuthentifie(permissions.BasePermission):

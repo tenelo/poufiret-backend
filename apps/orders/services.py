@@ -179,6 +179,12 @@ def appliquer_transition_commande(commande, cible, acteur, acteur_role,
         commande.annulee_par = acteur
     commande.save()
 
+    if cible in ('annulee', 'refusee'):
+        from apps.restaurants import services as services_restaurants
+        pour_date = timezone.localtime(commande.created_at).date()
+        for ligne in commande.lignes.filter(ligne_menu__isnull=False).select_related('ligne_menu'):
+            services_restaurants.restaurer_stock(ligne.ligne_menu, ligne.quantite, pour_date=pour_date)
+
     HistoriqueCommande.objects.create(
         commande=commande, statut=cible, acteur=acteur,
         acteur_role=acteur_role, commentaire=commentaire or '',

@@ -103,7 +103,16 @@ class LignePanier(models.Model):
     supplements = models.JSONField(
         _('suppléments choisis'),
         default=list, blank=True,
-        help_text=_('Liste d\'objets [{id, nom, prix}…] figés au moment de l\'ajout.'),
+        help_text=_('Liste d\'objets [{id, nom, prix}…] figés au moment de l\'ajout. '
+                    'Sert aussi aux options de GroupeOption (restaurants) : '
+                    '[{id, nom, prix, groupe_id, groupe_libelle}…], mêmes clés '
+                    'de base, groupe_id/groupe_libelle en plus (ignorés du code '
+                    'existant qui ne lit que nom/prix).'),
+    )
+    ligne_menu = models.ForeignKey(
+        'restaurants.LigneMenu', on_delete=models.SET_NULL,
+        blank=True, null=True, related_name='lignes_panier',
+        verbose_name=_('ligne de menu (si commandé depuis un menu)'),
     )
 
     quantite = models.PositiveIntegerField(_('quantité'), default=1)
@@ -293,7 +302,13 @@ class LigneCommande(models.Model):
     supplements = models.JSONField(
         _('suppléments'),
         default=list, blank=True,
-        help_text=_('Snapshot des suppléments choisis [{nom, prix}…].'),
+        help_text=_('Snapshot des suppléments/options choisis '
+                    '[{nom, prix, groupe_libelle?}…].'),
+    )
+    ligne_menu = models.ForeignKey(
+        'restaurants.LigneMenu', on_delete=models.SET_NULL,
+        blank=True, null=True, related_name='lignes_commande',
+        verbose_name=_('ligne de menu (si commandé depuis un menu)'),
     )
 
     quantite = models.PositiveIntegerField(_('quantité'))

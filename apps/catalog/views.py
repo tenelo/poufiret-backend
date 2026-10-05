@@ -5,15 +5,16 @@ from rest_framework import viewsets, generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from apps.core.pagination import StandardPagination
-from apps.core.permissions import EstPartenaireProprietaireOuLectureSeule
+from apps.core.permissions import EstAdmin, EstPartenaireProprietaireOuLectureSeule
 from .models import (
     Categorie, Article, VueArticle, ArticleImage, ArticleVideo, Variante,
-    Supplement, Panorama, Logement, Vehicule, annoter_nb_partenaires,
-    prefetch_enfants_actifs,
+    Supplement, GroupeOption, OptionGroupe, Panorama, Logement, Vehicule,
+    annoter_nb_partenaires, prefetch_enfants_actifs,
 )
 from .serializers import (
     CategorieSerializer, ArticleListeSerializer, ArticleDetailSerializer,
     ArticleImageSerializer, ArticleVideoSerializer, VarianteSerializer, SupplementSerializer,
+    GroupeOptionSerializer, OptionGroupeSerializer,
     PanoramaSerializer, LogementSerializer, VehiculeSerializer,
 )
 
@@ -210,6 +211,36 @@ class VarianteViewSet(_SousRessourceViewSet):
 class SupplementViewSet(_SousRessourceViewSet):
     model = Supplement
     serializer_class = SupplementSerializer
+
+
+class GroupeOptionViewSet(_SousRessourceViewSet):
+    """/catalogue/groupes-options/?article=<id> — « Garniture »,
+    « Suppléments »… (min_choix/max_choix). Même pattern que Variante/
+    Supplement : filtre par ?article=, écriture réservée au propriétaire."""
+    model = GroupeOption
+    serializer_class = GroupeOptionSerializer
+
+
+class OptionViewSet(viewsets.ModelViewSet):
+    """/catalogue/options/?groupe=<id> — options d'un GroupeOption (ex.
+    "Riz", "Attiéké" dans "Garniture"). Filtre par ?groupe= au lieu de
+    ?article= (OptionGroupe n'a pas de FK article direct) ; la propriété
+    remonte via groupe.article (voir apps.core.permissions._partenaire_de,
+    étendue pour cette chaîne)."""
+    model = OptionGroupe
+    serializer_class = OptionGroupeSerializer
+    permission_classes = [EstPartenaireProprietaireOuLectureSeule]
+
+    def get_queryset(self):
+        qs = OptionGroupe.objects.all()
+        groupe = self.request.query_params.get('groupe')
+        return qs.filter(groupe_id=groupe) if groupe else qs
+
+    def perform_create(self, serializer):
+        groupe = serializer.validated_data['groupe']
+        if groupe.article.partenaire.user_id != self.request.user.id:
+            raise PermissionDenied("Ce groupe d'options ne vous appartient pas.")
+        serializer.save()
 
 
 class PanoramaViewSet(_SousRessourceViewSet):
@@ -584,3 +615,20 @@ class RechercheUnifieeView(_APIView):
             'partenaires': donnees_part,
             'articles': donnees_art,
         })
+
+
+class CorrespondancesTypesView(_APIView):
+    """GET /catalogue/correspondances-types/ — type de partenaire → catégorie
+    par défaut (Categorie.types_partenaire). Admin uniquement."""
+    permission_classes = [permissions.IsAuthenticated, EstAdmin]
+
+    def get(self, request):
+        from .correspondances import categories_correspondantes
+        libelles = dict(_ProfilPartenaire.TypePartenaire.choices)
+        correspondances = [
+            {'type_partenaire': t, 'type_libelle': libelles[t],
+             'categorie_id': c.id, 'categorie_nom': c.nom}
+            for t in _ProfilPartenaire.TypePartenaire.values
+            for c in categories_correspondantes(t)
+        ]
+        return _Response({'correspondances': correspondances})

@@ -229,6 +229,12 @@ class SectionMenu(models.Model):
     ordre = models.IntegerField(_('ordre d\'affichage'), default=0)
     est_active = models.BooleanField(_('section active'), default=True)
 
+    # Traçabilité (gestion restaurant, restaurateur ou admin à sa place) —
+    # posée par les vues (apps.restaurants.views_carte), pas par un signal.
+    modifie_par_role = models.CharField(_('modifié par (rôle)'), max_length=20, blank=True)
+    modifie_par_nom = models.CharField(_('modifié par (nom)'), max_length=150, blank=True)
+    modifie_le = models.DateTimeField(_('modifié le'), auto_now=True)
+
     class Meta:
         verbose_name = _('section de menu')
         verbose_name_plural = _('sections de menu')
@@ -323,6 +329,18 @@ class Article(models.Model):
     est_actif = models.BooleanField(_('article actif'), default=True)
     est_disponible = models.BooleanField(_('disponible'), default=True)
     est_en_promotion = models.BooleanField(_('en promotion'), default=False)
+    est_reserve_aux_menus = models.BooleanField(
+        _('réservé aux menus'), default=False,
+        help_text=_('Masqué de la carte publique, mais utilisable comme '
+                    'plat dans un menu programmé (ex. plat hors carte).'),
+    )
+    ordre = models.IntegerField(_('ordre d\'affichage'), default=0)
+
+    # Traçabilité (gestion restaurant, restaurateur ou admin à sa place) —
+    # posée par les vues (apps.restaurants.views_carte), pas par un signal.
+    # modifie_le réutilise le updated_at déjà existant (pas de duplication).
+    modifie_par_role = models.CharField(_('modifié par (rôle)'), max_length=20, blank=True)
+    modifie_par_nom = models.CharField(_('modifié par (nom)'), max_length=150, blank=True)
 
     # ── Compteurs dénormalisés (perf) ────────────────────────────────
     nb_vues = models.IntegerField(_('nombre de vues'), default=0)
@@ -656,6 +674,59 @@ class Supplement(models.Model):
 
     def __str__(self):
         return f"{self.article.nom} + {self.nom}"
+
+
+class GroupeOption(models.Model):
+    """Groupe d'options à choix contraint pour un article (« Garniture »,
+    « Suppléments »…) — généralise Supplement (toujours 0..N, sans
+    regroupement nommé). Les deux mécanismes coexistent : Supplement reste
+    inchangé pour les articles existants, GroupeOption sert les cas qui ont
+    besoin d'un choix EXACT (garniture = min=max=1) ou de plusieurs groupes
+    nommés distincts sur un même article (restaurants).
+    """
+    article = models.ForeignKey(
+        Article, on_delete=models.CASCADE,
+        related_name='groupes_options', verbose_name=_('article'),
+    )
+    libelle = models.CharField(_('libellé'), max_length=100)
+    min_choix = models.PositiveSmallIntegerField(_('choix minimum'), default=0)
+    max_choix = models.PositiveSmallIntegerField(
+        _('choix maximum'), null=True, blank=True,
+        help_text=_('Vide = illimité.'),
+    )
+    ordre = models.IntegerField(_('ordre'), default=0)
+    est_actif = models.BooleanField(_('groupe actif'), default=True)
+
+    class Meta:
+        verbose_name = _('groupe d\'options')
+        verbose_name_plural = _('groupes d\'options')
+        ordering = ['article', 'ordre']
+
+    def __str__(self):
+        return f'{self.article.nom} — {self.libelle}'
+
+
+class OptionGroupe(models.Model):
+    """Une option au sein d'un GroupeOption (ex. « Riz », « Attiéké » dans
+    le groupe « Garniture »), avec un surcoût éventuel."""
+    groupe = models.ForeignKey(
+        GroupeOption, on_delete=models.CASCADE,
+        related_name='options', verbose_name=_('groupe'),
+    )
+    nom = models.CharField(_('nom'), max_length=100)
+    prix_supplement = models.DecimalField(
+        _('supplément de prix (FCFA)'), max_digits=10, decimal_places=0, default=0,
+    )
+    ordre = models.IntegerField(_('ordre'), default=0)
+    est_actif = models.BooleanField(_('option active'), default=True)
+
+    class Meta:
+        verbose_name = _('option de groupe')
+        verbose_name_plural = _('options de groupe')
+        ordering = ['groupe', 'ordre']
+
+    def __str__(self):
+        return f'{self.groupe.libelle} — {self.nom}'
 
 
 # ═══════════════════════════════════════════════════════════════════════

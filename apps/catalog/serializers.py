@@ -1,7 +1,8 @@
 """Serializers du module Catalogue."""
 from rest_framework import serializers
 from .models import (
-    Categorie, Article, ArticleImage, ArticleVideo, Variante, Supplement,
+    Categorie, Article, ArticleImage, ArticleVideo, SectionMenu, Variante, Supplement,
+    GroupeOption, OptionGroupe,
     Panorama, Logement, Vehicule, annoter_nb_partenaires,
 )
 
@@ -47,6 +48,17 @@ class CategorieSerializer(serializers.ModelSerializer):
             self._enfants_actifs(obj), many=True, context=self.context).data
 
 
+class SectionMenuSerializer(serializers.ModelSerializer):
+    """Section de carte (« Grillades », « Boissons »…). Réutilisée par les
+    deux périmètres de gestion (restaurateur / admin, apps.restaurants.
+    views_carte) — le partenaire est toujours injecté par la vue."""
+    class Meta:
+        model = SectionMenu
+        fields = ['id', 'partenaire', 'nom', 'description', 'icone', 'ordre', 'est_active',
+                  'modifie_par_role', 'modifie_par_nom', 'modifie_le']
+        read_only_fields = ['partenaire', 'modifie_par_role', 'modifie_par_nom', 'modifie_le']
+
+
 class ArticleImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ArticleImage
@@ -64,6 +76,32 @@ class SupplementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Supplement
         fields = ['id', 'article', 'nom', 'prix', 'est_optionnel', 'ordre', 'est_actif']
+
+
+class OptionGroupeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OptionGroupe
+        fields = ['id', 'groupe', 'nom', 'prix_supplement', 'ordre', 'est_actif']
+
+
+class GroupeOptionSerializer(serializers.ModelSerializer):
+    """Groupe d'options d'un article (« Garniture », « Suppléments »…),
+    avec ses options imbriquées en lecture (écriture via OptionViewSet,
+    /catalogue/options/?groupe=<id>, même pattern que variantes/supplements)."""
+    options = OptionGroupeSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = GroupeOption
+        fields = ['id', 'article', 'libelle', 'min_choix', 'max_choix',
+                  'ordre', 'est_actif', 'options']
+
+    def validate(self, attrs):
+        mini = attrs.get('min_choix', getattr(self.instance, 'min_choix', 0))
+        maxi = attrs.get('max_choix', getattr(self.instance, 'max_choix', None))
+        if maxi is not None and maxi < mini:
+            raise serializers.ValidationError(
+                {'max_choix': 'Doit être supérieur ou égal à min_choix (ou vide).'})
+        return attrs
 
 
 class PanoramaSerializer(serializers.ModelSerializer):
@@ -165,3 +203,32 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
         if user is None:
             return False
         return obj.favoris.filter(user=user).exists()
+
+
+class ArticleCarteGestionSerializer(serializers.ModelSerializer):
+    """Plat de la carte, pour la gestion restaurateur/admin (mêmes vues,
+    périmètre seul différent — apps.restaurants.views_carte). Réutilise les
+    sous-serializers existants (images, variantes, groupes d'options) sans
+    duplication ; leur écriture se fait via leurs propres endpoints
+    (plats/<id>/images/, variantes/?plat=, groupes-options/?plat=)."""
+    images = ArticleImageSerializer(many=True, read_only=True)
+    variantes = VarianteSerializer(many=True, read_only=True)
+    groupes_options = GroupeOptionSerializer(many=True, read_only=True)
+    section_menu_nom = serializers.CharField(source='section_menu.nom', read_only=True)
+    est_epuise = serializers.SerializerMethodField()
+    prix_effectif = serializers.ReadOnlyField()
+    modifie_le = serializers.DateTimeField(source='updated_at', read_only=True)
+
+    class Meta:
+        model = Article
+        fields = ['id', 'nom', 'slug', 'description', 'categorie', 'section_menu',
+                  'section_menu_nom', 'prix', 'prix_promotion', 'prix_effectif',
+                  'est_en_promotion', 'est_actif', 'est_disponible', 'est_epuise',
+                  'est_reserve_aux_menus', 'ordre', 'temps_preparation_min', 'details',
+                  'images', 'variantes', 'groupes_options', 'partenaire',
+                  'modifie_par_role', 'modifie_par_nom', 'modifie_le']
+        read_only_fields = ['slug', 'partenaire', 'modifie_par_role', 'modifie_par_nom']
+        extra_kwargs = {'categorie': {'required': False}}
+
+    def get_est_epuise(self, obj):
+        return not obj.est_disponible

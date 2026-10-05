@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/v1/geo/', include('apps.geo.urls')),
     path('api/v1/version/', include('apps.version.urls')),
     path('api/v1/administration/', include('apps.administration.urls')),
+    path('api/v1/restaurants/', include('apps.restaurants.urls')),
 ]
 
 # Service des fichiers médias en développement uniquement

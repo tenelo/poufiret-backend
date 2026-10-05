@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 from apps.core.exports import reponse_csv
 from apps.core.permissions import ADroitDe
 from apps.livraison.models import Course
+from apps.restaurants import services as services_restaurants
 from apps.users.models import ProfilPartenaire
 
 from .models import Commande, HistoriqueCommande, NoteAdminCommande
@@ -85,6 +86,14 @@ def _commandes_admin_qs(request, avec_groupe_statut=True):
             qs = qs.filter(user_id=int(client))
         except (ValueError, TypeError):
             return qs.none(), 'Client invalide.'
+    if p.get('restauration') == '1':
+        qs = qs.filter(partenaire__type_partenaire__in=services_restaurants.TYPES_RESTAURATION)
+    type_partenaire = p.get('type_partenaire')
+    if type_partenaire:
+        valeurs = {v for v, _ in ProfilPartenaire.TypePartenaire.choices}
+        if type_partenaire not in valeurs:
+            return qs.none(), f'Type de partenaire inconnu : {type_partenaire}.'
+        qs = qs.filter(partenaire__type_partenaire=type_partenaire)
     departement = p.get('departement')
     if departement:
         try:
@@ -146,7 +155,10 @@ class MetaAdminCommandesView(APIView):
         } for v, l in Commande.Statut.choices]
         groupes = [{'code': c, 'libelle': l} for c, l in LIBELLES_GROUPE.items()]
         modes = [{'valeur': v, 'libelle': l} for v, l in Commande.ModeLivraison.choices]
-        return Response({'statuts': statuts, 'groupes': groupes, 'modes_livraison': modes})
+        types_partenaire = [{'valeur': v, 'libelle': l}
+                            for v, l in ProfilPartenaire.TypePartenaire.choices]
+        return Response({'statuts': statuts, 'groupes': groupes, 'modes_livraison': modes,
+                         'types_partenaire': types_partenaire})
 
 
 class CommandesAdminListView(generics.ListAPIView):

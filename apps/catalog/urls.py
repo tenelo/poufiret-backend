@@ -3,9 +3,10 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     PartenairesParCategorieView, StatsVuesPartenaireView, RechercheUnifieeView,
-    CartePartenairesView,
+    CartePartenairesView, CorrespondancesTypesView,
     CategorieViewSet, ArticleViewSet, EnregistrerVueView,
     ArticleImageViewSet, VarianteViewSet, SupplementViewSet,
+    GroupeOptionViewSet, OptionViewSet,
     PanoramaViewSet, LogementView, VehiculeView, ArticleVideoViewSet,
     VideosPartenaireView,
 )
@@ -17,6 +18,8 @@ router.register(r'images', ArticleImageViewSet, basename='image')
 router.register(r'videos', ArticleVideoViewSet, basename='video')
 router.register(r'variantes', VarianteViewSet, basename='variante')
 router.register(r'supplements', SupplementViewSet, basename='supplement')
+router.register(r'groupes-options', GroupeOptionViewSet, basename='groupe-option')
+router.register(r'options', OptionViewSet, basename='option')
 router.register(r'panoramas', PanoramaViewSet, basename='panorama')
 
 urlpatterns = [
@@ -24,6 +27,7 @@ urlpatterns = [
          VideosPartenaireView.as_view(), name='partenaire-videos'),
     path('recherche/', RechercheUnifieeView.as_view(), name='recherche-unifiee'),
     path('partenaire/stats-vues/', StatsVuesPartenaireView.as_view(), name='partenaire-stats-vues'),
+    path('correspondances-types/', CorrespondancesTypesView.as_view(), name='correspondances-types'),
     path('carte/partenaires/', CartePartenairesView.as_view(), name='carte-partenaires'),
     path('categories/<slug:slug>/partenaires/', PartenairesParCategorieView.as_view(), name='categorie-partenaires'),
     path('articles/<slug:slug>/vue/', EnregistrerVueView.as_view(), name='article-vue'),

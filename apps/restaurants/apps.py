@@ -1,9 +1,9 @@
 from django.apps import AppConfig
 
 
-class CatalogConfig(AppConfig):
+class RestaurantsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'apps.catalog'
+    name = 'apps.restaurants'
 
     def ready(self):
         from . import signals  # noqa: F401

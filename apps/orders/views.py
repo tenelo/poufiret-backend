@@ -8,10 +8,52 @@ from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from apps.catalog.models import Article, Variante, Supplement
+from apps.catalog.models import Article, OptionGroupe, Supplement, Variante
+from apps.restaurants import services as services_restaurants
+from apps.restaurants.models import LigneMenu
 from .models import Panier, LignePanier
 from .serializers import PanierSerializer
 from apps.notifications.fcm import notifier_utilisateur
+
+
+def _groupe_options_non_respecte(article, supplements):
+    """Premier GroupeOption actif de cet article dont le nombre d'options
+    choisies (déduit du snapshot `supplements`, clé groupe_id) ne respecte
+    pas min_choix/max_choix — None si tout est en règle. Les articles sans
+    GroupeOption (cas général, hors restaurants) ne sont jamais concernés."""
+    choix_par_groupe = {}
+    for s in supplements or []:
+        gid = s.get('groupe_id')
+        if gid:
+            choix_par_groupe[gid] = choix_par_groupe.get(gid, 0) + 1
+    for g in article.groupes_options.filter(est_actif=True):
+        n = choix_par_groupe.get(g.id, 0)
+        if n < g.min_choix or (g.max_choix is not None and n > g.max_choix):
+            return g
+    return None
+
+
+def _snapshot_options_choisies(article, option_ids):
+    """Valide et construit le snapshot des options (GroupeOption/
+    OptionGroupe, restaurants) choisies pour cet article. Lève ValueError
+    (message prêt pour l'API) si un groupe n'a pas son nombre de choix
+    requis — ex. garniture (min=max=1) non choisie."""
+    options = list(
+        OptionGroupe.objects.filter(
+            pk__in=option_ids or [], groupe__article=article, est_actif=True,
+        ).select_related('groupe'))
+    snapshot = [
+        {'id': o.id, 'nom': o.nom, 'prix': int(o.prix_supplement),
+         'groupe_id': o.groupe_id, 'groupe_libelle': o.groupe.libelle}
+        for o in options
+    ]
+    manquant = _groupe_options_non_respecte(article, snapshot)
+    if manquant:
+        attendu = (str(manquant.min_choix) if manquant.max_choix == manquant.min_choix
+                   else f'{manquant.min_choix} à '
+                        f'{manquant.max_choix if manquant.max_choix is not None else "∞"}')
+        raise ValueError(f'« {manquant.libelle} » : choisissez {attendu} option(s).')
+    return snapshot
 
 
 def _parser_date(valeur):
@@ -35,12 +77,34 @@ class MesPaniersView(APIView):
 
 
 class AjouterLigneView(APIView):
-    """POST /orders/paniers/ajouter/ — ajoute un article au panier du bon partenaire.
-    Body: article (id), quantite, variante_id?, supplement_ids?[], note_speciale?"""
+    """POST /orders/paniers/ajouter/ — ajoute un article (ou une ligne de
+    menu restaurant) au panier du bon partenaire.
+    Body: article (id) OU ligne_menu (id) — l'un des deux obligatoire ;
+    quantite, variante_id? (ignoré pour ligne_menu, prix déjà fixé),
+    supplement_ids?[], option_ids?[] (GroupeOption, restaurants : respect
+    du min/max de chaque groupe vérifié ici), note_speciale?"""
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        article = get_object_or_404(Article, pk=request.data.get('article'), est_actif=True)
+        ligne_menu = None
+        ligne_menu_id = request.data.get('ligne_menu')
+        if ligne_menu_id:
+            ligne_menu = get_object_or_404(
+                LigneMenu.objects.select_related('menu__restaurant__partenaire', 'plat'),
+                pk=ligne_menu_id)
+            article = ligne_menu.plat
+            prix = ligne_menu.prix_effectif
+            variante_id = None
+        else:
+            article = get_object_or_404(Article, pk=request.data.get('article'), est_actif=True)
+            prix = article.prix_promotion if (article.est_en_promotion and article.prix_promotion) else article.prix
+            prix = prix or 0
+            variante_id = request.data.get('variante_id')
+            if variante_id:
+                v = Variante.objects.filter(pk=variante_id, article=article).first()
+                if v:
+                    prix += v.prix_supplement
+
         quantite = int(request.data.get('quantite', 1))
         if quantite < 1:
             return Response({'erreur': True, 'message': 'Quantité invalide.'}, status=400)
@@ -51,24 +115,21 @@ class AjouterLigneView(APIView):
             partenaire=article.partenaire,
             categorie=article.categorie,
         )
-        # Prix unitaire = prix article (promo si active) + variante
-        prix = article.prix_promotion if (article.est_en_promotion and article.prix_promotion) else article.prix
-        prix = prix or 0
-        variante_id = request.data.get('variante_id')
-        if variante_id:
-            v = Variante.objects.filter(pk=variante_id, article=article).first()
-            if v:
-                prix += v.prix_supplement
 
-        # Snapshot des suppléments choisis
+        # Snapshot des suppléments (legacy) + options de groupes (restaurants)
         supp_ids = request.data.get('supplement_ids', []) or []
         supplements = [
             {'id': s.id, 'nom': s.nom, 'prix': int(s.prix)}
             for s in Supplement.objects.filter(pk__in=supp_ids, article=article)
         ]
+        try:
+            supplements += _snapshot_options_choisies(article, request.data.get('option_ids'))
+        except ValueError as e:
+            return Response({'erreur': True, 'message': str(e)}, status=400)
 
         ligne = LignePanier.objects.create(
             panier=panier, article=article, variante_id=variante_id or None,
+            ligne_menu=ligne_menu,
             supplements=supplements, quantite=quantite, prix_unitaire=prix,
             note_speciale=request.data.get('note_speciale', ''),
         )
@@ -140,9 +201,39 @@ class ValiderPanierView(APIView):
     @transaction.atomic
     def post(self, request, pk=None):
         panier = get_object_or_404(Panier, pk=pk, user=request.user)
-        lignes = list(panier.lignes.select_related('article'))
+        lignes = list(panier.lignes.select_related('article', 'ligne_menu__menu__restaurant'))
         if not lignes:
             return Response({'erreur': True, 'message': 'Panier vide.'}, status=400)
+
+        # ── Validations restaurant (ouverture, délai limite, groupes d'options) ──
+        for l in lignes:
+            if l.ligne_menu_id:
+                restaurant = l.ligne_menu.menu.restaurant
+                if not services_restaurants.est_ouvert(restaurant):
+                    return Response(
+                        {'erreur': True, 'message': services_restaurants.message_statut(restaurant)},
+                        status=400)
+                if not services_restaurants.menu_commandable(l.ligne_menu.menu):
+                    return Response(
+                        {'erreur': True,
+                         'message': 'Heure limite de commande dépassée pour ce menu.'},
+                        status=400)
+            manquant = _groupe_options_non_respecte(l.article, l.supplements)
+            if manquant:
+                return Response(
+                    {'erreur': True,
+                     'message': f'« {manquant.libelle} » : choix invalide.'}, status=400)
+
+        # ── Décrément du stock journalier (menus), verrouillé, avant toute
+        # création — en cas d'échec, annule tout le reste de la validation. ──
+        try:
+            for l in lignes:
+                if l.ligne_menu_id:
+                    services_restaurants.decrementer_stock(
+                        l.ligne_menu, l.quantite, pour_date=timezone.localdate())
+        except services_restaurants.StockInsuffisantError as e:
+            transaction.set_rollback(True)
+            return Response({'erreur': True, 'message': str(e)}, status=400)
 
         sous_total = 0
         for l in lignes:
@@ -198,7 +289,7 @@ class ValiderPanierView(APIView):
                 commande=commande, article=l.article, nom_article=l.article.nom,
                 variante_nom=v_nom, supplements=l.supplements, quantite=l.quantite,
                 prix_unitaire=l.prix_unitaire, prix_ligne=(l.prix_unitaire + supp) * l.quantite,
-                note_speciale=l.note_speciale,
+                note_speciale=l.note_speciale, ligne_menu=l.ligne_menu,
             )
         panier.delete()  # vide le panier
 

@@ -38,6 +38,9 @@ class JournalModeration(ModeleBase):
         PUB_FORMULE_REACT = 'pub_formule_react', 'Formule pub réactivée'
         PUB_PARAMETRES_MAJ = 'pub_parametres_maj', 'Paramètres pub modifiés'
         PUB_STATS_VISIBLES = 'pub_stats_visibles', 'Stats pub : visibilité partenaire'
+        RESTO_FICHE_MODIF = 'resto_fiche_modif', 'Fiche restaurant modifiée (admin)'
+        RESTO_PLAT_MODIF = 'resto_plat_modif', 'Plat modifié (admin)'
+        RESTO_MENU_MODIF = 'resto_menu_modif', 'Menu modifié (admin)'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.
@@ -160,6 +163,10 @@ class PermissionsAdmin(ModeleBase):
     )
     gerer_commandes = models.BooleanField(
         'gérer les commandes (centre de gestion admin)',
+        default=False,
+    )
+    gerer_restaurants = models.BooleanField(
+        'gérer les restaurants (fiche, carte, menus) à la place du restaurateur',
         default=False,
     )
 

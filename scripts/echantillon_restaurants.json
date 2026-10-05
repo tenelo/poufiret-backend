@@ -1,0 +1,300 @@
+{
+  "_notes": [
+    "Réponses réelles en production (anonyme, sans authentification), capturées après correctif.",
+    "Restaurant 53 (Chez Capi) : fiche présente, mais AUCUN horaire, AUCUN plat, AUCUNE variante, AUCUN groupe d’options et AUCUN menu publié à la date de capture. Son statut renvoie donc « Horaires non renseignés » et sa carte est vide.",
+    "_simulation_* : même structure, générée dans une transaction annulée (aucune donnée conservée) pour montrer le rendu d’un restaurant peuplé (variante, groupe d’options, menu du jour)."
+  ],
+  "liste_restaurants": {
+    "url": "/api/v1/restaurants/?departement=1",
+    "statut": 200,
+    "reponse": {
+      "resultats": [
+        {
+          "id": 54,
+          "nom": "Chez Sara",
+          "logo": null,
+          "couverture": null,
+          "est_ouvert": false,
+          "prochaine_ouverture": null,
+          "message_statut": "Horaires non renseignés",
+          "delai_preparation_min": 20,
+          "services": [],
+          "specialites": [],
+          "menu_du_jour": null
+        },
+        {
+          "id": 53,
+          "nom": "Chez Capi",
+          "logo": null,
+          "couverture": null,
+          "est_ouvert": false,
+          "prochaine_ouverture": null,
+          "message_statut": "Horaires non renseignés",
+          "delai_preparation_min": 20,
+          "services": [],
+          "specialites": [],
+          "menu_du_jour": null
+        },
+        {
+          "id": 8,
+          "nom": "Resto Ferke Centre",
+          "logo": "https://poufiret.tenelo.cloud/media/partenaires/logos/logo_101.png",
+          "couverture": null,
+          "est_ouvert": false,
+          "prochaine_ouverture": null,
+          "message_statut": "Horaires non renseignés",
+          "delai_preparation_min": 20,
+          "services": [],
+          "specialites": [],
+          "menu_du_jour": null
+        }
+      ]
+    }
+  },
+  "detail_restaurant_53": {
+    "url": "/api/v1/restaurants/53/",
+    "statut": 200,
+    "reponse": {
+      "id": 53,
+      "nom": "Chez Capi",
+      "description": "",
+      "logo": null,
+      "couverture": null,
+      "adresse": "",
+      "quartier": "Résidencetiel",
+      "ville": "Ferké",
+      "telephone_pro": "0777782290",
+      "whatsapp": "0777782290",
+      "latitude": null,
+      "longitude": null,
+      "est_ouvert": false,
+      "prochaine_ouverture": null,
+      "message_statut": "Horaires non renseignés",
+      "fiche": {
+        "telephones": [],
+        "adresse_reperes": "",
+        "facebook": "",
+        "instagram": "",
+        "tiktok": "",
+        "specialites": [],
+        "services": [],
+        "delai_preparation_min": 20,
+        "horaires": []
+      },
+      "menus_du_jour": {
+        "midi": null,
+        "soir": null,
+        "journee": null
+      },
+      "menus_en_vigueur_maintenant": {},
+      "carte": []
+    }
+  },
+  "menus_du_jour": {
+    "url": "/api/v1/restaurants/menus-du-jour/?departement=1",
+    "statut": 200,
+    "reponse": {
+      "resultats": []
+    }
+  },
+  "_simulation_detail_restaurant_53": {
+    "url": "/api/v1/restaurants/53/",
+    "statut": 200,
+    "reponse": {
+      "id": 53,
+      "nom": "Chez Capi",
+      "description": "",
+      "logo": null,
+      "couverture": null,
+      "adresse": "",
+      "quartier": "Résidencetiel",
+      "ville": "Ferké",
+      "telephone_pro": "0777782290",
+      "whatsapp": "0777782290",
+      "latitude": null,
+      "longitude": null,
+      "est_ouvert": false,
+      "prochaine_ouverture": null,
+      "message_statut": "Horaires non renseignés",
+      "fiche": {
+        "telephones": [],
+        "adresse_reperes": "",
+        "facebook": "",
+        "instagram": "",
+        "tiktok": "",
+        "specialites": [],
+        "services": [],
+        "delai_preparation_min": 20,
+        "horaires": []
+      },
+      "menus_du_jour": {
+        "midi": {
+          "id": 34,
+          "restaurant": 18,
+          "nature": "hebdomadaire",
+          "jour_semaine": 1,
+          "date": null,
+          "service": "midi",
+          "heure_debut": "11:00:00",
+          "heure_fin": "15:00:00",
+          "titre": "Menu du jour",
+          "publie": true,
+          "heure_limite_commande": null,
+          "lignes": [
+            {
+              "id": 36,
+              "menu": 34,
+              "plat": 52,
+              "plat_nom": "Garba",
+              "plat_image": null,
+              "prix_menu": "2000",
+              "prix_effectif": "2000",
+              "stock_initial": null,
+              "stock_restant": null,
+              "est_epuise": false,
+              "ordre": 1,
+              "modifie_par_role": "",
+              "modifie_par_nom": "",
+              "modifie_le": "2026-10-05T11:11:19.627799Z"
+            }
+          ],
+          "commandable": true,
+          "modifie_par_role": "",
+          "modifie_par_nom": "",
+          "modifie_le": "2026-10-05T11:11:19.625516Z",
+          "cree_le": "2026-10-05T11:11:19.625620Z"
+        },
+        "soir": null,
+        "journee": null
+      },
+      "menus_en_vigueur_maintenant": {
+        "midi": {
+          "id": 34,
+          "restaurant": 18,
+          "nature": "hebdomadaire",
+          "jour_semaine": 1,
+          "date": null,
+          "service": "midi",
+          "heure_debut": "11:00:00",
+          "heure_fin": "15:00:00",
+          "titre": "Menu du jour",
+          "publie": true,
+          "heure_limite_commande": null,
+          "lignes": [
+            {
+              "id": 36,
+              "menu": 34,
+              "plat": 52,
+              "plat_nom": "Garba",
+              "plat_image": null,
+              "prix_menu": "2000",
+              "prix_effectif": "2000",
+              "stock_initial": null,
+              "stock_restant": null,
+              "est_epuise": false,
+              "ordre": 1,
+              "modifie_par_role": "",
+              "modifie_par_nom": "",
+              "modifie_le": "2026-10-05T11:11:19.627799Z"
+            }
+          ],
+          "commandable": true,
+          "modifie_par_role": "",
+          "modifie_par_nom": "",
+          "modifie_le": "2026-10-05T11:11:19.625516Z",
+          "cree_le": "2026-10-05T11:11:19.625620Z"
+        }
+      },
+      "carte": []
+    }
+  },
+  "_simulation_menus_du_jour": {
+    "url": "/api/v1/restaurants/menus-du-jour/?departement=1",
+    "statut": 200,
+    "reponse": {
+      "resultats": [
+        {
+          "partenaire_id": 53,
+          "nom": "Chez Capi",
+          "ville": "Ferké",
+          "menu": {
+            "id": 34,
+            "titre": "Menu du jour",
+            "service": "midi",
+            "plats": [
+              {
+                "nom": "Garba",
+                "prix": 2000.0,
+                "image": null
+              }
+            ]
+          },
+          "est_ouvert": false,
+          "prochaine_ouverture": null,
+          "message_statut": "Horaires non renseignés"
+        }
+      ]
+    }
+  },
+  "_simulation_panier": {
+    "url": "/api/v1/orders/paniers/",
+    "statut": 200,
+    "reponse": [
+      {
+        "id": 44,
+        "partenaire": 53,
+        "partenaire_nom": "Chez Capi",
+        "categorie": 1,
+        "categorie_nom": "Restaurants",
+        "lignes": [
+          {
+            "id": 60,
+            "article": 51,
+            "article_nom": "Grillade de poulet",
+            "variante_id": 8,
+            "variante_nom": "Demi",
+            "supplements": [
+              {
+                "id": 32,
+                "nom": "Attiéké",
+                "prix": 500,
+                "groupe_id": 19,
+                "groupe_libelle": "Garniture"
+              }
+            ],
+            "options": [
+              {
+                "nom": "Attiéké",
+                "prix_supplement": 500
+              }
+            ],
+            "ligne_menu": null,
+            "quantite": 2,
+            "prix_unitaire": "2500",
+            "prix_ligne": 6000.0,
+            "note_speciale": "",
+            "created_at": "2026-10-05T11:11:19.887626Z"
+          },
+          {
+            "id": 61,
+            "article": 52,
+            "article_nom": "Garba",
+            "variante_id": null,
+            "variante_nom": null,
+            "supplements": [],
+            "options": [],
+            "ligne_menu": 36,
+            "quantite": 1,
+            "prix_unitaire": "2000",
+            "prix_ligne": 2000.0,
+            "note_speciale": "",
+            "created_at": "2026-10-05T11:11:19.912219Z"
+          }
+        ],
+        "total": 8000.0,
+        "created_at": "2026-10-05T11:11:19.882455Z",
+        "updated_at": "2026-10-05T11:11:19.882470Z"
+      }
+    ]
+  }
+}

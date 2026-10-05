@@ -194,9 +194,11 @@ class DevenirPartenaireSerializer(serializers.ModelSerializer):
                 ).values_list('id', flat=True)[:1]
             )
         for rang, cid in enumerate(ids):
+            principale = rang == 0 and not PartenaireCategorie.objects.filter(
+                partenaire=profil, est_principale=True).exists()
             PartenaireCategorie.objects.get_or_create(
                 partenaire=profil, categorie_id=cid,
-                defaults={'est_principale': rang == 0},
+                defaults={'est_principale': principale},
             )
 
 
