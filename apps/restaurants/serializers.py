@@ -353,6 +353,8 @@ class RestaurantDetailPubliqueSerializer(serializers.Serializer):
     quartier_nom = serializers.CharField(source='quartier_geo.nom', read_only=True, default=None)
     latitude = serializers.SerializerMethodField()
     longitude = serializers.SerializerMethodField()
+    position_modifiee_le = serializers.DateTimeField(read_only=True)
+    position_modifiee_par_role = serializers.CharField(read_only=True, default=None)
     est_ouvert = serializers.SerializerMethodField()
     prochaine_ouverture = serializers.SerializerMethodField()
     message_statut = serializers.SerializerMethodField()

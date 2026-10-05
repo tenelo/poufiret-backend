@@ -58,13 +58,22 @@ class PartenaireListeAdminSerializer(serializers.ModelSerializer):
     localite_nom = serializers.CharField(source='localite.nom', read_only=True, default=None)
     quartier_id = serializers.IntegerField(source='quartier_geo.id', read_only=True, default=None)
     quartier_nom = serializers.CharField(source='quartier_geo.nom', read_only=True, default=None)
+    latitude = serializers.SerializerMethodField()
+    longitude = serializers.SerializerMethodField()
+
+    def get_latitude(self, obj):
+        return obj.localisation.y if obj.localisation else None
+
+    def get_longitude(self, obj):
+        return obj.localisation.x if obj.localisation else None
 
     class Meta:
         model = ProfilPartenaire
         fields = [
             'id', 'nom_commerce',
             'type_partenaire', 'type_partenaire_libelle',
-            'categories',
+            'categories', 'latitude', 'longitude',
+            'position_modifiee_le', 'position_modifiee_par_role',
             'ville', 'quartier', 'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom',
             'departement_nom',
             'telephone_compte', 'telephone_pro', 'whatsapp',

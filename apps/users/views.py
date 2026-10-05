@@ -382,7 +382,7 @@ class CreerPartenaireParAdminView(APIView):
     permission_classes = [permissions.IsAuthenticated, ADroitDe('creer_partenaire')]
 
     def post(self, request):
-        serializer = CreerPartenaireParAdminSerializer(data=request.data)
+        serializer = CreerPartenaireParAdminSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         profil = serializer.save()
 

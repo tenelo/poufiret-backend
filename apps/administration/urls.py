@@ -1,5 +1,11 @@
 from django.urls import include, path
 
+from .views_parametres import (
+    CategoriesParametresView, OrdreCategoriesView, RechercheCategorieDetailView,
+    RechercheCategoriesView, RechercheSansResultatView, TesterRechercheView,
+    TraiterSansResultatView, VisibiliteCategorieView,
+)
+from .views_position import PositionPartenaireView
 from .views_telephone import ChangerTelephonePartenaireView, HistoriqueTelephonePartenaireView
 from .views import (DashboardG5View, AppareilsExportView, ModerationView,
                     JournalModerationView, JournalExportView,
@@ -17,6 +23,18 @@ from .views import (DashboardG5View, AppareilsExportView, ModerationView,
 app_name = 'administration'
 
 urlpatterns = [
+    path('parametres/recherche/categories/', RechercheCategoriesView.as_view(), name='parametres-recherche-categories'),
+    path('parametres/recherche/categories/<int:pk>/', RechercheCategorieDetailView.as_view(),
+         name='parametres-recherche-categorie'),
+    path('parametres/recherche/sans-resultat/', RechercheSansResultatView.as_view(),
+         name='parametres-sans-resultat'),
+    path('parametres/recherche/sans-resultat/<int:pk>/traiter/', TraiterSansResultatView.as_view(),
+         name='parametres-sans-resultat-traiter'),
+    path('parametres/recherche/tester/', TesterRechercheView.as_view(), name='parametres-recherche-tester'),
+    path('parametres/categories/', CategoriesParametresView.as_view(), name='parametres-categories'),
+    path('parametres/categories/ordre/', OrdreCategoriesView.as_view(), name='parametres-categories-ordre'),
+    path('parametres/categories/<int:pk>/', VisibiliteCategorieView.as_view(),
+         name='parametres-categorie-visibilite'),
     path('mes-permissions/', MesPermissionsView.as_view(), name='mes-permissions'),
     path('dashboard/', DashboardG5View.as_view(), name='dashboard'),
     path('appareils/export/', AppareilsExportView.as_view(), name='appareils-export'),
@@ -31,6 +49,7 @@ urlpatterns = [
     path('partenaires/<int:pk>/faveur/', FaveurView.as_view(), name='partenaire-faveur'),
     path('partenaires/<int:pk>/changer-telephone/', ChangerTelephonePartenaireView.as_view(),
          name='partenaire-changer-telephone'),
+    path('partenaires/<int:pk>/position/', PositionPartenaireView.as_view(), name='partenaire-position'),
     path('partenaires/<int:pk>/historique-telephone/', HistoriqueTelephonePartenaireView.as_view(),
          name='partenaire-historique-telephone'),
     path('publicites/<uuid:pk>/faveur/', FaveurPubliciteView.as_view(), name='publicite-faveur'),

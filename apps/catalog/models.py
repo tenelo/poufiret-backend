@@ -807,7 +807,11 @@ class RechercheSansResultat(models.Model):
     vu_le = models.DateTimeField(_('dernière fois'), auto_now=True)
     traite = models.BooleanField(
         _('traité'), default=False,
-        help_text=_('Cocher une fois les mots-clés enrichis.'),
+        help_text=_('Cocher une fois les mots-clés enrichis. Tenu à jour avec statut.'),
+    )
+    statut = models.CharField(
+        _('statut'), max_length=12, default='a_traiter',
+        choices=[('a_traiter', _('À traiter')), ('traite', _('Traité')), ('ignore', _('Ignoré'))],
     )
 
     class Meta:

@@ -40,7 +40,7 @@ class CategorieViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = Categorie.objects.filter(est_archivee=False)
         if self.action == 'list':
-            qs = qs.filter(parent__isnull=True)
+            qs = qs.filter(parent__isnull=True, est_active=True)
         # Nombre de partenaires actifs : rattachés via PartenaireCategorie
         # OU ayant au moins un article actif dans la catégorie (logique annuaire).
         qs = annoter_nb_partenaires(qs)
@@ -493,128 +493,19 @@ class RechercheUnifieeView(_APIView):
     permission_classes = []
 
     def get(self, request):
-        from django.db.models import Q
-        from .models import (Article, Categorie, PartenaireCategorie,
-                             RechercheSansResultat)
+        from .recherche import journaliser_sans_resultat, rechercher
 
         terme = (request.query_params.get('q') or '').strip()
         if len(terme) < 2:
             return _Response({'categories': [], 'partenaires': [],
                               'articles': []})
 
-        def _url(champ):
-            if not champ:
-                return ''
-            try:
-                return request.build_absolute_uri(champ.url)
-            except Exception:
-                return ''
-
-        from apps.geo.portee import filtre_visibilite
-        dep_user = getattr(request.user, 'departement', None) \
-            if request.user.is_authenticated else None
         localites = request.query_params.get('localites', '')
         localites = [x for x in localites.split(',') if x] or None
-        visibilite = filtre_visibilite(dep_user, localites)
-
-        # 1) Categories : nom, description, ou mots-cles (synonymes).
-        categories = (Categorie.objects
-                      .filter(est_active=True)
-                      .filter(Q(nom__unaccent__icontains=terme)
-                              | Q(description__unaccent__icontains=terme)
-                              | Q(mots_cles__icontains=terme))
-                      .order_by('ordre', 'nom')[:10])
-        donnees_cat = [{
-            'id': c.id, 'nom': c.nom, 'slug': c.slug, 'icone': c.icone,
-            'mode_transaction': c.mode_transaction,
-            'affiche_catalogue': c.affiche_catalogue,
-        } for c in categories]
-
-        # 2) Partenaires visibles, par nom d'enseigne ou description.
-        partenaires = (_ProfilPartenaire.objects
-                       .filter(est_visible=True)
-                       .filter(visibilite)
-                       .filter(Q(nom_commerce__unaccent__icontains=terme)
-                               | Q(description__unaccent__icontains=terme))
-                       .select_related('departement__region')
-                       .order_by('-est_faveur', 'nom_commerce')[:15])
-        donnees_part = [{
-            'id': p.id, 'nom_commerce': p.nom_commerce,
-            'description': p.description,
-            'logo': _url(p.logo),
-            'photo_couverture': _url(p.photo_couverture),
-            'type_partenaire': p.get_type_partenaire_display(),
-            'departement': p.departement.nom if p.departement_id else '',
-        } for p in partenaires]
-
-        # 3) Articles actifs de partenaires visibles.
-        # On exclut les categories qui ne fonctionnent pas par catalogue
-        # (plomberie, maconnerie...) : leurs "articles" sont des
-        # prestations, pas des produits achetables. Le client doit y
-        # arriver par la categorie, qui mene a la demande d'intervention.
-        # Meme regle de portee, mais appliquee au partenaire proprietaire
-        # de l'article (prefixe 'partenaire__').
-        visibilite_art = filtre_visibilite(dep_user, localites)
-        from django.db.models import Q as _Q
-        def _prefixer(q, prefixe):
-            """Recree un Q en prefixant chaque cle (ex. plan__portee ->
-            partenaire__plan__portee), pour filtrer les articles via leur
-            partenaire."""
-            nouveau = _Q()
-            nouveau.connector = q.connector
-            nouveau.negated = q.negated
-            for enfant in q.children:
-                if isinstance(enfant, _Q):
-                    nouveau.children.append(_prefixer(enfant, prefixe))
-                else:
-                    cle, val = enfant
-                    nouveau.children.append((prefixe + cle, val))
-            return nouveau
-        articles = (Article.objects
-                    .filter(est_actif=True, partenaire__est_visible=True,
-                            categorie__affiche_catalogue=True)
-                    .filter(_prefixer(visibilite_art, 'partenaire__'))
-                    .filter(Q(nom__unaccent__icontains=terme)
-                            | Q(description__unaccent__icontains=terme))
-                    .select_related('partenaire__departement__region')
-                    .order_by('-nb_vues')[:20])
-        donnees_art = [{
-            'id': a.id, 'nom': a.nom, 'slug': a.slug,
-            'prix': str(a.prix) if a.prix is not None else '0',
-            'prix_promotion': (str(a.prix_promotion)
-                               if a.prix_promotion is not None else None),
-            'est_en_promotion': a.est_en_promotion,
-            'pourcentage_reduction': a.pourcentage_reduction,
-            'prix_effectif': (str(a.prix_effectif)
-                              if a.prix_effectif is not None else '0'),
-            'partenaire_nom': a.partenaire.nom_commerce,
-            'departement': (a.partenaire.departement.nom
-                            if a.partenaire.departement_id else ''),
-            'image_principale': _url(
-                a.images.filter(est_principale=True).first().image
-                if a.images.filter(est_principale=True).exists()
-                else (a.images.first().image if a.images.exists() else None)
-            ),
-        } for a in articles]
-
-        # Journal : un terme sans aucun resultat revele le vocabulaire
-        # reel des clients, a reinjecter dans mots_cles.
-        if not (donnees_cat or donnees_part or donnees_art):
-            ligne, cree = RechercheSansResultat.objects.get_or_create(
-                terme=terme.lower(),
-                defaults={'utilisateur': request.user
-                          if request.user.is_authenticated else None},
-            )
-            if not cree:
-                from django.db.models import F
-                RechercheSansResultat.objects.filter(pk=ligne.pk).update(
-                    nb_occurrences=F('nb_occurrences') + 1)
-
-        return _Response({
-            'categories': donnees_cat,
-            'partenaires': donnees_part,
-            'articles': donnees_art,
-        })
+        donnees = rechercher(request, terme, localites)
+        if not (donnees['categories'] or donnees['partenaires'] or donnees['articles']):
+            journaliser_sans_resultat(request, terme)
+        return _Response(donnees)
 
 
 class CorrespondancesTypesView(_APIView):

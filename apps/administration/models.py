@@ -43,6 +43,12 @@ class JournalModeration(ModeleBase):
         RESTO_MENU_MODIF = 'resto_menu_modif', 'Menu modifié (admin)'
         PARTENAIRE_TELEPHONE_MODIF = 'partenaire_telephone_modif', 'Numéro de connexion partenaire modifié'
         GEO_RAPPROCHEMENT_PARTENAIRE = 'geo_rapprochement_partenaire', 'Géographie partenaire rapprochée'
+        PARTENAIRE_POSITION = 'partenaire_position', 'Position GPS partenaire modifiée'
+        PARAM_MOTS_CLES = 'param_mots_cles', 'Paramètres : mots-clés de catégorie modifiés'
+        PARAM_ORDRE_CATEG = 'param_ordre_categ', 'Paramètres : ordre des catégories modifié'
+        PARAM_CATEG_VISIB = 'param_categorie_visib', 'Paramètres : catégorie affichée ou masquée'
+        PARAM_RECHERCHE_TRAITE = 'param_recherche_traite', 'Paramètres : terme sans résultat traité'
+        PARAM_RECHERCHE_IGNORE = 'param_recherche_ignore', 'Paramètres : terme sans résultat ignoré'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.
@@ -173,6 +179,10 @@ class PermissionsAdmin(ModeleBase):
     )
     modifier_identifiant_partenaire = models.BooleanField(
         'modifier le numéro de connexion d\'un partenaire',
+        default=False,
+    )
+    gerer_parametres = models.BooleanField(
+        'gérer les paramètres (dictionnaire de recherche, ordre des catégories)',
         default=False,
     )
 

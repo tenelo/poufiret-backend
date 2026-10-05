@@ -371,6 +371,13 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
         blank=True, null=True,
         help_text=_('Coordonnées GPS (optionnel, peut être ajouté plus tard).'),
     )
+    position_modifiee_le = models.DateTimeField(
+        _('position modifiée le'), blank=True, null=True,
+    )
+    position_modifiee_par_role = models.CharField(
+        _('position modifiée par (rôle)'), max_length=12, blank=True,
+        help_text=_("'admin' ou 'partenaire'."),
+    )
 
     # ── Contact professionnel ────────────────────────────────────────
     nb_vues = models.PositiveIntegerField(

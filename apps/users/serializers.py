@@ -1,13 +1,13 @@
 """
 Serializers de l'app users : authentification et profil.
 """
-from django.contrib.gis.geos import Point
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, SessionAppareil, ProfilPartenaire, NumeroVerifie, CodeOTP
 from apps.geo.coherence import verifier_coherence
 from apps.geo.models import Localite, Quartier
+from .position import appliquer_position, position_dict, verifier_paire
 
 
 def _champs_geo():
@@ -342,6 +342,7 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
             'departement', 'departement_nom', 'region_nom',
             # Lecture + écriture (voir latitude/longitude ci-dessus)
             'latitude', 'longitude',
+            'position_modifiee_le', 'position_modifiee_par_role', 'avertissement_position',
         ]
         read_only_fields = [
             'id', 'statut', 'statut_libelle', 'est_visible', 'badge_certifie',
@@ -349,8 +350,13 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
             'type_partenaire_libelle', 'nb_photos_par_article',
             'nb_articles_max', 'portee_forfait',
             'departement', 'departement_nom', 'region_nom',
-            'quartier', 'ville',
+            'quartier', 'ville', 'position_modifiee_le', 'position_modifiee_par_role',
         ]
+
+    avertissement_position = serializers.SerializerMethodField()
+
+    def get_avertissement_position(self, obj):
+        return getattr(obj, '_avertissement_position', None)
 
     def validate(self, attrs):
         return _verifier_geo(attrs, self.instance.departement,
@@ -387,8 +393,7 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
                     'latitude': ['latitude et longitude doivent être fournis ensemble.'],
                     'longitude': ['latitude et longitude doivent être fournis ensemble.'],
                 })
-            instance.localisation = None if lat is None else Point(lng, lat, srid=4326)
-            instance.save(update_fields=['localisation', 'updated_at'])
+            instance._avertissement_position = appliquer_position(instance, lat, lng, 'partenaire')
 
         return super().update(instance, validated_data)
 
@@ -743,6 +748,8 @@ class CreerPartenaireParAdminSerializer(serializers.Serializer):
     adresse = serializers.CharField(required=False, allow_blank=True)
     secteur = serializers.CharField(required=False, allow_blank=True)
     localite_id, quartier_id = _champs_geo()
+    latitude = serializers.FloatField(required=False, allow_null=True, min_value=-90, max_value=90)
+    longitude = serializers.FloatField(required=False, allow_null=True, min_value=-180, max_value=180)
     departement = serializers.PrimaryKeyRelatedField(
         queryset=__import__('apps.geo.models', fromlist=['Departement']).Departement.objects.all(),
         required=False, allow_null=True,
@@ -781,6 +788,7 @@ class CreerPartenaireParAdminSerializer(serializers.Serializer):
         return ids
 
     def validate(self, attrs):
+        verifier_paire(attrs)
         departement = attrs.get('departement')
         localite = attrs.get('localite')
         if departement is None and localite is not None:
@@ -794,6 +802,8 @@ class CreerPartenaireParAdminSerializer(serializers.Serializer):
 
         categories = validated_data.pop('categories', [])
         plan_id = validated_data.pop('plan_id', None)
+        latitude = validated_data.pop('latitude', None)
+        longitude = validated_data.pop('longitude', None)
         tel = validated_data.pop('telephone')
         prenom = validated_data.pop('prenom', '')
         nom = validated_data.pop('nom', '')
@@ -842,6 +852,14 @@ class CreerPartenaireParAdminSerializer(serializers.Serializer):
                 **validated_data,
             )
             DevenirPartenaireSerializer._rattacher_categories(profil, categories)
+            self._avertissement_position = None
+            if latitude is not None:
+                self._avertissement_position = appliquer_position(profil, latitude, longitude, 'admin')
+                from apps.administration.moderation import _journaliser
+                from apps.administration.models import JournalModeration
+                acteur = self.context['request'].user if self.context.get('request') else None
+                _journaliser(acteur, user, JournalModeration.Action.PARTENAIRE_POSITION,
+                             f'Position initiale : {latitude:.6f},{longitude:.6f}')
 
         self._pin_clair = pin
         self._user = user
@@ -858,4 +876,5 @@ class CreerPartenaireParAdminSerializer(serializers.Serializer):
             'message': (f"Partenaire créé. Communiquez ce code au partenaire : "
                         f"{self._pin_clair}. Il devra le changer à sa première "
                         f"connexion."),
+            'avertissement_position': getattr(self, '_avertissement_position', None),
         }
