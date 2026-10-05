@@ -82,6 +82,12 @@ try:
         ok('quartier d une autre localite -> 400', r.status_code == 400 and 'quartier_id' in r.content.decode(), r.content)
         r = send('patch', url, {'quartier_id': q_ferke.id}, part_user)
         ok('quartier sans localite -> 400', r.status_code == 400, r.content)
+        ok('cles d erreur : localite_id / quartier_id, jamais non_field_errors',
+           set(send('patch', url, {'localite_id': loc_kong_qa.id}, part_user).json()['details']) == {'localite_id'}
+           and set(send('patch', url, {'localite_id': loc_ferke_qa.id, 'quartier_id': q_kong.id}, part_user).json()['details']) == {'quartier_id'}
+           and set(send('patch', url, {'quartier_id': q_ferke.id}, part_user).json()['details']) == {'quartier_id'}
+           and 'non_field_errors' not in send('patch', url, {'localite_id': loc_kong_qa.id}, part_user).content.decode(),
+           'cles inattendues')
 
         print('=== 2. ECRITURE + SYNCHRONISATION DES TEXTES ===')
         r = send('patch', url, {'localite_id': loc_ferke_qa.id, 'quartier_id': q_ferke.id}, part_user)

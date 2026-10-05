@@ -119,6 +119,15 @@ try:
         d = anon(f'/api/v1/restaurants/{chez_sara.id}/').json()
         ok('detail : menus_du_jour.midi renseigne', d['menus_du_jour']['midi'] is not None, d['menus_du_jour'])
 
+        print('=== 8b. LOCALISATION DANS LA LISTE ET LE DETAIL ===')
+        d = anon(f'/api/v1/restaurants/{chez_sara.id}/').json()
+        ok('detail : localite_id/localite_nom/quartier_id/quartier_nom presents',
+           {'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom'} <= set(d), d.keys())
+        ligne = next(x for x in anon(f'/api/v1/restaurants/?departement={ferke}').json()['resultats']
+                     if x['id'] == chez_sara.id)
+        ok('liste : localite_nom/quartier_nom presents',
+           {'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom'} <= set(ligne), ligne.keys())
+
         print('=== 9. LATITUDE / LONGITUDE ===')
         d = anon(f'/api/v1/restaurants/{chez_sara.id}/').json()
         ok('sans localisation -> latitude/longitude null', d['latitude'] is None and d['longitude'] is None, d)

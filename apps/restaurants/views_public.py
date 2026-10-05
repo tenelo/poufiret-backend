@@ -30,7 +30,7 @@ def _partenaires_restaurants(request):
     qs = (ProfilPartenaire.objects
           .filter(type_partenaire__in=services.TYPES_RESTAURATION,
                   statut=ProfilPartenaire.Statut.ACTIF, est_visible=True)
-          .select_related('departement__region')
+          .select_related('departement__region', 'localite', 'quartier_geo')
           .filter(filtre_visibilite(_departement_demande(request))))
     partenaires = list(qs)
     fiches = services.fiches_de(partenaires)
@@ -57,7 +57,7 @@ class RestaurantDetailPublicView(APIView):
     def get(self, request, pk=None):
         partenaire = (ProfilPartenaire.objects
                       .filter(pk=pk, type_partenaire__in=services.TYPES_RESTAURATION)
-                      .select_related('departement')
+                      .select_related('departement', 'localite', 'quartier_geo')
                       .prefetch_related('horaires',
                                         Prefetch('sections_menu', queryset=SectionMenu.objects.filter(est_active=True)
                                                  .prefetch_related(Prefetch('articles', queryset=Article.objects.filter(
