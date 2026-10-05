@@ -41,6 +41,7 @@ class JournalModeration(ModeleBase):
         RESTO_FICHE_MODIF = 'resto_fiche_modif', 'Fiche restaurant modifiée (admin)'
         RESTO_PLAT_MODIF = 'resto_plat_modif', 'Plat modifié (admin)'
         RESTO_MENU_MODIF = 'resto_menu_modif', 'Menu modifié (admin)'
+        PARTENAIRE_TELEPHONE_MODIF = 'partenaire_telephone_modif', 'Numéro de connexion partenaire modifié'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.
@@ -64,7 +65,7 @@ class JournalModeration(ModeleBase):
                   'cible est supprimée définitivement).',
     )
     cible_role = models.CharField('rôle de la cible', max_length=20, blank=True)
-    action = models.CharField('action', max_length=20, choices=Action.choices)
+    action = models.CharField('action', max_length=30, choices=Action.choices)
     motif = models.CharField('motif', max_length=255, blank=True)
 
     class Meta:
@@ -167,6 +168,10 @@ class PermissionsAdmin(ModeleBase):
     )
     gerer_restaurants = models.BooleanField(
         'gérer les restaurants (fiche, carte, menus) à la place du restaurateur',
+        default=False,
+    )
+    modifier_identifiant_partenaire = models.BooleanField(
+        'modifier le numéro de connexion d\'un partenaire',
         default=False,
     )
 

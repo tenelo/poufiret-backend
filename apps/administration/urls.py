@@ -1,5 +1,6 @@
 from django.urls import include, path
 
+from .views_telephone import ChangerTelephonePartenaireView, HistoriqueTelephonePartenaireView
 from .views import (DashboardG5View, AppareilsExportView, ModerationView,
                     JournalModerationView, JournalExportView,
                     IndicateursPartenairesView, PartenairesExportView,
@@ -28,6 +29,10 @@ urlpatterns = [
     path('partenaires/liste/export/', PartenairesListeAdminExportView.as_view(),
          name='partenaires-liste-export'),
     path('partenaires/<int:pk>/faveur/', FaveurView.as_view(), name='partenaire-faveur'),
+    path('partenaires/<int:pk>/changer-telephone/', ChangerTelephonePartenaireView.as_view(),
+         name='partenaire-changer-telephone'),
+    path('partenaires/<int:pk>/historique-telephone/', HistoriqueTelephonePartenaireView.as_view(),
+         name='partenaire-historique-telephone'),
     path('publicites/<uuid:pk>/faveur/', FaveurPubliciteView.as_view(), name='publicite-faveur'),
     path('publicites/<uuid:pk>/formule/', ChangerFormulePubliciteView.as_view(), name='publicite-formule'),
     path('partenaires/recherche/', RecherchePartenairesView.as_view(), name='partenaires-recherche'),
