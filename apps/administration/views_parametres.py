@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.catalog.models import Categorie, RechercheSansResultat, annoter_nb_partenaires
-from apps.catalog.recherche import normaliser_terme, rechercher
+from apps.catalog.recherche import LONGUEUR_MOT_MAX, MOTS_MAX, normaliser_mots_cles, normaliser_terme, rechercher
 from apps.core.permissions import ADroitDe
 
 from .moderation import _journaliser
@@ -19,8 +19,6 @@ from .models import JournalModeration
 
 _PERMISSION = [IsAuthenticated, ADroitDe('gerer_parametres')]
 _STATUTS = ('a_traiter', 'traite', 'ignore')
-_LONGUEUR_MOT_MAX = 60
-_MOTS_MAX = 100
 
 
 def _parser_date(valeur):
@@ -34,20 +32,6 @@ def _parser_date(valeur):
 
 def _erreur(champ, message, statut=400):
     return Response({'erreur': True, 'details': {champ: [message]}}, status=statut)
-
-
-def _mots_normalises(valeur):
-    """Liste de mots-clés : minuscules, espaces unifiés, sans doublon ni vide."""
-    if not isinstance(valeur, list) or not all(isinstance(m, str) for m in valeur):
-        return None
-    mots = []
-    for m in valeur:
-        n = normaliser_terme(m)
-        if n and n not in mots:
-            mots.append(n)
-    if len(mots) > _MOTS_MAX or any(len(m) > _LONGUEUR_MOT_MAX for m in mots):
-        return None
-    return mots
 
 
 def _categorie_mots(c):
@@ -75,10 +59,10 @@ class RechercheCategorieDetailView(APIView):
             return Response({'erreur': True, 'message': 'Catégorie introuvable.'}, status=404)
         if 'mots_cles' not in request.data:
             return _erreur('mots_cles', 'Champ obligatoire.')
-        mots = _mots_normalises(request.data.get('mots_cles'))
+        mots = normaliser_mots_cles(request.data.get('mots_cles'))
         if mots is None:
-            return _erreur('mots_cles', f'Liste de textes attendue (max {_MOTS_MAX} mots, '
-                                        f'{_LONGUEUR_MOT_MAX} caractères chacun).')
+            return _erreur('mots_cles', f'Liste de textes attendue (max {MOTS_MAX} mots, '
+                                        f'{LONGUEUR_MOT_MAX} caractères chacun).')
         categorie.mots_cles = mots
         categorie.save(update_fields=['mots_cles'])
         _journaliser(request.user, None, JournalModeration.Action.PARAM_MOTS_CLES,
@@ -163,7 +147,7 @@ class TraiterSansResultatView(APIView):
                 mots = list(categorie.mots_cles or [])
                 if cle not in mots:
                     mots.append(cle)
-                categorie.mots_cles = _mots_normalises(mots) or []
+                categorie.mots_cles = normaliser_mots_cles(mots) or []
                 categorie.save(update_fields=['mots_cles'])
                 nouveau_statut = 'traite'
                 action_journal = JournalModeration.Action.PARAM_RECHERCHE_TRAITE

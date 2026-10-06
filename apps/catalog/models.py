@@ -153,7 +153,7 @@ def prefetch_enfants_actifs(niveaux=3):
     """
     from django.db.models import Prefetch
     qs = annoter_nb_partenaires(
-        Categorie.objects.filter(est_active=True)).order_by('ordre', 'nom')
+        Categorie.objects.filter(est_active=True, est_archivee=False)).order_by('ordre', 'nom')
     if niveaux > 1:
         qs = qs.prefetch_related(prefetch_enfants_actifs(niveaux - 1))
     return Prefetch('enfants', queryset=qs, to_attr='enfants_actifs')

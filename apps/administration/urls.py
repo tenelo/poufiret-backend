@@ -5,6 +5,10 @@ from .views_parametres import (
     RechercheCategoriesView, RechercheSansResultatView, TesterRechercheView,
     TraiterSansResultatView, VisibiliteCategorieView,
 )
+from .views_categories import (
+    CategoriesAdminListCreateView, CategorieAdminDetailView, CategorieArchiverView,
+    TypesPartenaireCategoriesView,
+)
 from .views_position import PositionPartenaireView
 from .views_telephone import ChangerTelephonePartenaireView, HistoriqueTelephonePartenaireView
 from .views import (DashboardG5View, AppareilsExportView, ModerationView,
@@ -23,6 +27,11 @@ from .views import (DashboardG5View, AppareilsExportView, ModerationView,
 app_name = 'administration'
 
 urlpatterns = [
+    path('categories/', CategoriesAdminListCreateView.as_view(), name='categories'),
+    path('categories/ordre/', OrdreCategoriesView.as_view(), name='categories-ordre'),
+    path('categories/types-partenaire/', TypesPartenaireCategoriesView.as_view(), name='categories-types'),
+    path('categories/<int:pk>/', CategorieAdminDetailView.as_view(), name='categorie-detail'),
+    path('categories/<int:pk>/archiver/', CategorieArchiverView.as_view(), name='categorie-archiver'),
     path('parametres/recherche/categories/', RechercheCategoriesView.as_view(), name='parametres-recherche-categories'),
     path('parametres/recherche/categories/<int:pk>/', RechercheCategorieDetailView.as_view(),
          name='parametres-recherche-categorie'),

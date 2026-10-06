@@ -11,8 +11,27 @@ from apps.users.models import ProfilPartenaire
 from .models import Article, Categorie, RechercheSansResultat
 
 
+MOTS_MAX = 100
+LONGUEUR_MOT_MAX = 60
+
+
 def normaliser_terme(terme):
     return ' '.join((terme or '').lower().split())
+
+
+def normaliser_mots_cles(valeur):
+    """Liste de mots-clés : minuscules, espaces unifiés, sans doublon ni vide.
+    None si la valeur n'est pas une liste de textes ou dépasse les bornes."""
+    if not isinstance(valeur, list) or not all(isinstance(m, str) for m in valeur):
+        return None
+    mots = []
+    for m in valeur:
+        n = normaliser_terme(m)
+        if n and n not in mots:
+            mots.append(n)
+    if len(mots) > MOTS_MAX or any(len(m) > LONGUEUR_MOT_MAX for m in mots):
+        return None
+    return mots
 
 
 def _url(request, champ):
@@ -44,7 +63,7 @@ def rechercher(request, terme, localites=None):
     visibilite = filtre_visibilite(dep_user, localites)
 
     categories = (Categorie.objects
-                  .filter(est_active=True)
+                  .filter(est_active=True, est_archivee=False)
                   .filter(Q(nom__unaccent__icontains=terme)
                           | Q(description__unaccent__icontains=terme)
                           | Q(mots_cles__icontains=terme))

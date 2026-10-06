@@ -26,7 +26,7 @@ class CategorieSerializer(serializers.ModelSerializer):
         pre = getattr(obj, 'enfants_actifs', None)
         if pre is None:
             pre = list(annoter_nb_partenaires(
-                obj.enfants.filter(est_active=True)).order_by('ordre', 'nom'))
+                obj.enfants.filter(est_active=True, est_archivee=False)).order_by('ordre', 'nom'))
             obj.enfants_actifs = pre  # evite de relire pour nb_partenaires
         return pre
 
