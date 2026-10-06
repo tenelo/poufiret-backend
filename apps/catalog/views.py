@@ -395,7 +395,7 @@ class PartenairesParCategorieView(_APIView):
         partenaires = (_ProfilPartenaire.objects
                        .filter(id__in=list(ids), est_visible=True)
                        .filter(filtre_visibilite(dep_user, localites))
-                       .select_related('departement__region')
+                       .select_related('departement__region', 'localite', 'quartier_geo')
                        .order_by('-est_faveur', 'nom_commerce'))
         def _url(champ):
             if not champ:
@@ -435,6 +435,9 @@ class PartenairesParCategorieView(_APIView):
                 'longitude': lng,
                 'adresse': p.adresse,
                 'quartier': p.quartier,
+                'localite_nom': p.localite.nom if p.localite_id else None,
+                'quartier_nom': p.quartier_geo.nom if p.quartier_geo_id else None,
+                'secteur': p.secteur,
             })
         return _Response(donnees)
 

@@ -44,6 +44,7 @@ class JournalModeration(ModeleBase):
         PARTENAIRE_TELEPHONE_MODIF = 'partenaire_telephone_modif', 'Numéro de connexion partenaire modifié'
         GEO_RAPPROCHEMENT_PARTENAIRE = 'geo_rapprochement_partenaire', 'Géographie partenaire rapprochée'
         PARTENAIRE_POSITION = 'partenaire_position', 'Position GPS partenaire modifiée'
+        PARTENAIRE_EDITION = 'partenaire_edition', 'Fiche partenaire modifiée (admin)'
         CAT_CREATION = 'cat_creation', 'Catégorie créée'
         CAT_MODIFICATION = 'cat_modification', 'Catégorie modifiée'
         CAT_SUPPRESSION = 'cat_suppression', 'Catégorie supprimée'

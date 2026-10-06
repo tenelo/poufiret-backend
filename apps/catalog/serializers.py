@@ -10,13 +10,24 @@ from .models import (
 class CategorieSerializer(serializers.ModelSerializer):
     enfants = serializers.SerializerMethodField()
     nb_partenaires = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model = Categorie
-        fields = ['id', 'nom', 'slug', 'description', 'icone', 'image_couverture',
+        fields = ['id', 'nom', 'slug', 'description', 'icone', 'image_couverture', 'image',
                   'parent', 'mode_transaction', 'types_articles', 'affiche_catalogue', 'module_flutter', 'ordre',
                   'est_active', 'nb_partenaires', 'enfants',
                   'types_partenaire']
+
+    def get_image(self, obj):
+        if not obj.image_couverture:
+            return None
+        try:
+            url = obj.image_couverture.url
+        except ValueError:
+            return None
+        requete = self.context.get('request')
+        return requete.build_absolute_uri(url) if requete else url
 
     @staticmethod
     def _enfants_actifs(obj):

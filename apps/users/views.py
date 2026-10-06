@@ -144,7 +144,7 @@ class VitrinePartenaireView(generics.RetrieveAPIView):
         return ProfilPartenaire.objects.filter(
             statut=ProfilPartenaire.Statut.ACTIF,
             est_visible=True,
-        )
+        ).select_related('departement__region', 'localite', 'quartier_geo')
 
 
 class MonProfilPartenaireView(generics.RetrieveUpdateAPIView):

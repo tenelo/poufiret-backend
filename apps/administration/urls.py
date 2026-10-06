@@ -9,6 +9,7 @@ from .views_categories import (
     CategoriesAdminListCreateView, CategorieAdminDetailView, CategorieArchiverView,
     TypesPartenaireCategoriesView,
 )
+from .views_edition import PartenaireEditionView
 from .views_position import PositionPartenaireView
 from .views_telephone import ChangerTelephonePartenaireView, HistoriqueTelephonePartenaireView
 from .views import (DashboardG5View, AppareilsExportView, ModerationView,
@@ -58,6 +59,7 @@ urlpatterns = [
     path('partenaires/<int:pk>/faveur/', FaveurView.as_view(), name='partenaire-faveur'),
     path('partenaires/<int:pk>/changer-telephone/', ChangerTelephonePartenaireView.as_view(),
          name='partenaire-changer-telephone'),
+    path('partenaires/<int:pk>/edition/', PartenaireEditionView.as_view(), name='partenaire-edition'),
     path('partenaires/<int:pk>/position/', PositionPartenaireView.as_view(), name='partenaire-position'),
     path('partenaires/<int:pk>/historique-telephone/', HistoriqueTelephonePartenaireView.as_view(),
          name='partenaire-historique-telephone'),
