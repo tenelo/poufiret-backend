@@ -45,6 +45,8 @@ class JournalModeration(ModeleBase):
         GEO_RAPPROCHEMENT_PARTENAIRE = 'geo_rapprochement_partenaire', 'Géographie partenaire rapprochée'
         PARTENAIRE_POSITION = 'partenaire_position', 'Position GPS partenaire modifiée'
         PARTENAIRE_EDITION = 'partenaire_edition', 'Fiche partenaire modifiée (admin)'
+        LOC_LOGEMENT_MODIF = 'loc_logement_modif', 'Logement modifié (admin)'
+        LOC_DISPO_MODIF = 'loc_dispo_modif', 'Disponibilité de logement modifiée (admin)'
         CAT_CREATION = 'cat_creation', 'Catégorie créée'
         CAT_MODIFICATION = 'cat_modification', 'Catégorie modifiée'
         CAT_SUPPRESSION = 'cat_suppression', 'Catégorie supprimée'
@@ -189,6 +191,14 @@ class PermissionsAdmin(ModeleBase):
     )
     gerer_parametres = models.BooleanField(
         'gérer les paramètres (dictionnaire de recherche, ordre des catégories)',
+        default=False,
+    )
+    gerer_locations = models.BooleanField(
+        'gérer les locations (logements) à la place du loueur',
+        default=False,
+    )
+    gerer_reservations = models.BooleanField(
+        "gérer le centre de demandes (visite/réservation)",
         default=False,
     )
 

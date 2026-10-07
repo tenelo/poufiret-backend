@@ -26,6 +26,8 @@ urlpatterns = [
     path('api/v1/version/', include('apps.version.urls')),
     path('api/v1/administration/', include('apps.administration.urls')),
     path('api/v1/restaurants/', include('apps.restaurants.urls')),
+    path('api/v1/locations/', include('apps.locations.urls')),
+    path('api/v1/reservations/', include('apps.reservations.urls')),
 ]
 
 # Service des fichiers médias en développement uniquement

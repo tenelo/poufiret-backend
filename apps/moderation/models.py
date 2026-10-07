@@ -233,6 +233,7 @@ class Notification(models.Model):
         PUB_A_VALIDER = 'pub_a_valider', _('Campagne pub à valider')
         COMMANDE_ANNULEE_CLIENT = 'commande_annulee_client', _('Commande annulée par le client')
         COMPTE_TELEPHONE_MODIFIE = 'compte_telephone_modifie', _('Numéro de connexion modifié')
+        RESERVATION_NOUVELLE = 'reservation_nouvelle', _('Nouvelle demande (visite/réservation)')
 
     user = models.ForeignKey(
         User, on_delete=models.CASCADE,

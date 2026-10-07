@@ -412,7 +412,28 @@ class Article(models.Model):
 # ═══════════════════════════════════════════════════════════════════════
 
 class Logement(models.Model):
-    """Détails d'un article de type 'logement' (location maison, résidence)."""
+    """Détails d'un article de type 'logement' (location maison, résidence).
+
+    Étendu pour Locations Phase M1 (maisons à louer) : champs du loyer long
+    terme (caution_mois/avance_mois/frais_agence, disponibilité, localisation
+    propre au bien) ajoutés additivement. `caution` (montant) et
+    `duree_min_jours` restent pour un usage courte-durée générique
+    (hôtelier), non retirés.
+    """
+
+    class TypeLogement(models.TextChoices):
+        STUDIO = 'studio', _('Studio')
+        CHAMBRE_SALON = 'chambre_salon', _('Chambre-salon')
+        APPARTEMENT = 'appartement', _('Appartement')
+        VILLA = 'villa', _('Villa')
+        MAISON_BASSE = 'maison_basse', _('Maison basse')
+        DUPLEX = 'duplex', _('Duplex')
+        AUTRE = 'autre', _('Autre')
+
+    class Disponibilite(models.TextChoices):
+        DISPONIBLE = 'disponible', _('Disponible')
+        RESERVE = 'reserve', _('Réservé')
+        LOUE = 'loue', _('Loué')
 
     article = models.OneToOneField(
         Article,
@@ -420,7 +441,10 @@ class Logement(models.Model):
         related_name='logement',
         verbose_name=_('article'),
     )
+    type_logement = models.CharField(
+        _('type de logement'), max_length=20, choices=TypeLogement.choices, blank=True)
     nb_chambres = models.IntegerField(_('nombre de chambres'), default=1)
+    nb_salons = models.IntegerField(_('nombre de salons'), default=1)
     nb_sdb = models.IntegerField(_('nombre de salles de bain'), default=1)
     surface_m2 = models.IntegerField(_('surface (m²)'), blank=True, null=True)
     meuble = models.BooleanField(_('meublé'), default=False)
@@ -438,6 +462,40 @@ class Logement(models.Model):
         default=list, blank=True,
         help_text=_('Liste d\'équipements : ["wifi", "clim", "parking"…]'),
     )
+
+    # ── Locations Phase M1 : location longue durée (loyer mensuel) ───────
+    caution_mois = models.PositiveSmallIntegerField(
+        _('caution (mois de loyer)'), blank=True, null=True)
+    avance_mois = models.PositiveSmallIntegerField(
+        _('avance (mois de loyer)'), blank=True, null=True)
+    frais_agence = models.DecimalField(
+        _('frais d\'agence (FCFA)'), max_digits=12, decimal_places=0, blank=True, null=True)
+    compteur_eau_individuel = models.BooleanField(_('compteur eau individuel'), default=False)
+    compteur_electricite_individuel = models.BooleanField(
+        _('compteur électricité individuel'), default=False)
+    disponibilite = models.CharField(
+        _('disponibilité'), max_length=10, choices=Disponibilite.choices,
+        default=Disponibilite.DISPONIBLE)
+    disponible_a_partir_du = models.DateField(_('disponible à partir du'), blank=True, null=True)
+
+    # Localisation PROPRE au logement (distincte du bureau du loueur).
+    localite = models.ForeignKey(
+        'geo.Localite', on_delete=models.PROTECT,
+        blank=True, null=True, related_name='logements', verbose_name=_('localité'))
+    quartier_geo = models.ForeignKey(
+        'geo.Quartier', on_delete=models.PROTECT,
+        blank=True, null=True, related_name='logements', verbose_name=_('quartier'))
+    secteur = models.CharField(_('secteur'), max_length=100, blank=True)
+    adresse_reperes = models.TextField(_('adresse / repères'), blank=True)
+    localisation = gis_models.PointField(
+        _('position GPS'), geography=True, blank=True, null=True)
+
+    # Traçabilité (loueur, ou admin à sa place) — même convention que
+    # apps.restaurants (modifie_le réutilise updated_at, non dupliqué).
+    modifie_par_role = models.CharField(_('modifié par (rôle)'), max_length=20, blank=True)
+    modifie_par_nom = models.CharField(_('modifié par (nom)'), max_length=150, blank=True)
+    created_at = models.DateTimeField(_('créé le'), auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(_('modifié le'), auto_now=True, null=True)
 
     class Meta:
         verbose_name = _('logement')
@@ -573,22 +631,30 @@ class ArticleVideo(models.Model):
 
 class Panorama(models.Model):
     """
-    Vue panoramique 360° d'un article (typiquement un logement / hôtel).
-    L'image doit être équirectangulaire au ratio 2:1.
+    Vue panoramique d'un article (logement, hôtel…). Deux usages :
+    photo_360 (équirectangulaire 2:1, vue à 360°) ou panoramique (photo
+    large que l'on fait glisser). Réutilisé par Locations Phase M1 pour la
+    visite immersive des logements — type_vue ajouté additivement.
     """
+    class TypeVue(models.TextChoices):
+        PHOTO_360 = 'photo_360', _('Photo 360°')
+        PANORAMIQUE = 'panoramique', _('Panoramique')
+
     article = models.ForeignKey(
         Article,
         on_delete=models.CASCADE,
         related_name='panoramas',
         verbose_name=_('article'),
     )
-    image = models.ImageField(_('image panoramique 360°'), upload_to='panoramas/')
+    image = models.ImageField(_('image panoramique'), upload_to='panoramas/')
     nom_piece = models.CharField(
-        _('nom de la pièce'),
+        _('nom de la pièce / titre'),
         max_length=100,
         blank=True,
         help_text=_('Ex: "Salon", "Chambre principale", "Cuisine"…'),
     )
+    type_vue = models.CharField(
+        _('type de vue'), max_length=15, choices=TypeVue.choices, default=TypeVue.PHOTO_360)
     ordre = models.IntegerField(_('ordre'), default=0)
     est_active = models.BooleanField(_('panorama actif'), default=True)
 

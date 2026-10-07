@@ -116,9 +116,13 @@ class GroupeOptionSerializer(serializers.ModelSerializer):
 
 
 class PanoramaSerializer(serializers.ModelSerializer):
+    """titre = nom_piece (renommage d'exposition, pas de champ dupliqué ;
+    Panorama n'avait encore aucune donnée en production)."""
+    titre = serializers.CharField(source='nom_piece', required=False, allow_blank=True)
+
     class Meta:
         model = Panorama
-        fields = ['id', 'article', 'image', 'nom_piece', 'ordre', 'est_active']
+        fields = ['id', 'article', 'image', 'titre', 'type_vue', 'ordre', 'est_active']
 
 
 class LogementSerializer(serializers.ModelSerializer):
