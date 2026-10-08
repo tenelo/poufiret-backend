@@ -1,14 +1,16 @@
-"""Tests : GET /api/v1/locations/meta/ — référentiels publics des logements,
-construits depuis les choix réels (Logement.TypeLogement, EQUIPEMENTS_LIBELLES,
-Logement.Disponibilite), pas de liste recopiée à la main.
+"""Tests : GET /api/v1/locations/meta/ — référentiels publics des logements
+(M1) et des véhicules (V1), construits depuis les choix réels
+(Logement.TypeLogement, EQUIPEMENTS_LIBELLES, Logement.Disponibilite,
+Vehicule.CategorieVehicule/BoiteVitesse/Carburant,
+EQUIPEMENTS_VEHICULE_LIBELLES), pas de liste recopiée à la main.
 
 Execution :
     docker exec -i backend-poufiret python manage.py shell < scripts/test_locations_meta.py
 """
 from django.db import transaction
 from django.test import Client
-from apps.catalog.models import Logement
-from apps.locations.services import EQUIPEMENTS_LIBELLES
+from apps.catalog.models import Logement, Vehicule
+from apps.locations.services import EQUIPEMENTS_LIBELLES, EQUIPEMENTS_VEHICULE_LIBELLES
 
 HOST = 'poufiret.tenelo.cloud'
 class Rollback(Exception): pass
@@ -24,7 +26,9 @@ try:
         r = Client().get('/api/v1/locations/meta/', secure=True, HTTP_HOST=HOST)
         ok('anonyme -> 200', r.status_code == 200, r.content)
         d = r.json()
-        ok('cles attendues', set(d) == {'types_logement', 'equipements', 'disponibilites'}, set(d))
+        ok('cles attendues (M1 conservees + V1)', set(d) == {
+            'types_logement', 'equipements', 'disponibilites',
+            'categories_vehicule', 'boites', 'carburants', 'equipements_vehicule'}, set(d))
 
         ok('types_logement : valeur+libelle, egal aux choix reels',
            d['types_logement'] == [{'valeur': v, 'libelle': l} for v, l in Logement.TypeLogement.choices],
@@ -39,6 +43,18 @@ try:
            any(x['valeur'] == 'disponible' for x in d['disponibilites']))
         ok("'villa' present dans types_logement", any(x['valeur'] == 'villa' for x in d['types_logement']))
         ok("'climatisation' present dans equipements", any(x['valeur'] == 'climatisation' for x in d['equipements']))
+
+        def choix(c):
+            return [{'valeur': v, 'libelle': l} for v, l in c.choices]
+        ok('categories_vehicule = choix reels', d['categories_vehicule'] == choix(Vehicule.CategorieVehicule),
+           d['categories_vehicule'])
+        ok('boites = choix reels', d['boites'] == choix(Vehicule.BoiteVitesse), d['boites'])
+        ok('carburants = choix reels', d['carburants'] == choix(Vehicule.Carburant), d['carburants'])
+        ok('equipements_vehicule = referentiel reel', d['equipements_vehicule'] == [
+            {'valeur': v, 'libelle': l} for v, l in EQUIPEMENTS_VEHICULE_LIBELLES.items()], d['equipements_vehicule'])
+        ok("'suv_4x4' et 'camera_recul' presents",
+           any(x['valeur'] == 'suv_4x4' for x in d['categories_vehicule'])
+           and any(x['valeur'] == 'camera_recul' for x in d['equipements_vehicule']))
 
         print(f'\n=== {NB} verifications reussies ===')
         raise Rollback()

@@ -1,11 +1,12 @@
-"""Lecture publique des logements (Locations Phase M1). AllowAny — même mur
+"""Lecture publique des logements (Locations Phase M1) et des véhicules
+(Phase V1). AllowAny — même mur
 d'inscription que le reste du catalogue : aucune règle nouvelle."""
 from django.db.models import Prefetch
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.catalog.models import Article, ArticleImage, Logement, Panorama
+from apps.catalog.models import Article, ArticleImage, Logement, Panorama, Vehicule
 from apps.catalog.serializers import PanoramaSerializer
 from apps.users.models import ProfilPartenaire
 
@@ -28,12 +29,7 @@ def _photo_principale(article, request):
     return _url(request, img.image) if img else None
 
 
-def _localisation_texte(logement):
-    return ' - '.join(filter(None, [
-        logement.localite.nom if logement.localite_id else None,
-        logement.quartier_geo.nom if logement.quartier_geo_id else None,
-        logement.secteur or None,
-    ]))
+_localisation_texte = services.localisation_texte
 
 
 def _carte(logement, request):
@@ -172,6 +168,172 @@ class LogementDetailPublicView(APIView):
         })
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# VÉHICULES (Phase V1)
+# ═══════════════════════════════════════════════════════════════════════
+
+def _loueur_public(partenaire_id, types):
+    return (ProfilPartenaire.objects
+            .filter(pk=partenaire_id, type_partenaire__in=types,
+                    statut=ProfilPartenaire.Statut.ACTIF, est_visible=True)
+            .first())
+
+
+def _vehicules_qs():
+    return (Vehicule.objects.filter(article__type=Article.Type.VEHICULE, article__est_actif=True)
+            .select_related('article', 'localite', 'quartier_geo')
+            .prefetch_related(Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True))))
+
+
+def _carte_vehicule(v, request):
+    a = v.article
+    return {
+        'id': a.id,
+        'titre': a.nom,
+        'photo': _photo_principale(a, request),
+        'categorie_vehicule': v.categorie_vehicule,
+        'categorie_libelle': v.get_categorie_vehicule_display(),
+        'marque': v.marque,
+        'modele': v.modele,
+        'annee': v.annee,
+        'nb_places': v.places,
+        'boite_libelle': v.get_boite_vitesse_display(),
+        'carburant_libelle': v.get_carburant_display(),
+        'climatisation': v.climatisation,
+        'prix_jour': a.prix,
+        'prix_jour_avec_chauffeur': v.prix_jour_avec_chauffeur,
+        'chauffeur_disponible': v.chauffeur_disponible,
+        'chauffeur_obligatoire': v.chauffeur_obligatoire,
+        'localisation_texte': _localisation_texte(v),
+        'disponibilite': v.disponibilite,
+    }
+
+
+def _entier(valeur):
+    try:
+        return int(valeur)
+    except (TypeError, ValueError):
+        return None
+
+
+class VehiculesParPartenaireView(APIView):
+    """GET /api/v1/locations/partenaires/<id>/vehicules/
+    ?categorie=&prix_max=&places_min=&boite=&avec_chauffeur=&disponible=1
+    avec_chauffeur=1 : chauffeur disponible ; avec_chauffeur=0 : location
+    sans chauffeur possible (chauffeur non obligatoire)."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, partenaire_id):
+        partenaire = _loueur_public(partenaire_id, [ProfilPartenaire.TypePartenaire.LOUEUR_VOITURE])
+        if partenaire is None:
+            return Response({'erreur': True, 'message': 'Loueur introuvable.'}, status=404)
+
+        qs = _vehicules_qs().filter(article__partenaire=partenaire).order_by('article__prix', 'article_id')
+        p = request.query_params
+        if p.get('categorie'):
+            qs = qs.filter(categorie_vehicule=p['categorie'])
+        if _entier(p.get('prix_max')) is not None:
+            qs = qs.filter(article__prix__lte=_entier(p['prix_max']))
+        if _entier(p.get('places_min')) is not None:
+            qs = qs.filter(places__gte=_entier(p['places_min']))
+        if p.get('boite'):
+            qs = qs.filter(boite_vitesse=p['boite'])
+        if p.get('avec_chauffeur') in ('1', 'true', 'True'):
+            qs = qs.filter(chauffeur_disponible=True)
+        elif p.get('avec_chauffeur') in ('0', 'false', 'False'):
+            qs = qs.filter(chauffeur_obligatoire=False)
+        if p.get('disponible') == '1':
+            qs = qs.filter(disponibilite=Vehicule.Disponibilite.DISPONIBLE)
+
+        return Response({
+            'loueur': {
+                'id': partenaire.id,
+                'nom': partenaire.nom_commerce,
+                'logo': _url(request, partenaire.logo),
+                'couverture': _url(request, partenaire.photo_couverture),
+                'telephone_pro': partenaire.telephone_pro,
+                'whatsapp': partenaire.whatsapp,
+            },
+            'resultats': [_carte_vehicule(v, request) for v in qs],
+        })
+
+
+class VehiculeDetailPublicView(APIView):
+    """GET /api/v1/locations/vehicules/<id>/ — fiche complète en une
+    réponse (galerie, panoramas, caractéristiques, tarifs, conditions,
+    point de prise en charge, loueur, autres véhicules disponibles du même
+    loueur, périodes indisponibles issues des réservations confirmées)."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        v = (Vehicule.objects
+             .filter(article_id=pk, article__type=Article.Type.VEHICULE, article__est_actif=True)
+             .select_related('article__partenaire', 'localite', 'quartier_geo')
+             .prefetch_related(
+                 Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True).order_by('ordre')),
+                 Prefetch('article__panoramas', queryset=Panorama.objects.filter(est_active=True).order_by('ordre')),
+             ).first())
+        if v is None:
+            return Response({'erreur': True, 'message': 'Véhicule introuvable.'}, status=404)
+
+        a = v.article
+        partenaire = a.partenaire
+        autres = (_vehicules_qs()
+                  .filter(article__partenaire=partenaire, disponibilite=Vehicule.Disponibilite.DISPONIBLE)
+                  .exclude(article_id=a.id)[:4])
+
+        return Response({
+            'id': a.id,
+            'titre': a.nom,
+            'description': a.description,
+            'galerie': [_url(request, i.image) for i in a.images.all()],
+            'panoramas': PanoramaSerializer(a.panoramas.all(), many=True, context={'request': request}).data,
+            'categorie_vehicule': v.categorie_vehicule,
+            'categorie_libelle': v.get_categorie_vehicule_display(),
+            'marque': v.marque,
+            'modele': v.modele,
+            'annee': v.annee,
+            'couleur': v.couleur,
+            'nb_places': v.places,
+            'boite': v.boite_vitesse,
+            'boite_libelle': v.get_boite_vitesse_display(),
+            'carburant': v.carburant,
+            'carburant_libelle': v.get_carburant_display(),
+            'climatisation': v.climatisation,
+            'equipements': v.equipements,
+            'equipements_libelles': [services.EQUIPEMENTS_VEHICULE_LIBELLES.get(e, e) for e in v.equipements],
+            'prix_jour': a.prix,
+            'prix_jour_avec_chauffeur': v.prix_jour_avec_chauffeur,
+            'chauffeur_disponible': v.chauffeur_disponible,
+            'chauffeur_obligatoire': v.chauffeur_obligatoire,
+            'caution': v.caution,
+            'km_inclus_par_jour': v.km_inclus_par_jour,
+            'prix_km_supplementaire': v.prix_km_supplementaire,
+            'carburant_inclus': v.carburant_inclus,
+            'duree_min_jours': v.duree_min_jours,
+            'zone_circulation': v.zone_circulation,
+            'disponibilite': v.disponibilite,
+            'disponibilite_libelle': v.get_disponibilite_display(),
+            'localisation_texte': _localisation_texte(v),
+            'localite_nom': v.localite.nom if v.localite_id else None,
+            'quartier_nom': v.quartier_geo.nom if v.quartier_geo_id else None,
+            'secteur': v.secteur,
+            'adresse_reperes': v.adresse_reperes,
+            'latitude': v.localisation.y if v.localisation else None,
+            'longitude': v.localisation.x if v.localisation else None,
+            'loueur': {
+                'id': partenaire.id,
+                'nom': partenaire.nom_commerce,
+                'telephone_pro': partenaire.telephone_pro,
+                'whatsapp': partenaire.whatsapp,
+            },
+            'autres_vehicules': [_carte_vehicule(x, request) for x in autres],
+            'periodes_indisponibles': [
+                {'date_debut': r['date_debut'], 'date_fin': r['date_fin']}
+                for r in services.reservations_confirmees(a.id)],
+        })
+
+
 class MetaLocationsView(APIView):
     """GET /api/v1/locations/meta/ — référentiels publics, construits
     depuis les choix réellement validés par le backend (aucune liste
@@ -184,4 +346,11 @@ class MetaLocationsView(APIView):
             'types_logement': [{'valeur': v, 'libelle': l} for v, l in Logement.TypeLogement.choices],
             'equipements': [{'valeur': v, 'libelle': l} for v, l in EQUIPEMENTS_LIBELLES.items()],
             'disponibilites': [{'valeur': v, 'libelle': l} for v, l in Logement.Disponibilite.choices],
+            # Phase V1 (véhicules)
+            'categories_vehicule': [{'valeur': v, 'libelle': l}
+                                    for v, l in Vehicule.CategorieVehicule.choices],
+            'boites': [{'valeur': v, 'libelle': l} for v, l in Vehicule.BoiteVitesse.choices],
+            'carburants': [{'valeur': v, 'libelle': l} for v, l in Vehicule.Carburant.choices],
+            'equipements_vehicule': [{'valeur': v, 'libelle': l}
+                                     for v, l in services.EQUIPEMENTS_VEHICULE_LIBELLES.items()],
         })

@@ -4,7 +4,7 @@ from rest_framework import serializers
 from apps.catalog.models import Article
 
 from .models import DemandeReservation, HistoriqueDemande, NoteAdminDemande
-from .services import visite_eligible
+from .services import regles_reservation_vehicule, vehicule_de, visite_eligible
 
 
 class HistoriqueDemandeSerializer(serializers.ModelSerializer):
@@ -49,7 +49,8 @@ class DemandeSerializer(serializers.ModelSerializer):
         fields = ['id', 'numero', 'nature', 'nature_libelle', 'objet_id', 'objet_nom', 'objet_type',
                   'partenaire', 'partenaire_nom', 'client', 'client_nom',
                   'date_souhaitee', 'date_debut', 'date_fin', 'nb_personnes', 'message',
-                  'telephone_contact', 'statut', 'statut_libelle', 'raison_refus',
+                  'telephone_contact', 'avec_chauffeur', 'lieu_prise_en_charge', 'montant_estime',
+                  'statut', 'statut_libelle', 'raison_refus',
                   'created_at', 'confirmee_le', 'terminee_le', 'historique']
         read_only_fields = fields
 
@@ -107,8 +108,14 @@ class CreerDemandeSerializer(serializers.Serializer):
     nb_personnes = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     message = serializers.CharField(required=False, allow_blank=True)
     telephone_contact = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    avec_chauffeur = serializers.BooleanField(required=False, allow_null=True, default=None)
+    lieu_prise_en_charge = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
+        vehicule = vehicule_de(attrs['objet'])
+        if vehicule is not None and attrs['nature'] == DemandeReservation.Nature.VISITE:
+            raise serializers.ValidationError(
+                {'nature': ['Un véhicule se réserve directement (pas de visite).']})
         if attrs['nature'] == DemandeReservation.Nature.VISITE:
             if not attrs.get('date_souhaitee'):
                 raise serializers.ValidationError({'date_souhaitee': ['Requise pour une visite.']})
@@ -122,4 +129,8 @@ class CreerDemandeSerializer(serializers.Serializer):
                     'date_fin': ['date_debut et date_fin sont requises pour une réservation.']})
             if attrs['date_fin'] <= attrs['date_debut']:
                 raise serializers.ValidationError({'date_fin': ['Doit être postérieure à date_debut.']})
+            if vehicule is not None:
+                erreurs = regles_reservation_vehicule(vehicule, attrs)
+                if erreurs:
+                    raise serializers.ValidationError(erreurs)
         return attrs

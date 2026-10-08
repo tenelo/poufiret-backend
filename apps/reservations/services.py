@@ -97,6 +97,62 @@ def visite_eligible(objet):
     return logement.disponibilite == logement.Disponibilite.DISPONIBLE
 
 
+def vehicule_de(objet):
+    """Fiche véhicule de l'objet (Article) ou None."""
+    return getattr(objet, 'vehicule', None) if objet.type == objet.Type.VEHICULE else None
+
+
+def chevauchement_confirme(objet_id, date_debut, date_fin, exclure_id=None):
+    """Première réservation CONFIRMÉE du même objet dont la période
+    [date_debut, date_fin[ chevauche celle donnée (date_fin = jour de
+    restitution, libre pour une nouvelle prise en charge), ou None."""
+    qs = DemandeReservation.objects.filter(
+        objet_id=objet_id, nature=DemandeReservation.Nature.RESERVATION,
+        statut=DemandeReservation.Statut.CONFIRMEE,
+        date_debut__lt=date_fin, date_fin__gt=date_debut)
+    if exclure_id:
+        qs = qs.exclude(pk=exclure_id)
+    return qs.order_by('date_debut').first()
+
+
+def message_chevauchement(demande):
+    return (f'Véhicule déjà réservé du {demande.date_debut:%d/%m/%Y} '
+            f'au {demande.date_fin:%d/%m/%Y}. Choisissez une autre période.')
+
+
+def regles_reservation_vehicule(vehicule, attrs):
+    """Valide une RÉSERVATION sur un véhicule (Phase V1 ; la visite est
+    refusée en amont par CreerDemandeSerializer) et complète `attrs`
+    (avec_chauffeur, montant_estime). Retourne un dict d'erreurs (vide si OK).
+    jours = date_fin − date_debut (≥ 1, garanti par date_fin > date_debut)."""
+    debut, fin = attrs['date_debut'], attrs['date_fin']
+    if debut < timezone.localdate():
+        return {'date_debut': ['La date de début ne peut pas être passée.']}
+    if vehicule.disponibilite != vehicule.Disponibilite.DISPONIBLE:
+        return {'objet_id': ["Ce véhicule n'est pas disponible à la location."]}
+    jours = max((fin - debut).days, 1)
+    if jours < vehicule.duree_min_jours:
+        return {'date_fin': [f'Durée minimale de location : {vehicule.duree_min_jours} jour(s).']}
+
+    avec_chauffeur = attrs.get('avec_chauffeur')
+    if vehicule.chauffeur_obligatoire:
+        if avec_chauffeur is False:
+            return {'avec_chauffeur': ['Ce véhicule se loue uniquement avec chauffeur.']}
+        avec_chauffeur = True
+    elif avec_chauffeur and not vehicule.chauffeur_disponible:
+        return {'avec_chauffeur': ["Ce véhicule n'est pas proposé avec chauffeur."]}
+    avec_chauffeur = bool(avec_chauffeur)
+
+    occupee = chevauchement_confirme(attrs['objet'].id, debut, fin)
+    if occupee is not None:
+        return {'date_debut': [message_chevauchement(occupee)]}
+
+    prix_jour = vehicule.prix_jour_avec_chauffeur if avec_chauffeur else attrs['objet'].prix
+    attrs['avec_chauffeur'] = avec_chauffeur
+    attrs['montant_estime'] = jours * prix_jour if prix_jour is not None else None
+    return {}
+
+
 def _notifier_transition_demande(demande, cible, acteur_role, request=None):
     """Notifie client et loueur, sauf l'acteur qui a déclenché la
     transition (mode parallèle à apps.orders._notifier_transition_commande)."""
@@ -158,6 +214,15 @@ def appliquer_transition_demande(demande, cible, acteur, acteur_role, commentair
     if cible not in TRANSITIONS.get(demande.statut, []):
         return False, f'Transition {demande.statut} → {cible} non autorisée.'
 
+    # Véhicule (V1) : jamais deux réservations confirmées qui se chevauchent
+    # (deux demandes « nouvelles » sur les mêmes dates peuvent coexister).
+    if cible == 'confirmee' and demande.nature == DemandeReservation.Nature.RESERVATION \
+            and vehicule_de(demande.objet) is not None:
+        occupee = chevauchement_confirme(demande.objet_id, demande.date_debut, demande.date_fin,
+                                         exclure_id=demande.pk)
+        if occupee is not None:
+            return False, message_chevauchement(occupee)
+
     ancien_statut = demande.statut
     demande.statut = cible
     maintenant = timezone.now()
@@ -171,6 +236,9 @@ def appliquer_transition_demande(demande, cible, acteur, acteur_role, commentair
         demande.annulee_par = acteur
     demande.save()
 
+    # Logement (M1) uniquement : la confirmation passe le bien en « réservé ».
+    # Un véhicule (V1) garde sa disponibilité globale — l'occupation se lit
+    # par dates (réservations confirmées, periodes_indisponibles).
     if demande.nature == DemandeReservation.Nature.RESERVATION:
         logement = _logement_de(demande)
         if logement is not None:

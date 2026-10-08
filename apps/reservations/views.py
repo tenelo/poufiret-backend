@@ -31,6 +31,8 @@ class CreerDemandeView(APIView):
             date_debut=v.get('date_debut'), date_fin=v.get('date_fin'),
             nb_personnes=v.get('nb_personnes'), message=v.get('message', ''),
             telephone_contact=v.get('telephone_contact', ''),
+            avec_chauffeur=v.get('avec_chauffeur'), lieu_prise_en_charge=v.get('lieu_prise_en_charge', ''),
+            montant_estime=v.get('montant_estime'),
         )
         HistoriqueDemande.objects.create(
             demande=demande, statut=demande.statut, acteur=request.user,

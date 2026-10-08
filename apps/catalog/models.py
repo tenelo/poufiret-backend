@@ -506,7 +506,26 @@ class Logement(models.Model):
 
 
 class Vehicule(models.Model):
-    """Détails d'un article de type 'vehicule' (vente ou location)."""
+    """Détails d'un article de type 'vehicule' (vente ou location).
+
+    Étendu pour Locations Phase V1 (location de véhicules) : champs de
+    location ajoutés additivement. Réutilisés tels quels : `carburant`,
+    `boite_vitesse` (exposé « boite ») et `places` (exposé « nb_places »).
+    Le prix/jour sans chauffeur est Article.prix.
+    """
+
+    class CategorieVehicule(models.TextChoices):
+        VOITURE = 'voiture', _('Voiture')
+        SUV_4X4 = 'suv_4x4', _('SUV / 4x4')
+        MINIBUS = 'minibus', _('Minibus')
+        BUS = 'bus', _('Bus')
+        MOTO = 'moto', _('Moto')
+        TRICYCLE = 'tricycle', _('Tricycle')
+        AUTRE = 'autre', _('Autre')
+
+    class Disponibilite(models.TextChoices):
+        DISPONIBLE = 'disponible', _('Disponible')
+        INDISPONIBLE = 'indisponible', _('Indisponible')
 
     class Carburant(models.TextChoices):
         ESSENCE = 'essence', _('Essence')
@@ -548,6 +567,50 @@ class Vehicule(models.Model):
         choices=Mode.choices,
         default=Mode.VENTE,
     )
+
+    # ── Locations Phase V1 : location de véhicules ──────────────────────
+    categorie_vehicule = models.CharField(
+        _('catégorie de véhicule'), max_length=15, choices=CategorieVehicule.choices, blank=True)
+    couleur = models.CharField(_('couleur'), max_length=50, blank=True)
+    climatisation = models.BooleanField(_('climatisation'), default=False)
+    equipements = models.JSONField(
+        _('équipements'), default=list, blank=True,
+        help_text=_('Liste parmi le référentiel apps.locations.services.EQUIPEMENTS_VEHICULE_LIBELLES.'))
+    chauffeur_disponible = models.BooleanField(_('chauffeur disponible'), default=False)
+    chauffeur_obligatoire = models.BooleanField(_('chauffeur obligatoire'), default=False)
+    prix_jour_avec_chauffeur = models.DecimalField(
+        _('prix/jour avec chauffeur (FCFA)'), max_digits=12, decimal_places=0, blank=True, null=True)
+    caution = models.DecimalField(
+        _('caution (FCFA)'), max_digits=12, decimal_places=0, blank=True, null=True)
+    km_inclus_par_jour = models.PositiveIntegerField(
+        _('km inclus par jour (0 = illimité)'), default=0)
+    prix_km_supplementaire = models.DecimalField(
+        _('prix du km supplémentaire (FCFA)'), max_digits=12, decimal_places=0, blank=True, null=True)
+    carburant_inclus = models.BooleanField(_('carburant inclus'), default=False)
+    duree_min_jours = models.PositiveIntegerField(_('durée minimale (jours)'), default=1)
+    zone_circulation = models.CharField(_('zone de circulation'), max_length=200, blank=True)
+    disponibilite = models.CharField(
+        _('disponibilité'), max_length=12, choices=Disponibilite.choices,
+        default=Disponibilite.DISPONIBLE)
+
+    # Point de prise en charge (distinct du bureau du loueur) — même
+    # structure que Logement (cohérence apps.geo).
+    localite = models.ForeignKey(
+        'geo.Localite', on_delete=models.PROTECT,
+        blank=True, null=True, related_name='vehicules', verbose_name=_('localité'))
+    quartier_geo = models.ForeignKey(
+        'geo.Quartier', on_delete=models.PROTECT,
+        blank=True, null=True, related_name='vehicules', verbose_name=_('quartier'))
+    secteur = models.CharField(_('secteur'), max_length=100, blank=True)
+    adresse_reperes = models.TextField(_('adresse / repères'), blank=True)
+    localisation = gis_models.PointField(
+        _('position GPS'), geography=True, blank=True, null=True)
+
+    # Traçabilité (loueur, ou admin à sa place) — même convention que Logement.
+    modifie_par_role = models.CharField(_('modifié par (rôle)'), max_length=20, blank=True)
+    modifie_par_nom = models.CharField(_('modifié par (nom)'), max_length=150, blank=True)
+    created_at = models.DateTimeField(_('créé le'), auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(_('modifié le'), auto_now=True, null=True)
 
     class Meta:
         verbose_name = _('véhicule')

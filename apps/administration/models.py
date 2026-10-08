@@ -47,6 +47,8 @@ class JournalModeration(ModeleBase):
         PARTENAIRE_EDITION = 'partenaire_edition', 'Fiche partenaire modifiée (admin)'
         LOC_LOGEMENT_MODIF = 'loc_logement_modif', 'Logement modifié (admin)'
         LOC_DISPO_MODIF = 'loc_dispo_modif', 'Disponibilité de logement modifiée (admin)'
+        LOC_VEHICULE_MODIF = 'loc_vehicule_modif', 'Véhicule modifié (admin)'
+        LOC_VEHICULE_DISPO = 'loc_vehicule_dispo', 'Disponibilité de véhicule modifiée (admin)'
         CAT_CREATION = 'cat_creation', 'Catégorie créée'
         CAT_MODIFICATION = 'cat_modification', 'Catégorie modifiée'
         CAT_SUPPRESSION = 'cat_suppression', 'Catégorie supprimée'
@@ -194,7 +196,7 @@ class PermissionsAdmin(ModeleBase):
         default=False,
     )
     gerer_locations = models.BooleanField(
-        'gérer les locations (logements) à la place du loueur',
+        'gérer les locations (logements, véhicules) à la place du loueur',
         default=False,
     )
     gerer_reservations = models.BooleanField(
