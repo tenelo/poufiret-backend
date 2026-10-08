@@ -5,7 +5,7 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.catalog.models import Article, Logement, Vehicule
+from apps.catalog.models import Article, Hebergement, Logement, Vehicule
 from apps.core.permissions import ADroitDe
 from apps.users.models import ProfilPartenaire
 
@@ -14,9 +14,11 @@ from . import services
 
 class LoueursAdminListeView(APIView):
     """GET /api/v1/locations/admin/ — tous les loueurs (type dans
-    TYPES_LOCATION : maisons et véhicules), avec type_partenaire et
-    indicateurs génériques sur leurs biens (logements OU véhicules) :
-    nb_biens, nb_disponibles, nb_indisponibles (véhicules), nb_reserves /
+    TYPES_LOCATION : maisons, véhicules, hôteliers), avec type_partenaire et
+    indicateurs génériques sur leurs biens (logements, véhicules ou
+    hébergements — un hébergement compte pour 1 bien, quel que soit son
+    nb_unites) : nb_biens, nb_disponibles, nb_indisponibles (véhicules,
+    hébergements), nb_reserves /
     nb_loues (logements), demandes en attente."""
     permission_classes = [permissions.IsAuthenticated, ADroitDe('gerer_locations')]
 
@@ -27,7 +29,8 @@ class LoueursAdminListeView(APIView):
         ids = [p.id for p in partenaires]
 
         compteurs = {}
-        for modele, type_article in ((Logement, Article.Type.LOGEMENT), (Vehicule, Article.Type.VEHICULE)):
+        for modele, type_article in ((Logement, Article.Type.LOGEMENT), (Vehicule, Article.Type.VEHICULE),
+                                     (Hebergement, Article.Type.HEBERGEMENT)):
             lignes = (modele.objects.filter(article__partenaire_id__in=ids, article__type=type_article)
                       .values('article__partenaire_id', 'disponibilite')
                       .annotate(n=Count('article_id')))

@@ -264,6 +264,7 @@ class Article(models.Model):
         SERVICE = 'service', _('Service')
         LOGEMENT = 'logement', _('Logement')
         VEHICULE = 'vehicule', _('Véhicule')
+        HEBERGEMENT = 'hebergement', _('Hébergement (hôtel, résidence)')
         MODELE_COUTURE = 'modele_couture', _('Modèle de couture')
         MODELE_MENUISERIE = 'modele_menuiserie', _('Modèle de menuiserie')
 
@@ -618,6 +619,69 @@ class Vehicule(models.Model):
 
     def __str__(self):
         return f"Véhicule: {self.marque} {self.modele} ({self.article.nom})"
+
+
+class Hebergement(models.Model):
+    """Détails d'un article de type 'hebergement' (Locations Phase V2 :
+    chambre d'hôtel, studio/appartement de résidence meublée…). Article.prix
+    = prix par nuit ; photos = images de l'Article ; panoramas optionnels.
+
+    Fiche distincte de Logement (location longue durée M1) : ses choix
+    (type_logement, disponibilité réservé/loué basculée à la confirmation)
+    sont incompatibles avec une vente à la nuit par unités. Les champs
+    Logement.caution / duree_min_jours prévus pour l'hôtelier ne sont donc
+    pas réutilisés : la caution est décrite dans ProfilEtablissement.conditions
+    et la durée minimale est duree_min_nuits ci-dessous.
+    """
+
+    class TypeHebergement(models.TextChoices):
+        CHAMBRE_SIMPLE = 'chambre_simple', _('Chambre simple')
+        CHAMBRE_DOUBLE = 'chambre_double', _('Chambre double')
+        CHAMBRE_TWIN = 'chambre_twin', _('Chambre twin (2 lits)')
+        SUITE = 'suite', _('Suite')
+        STUDIO = 'studio', _('Studio')
+        APPARTEMENT = 'appartement', _('Appartement')
+        VILLA = 'villa', _('Villa')
+
+    class Disponibilite(models.TextChoices):
+        DISPONIBLE = 'disponible', _('Disponible')
+        INDISPONIBLE = 'indisponible', _('Indisponible')
+
+    article = models.OneToOneField(
+        Article, on_delete=models.CASCADE, related_name='hebergement', verbose_name=_('article'))
+    type_hebergement = models.CharField(
+        _('type d\'hébergement'), max_length=20, choices=TypeHebergement.choices)
+    capacite_adultes = models.PositiveSmallIntegerField(_('capacité adultes'), default=2)
+    capacite_enfants = models.PositiveSmallIntegerField(_('capacité enfants'), default=0)
+    lits = models.CharField(_('lits'), max_length=100, blank=True, help_text=_('Ex. « 1 lit double ».'))
+    surface_m2 = models.PositiveIntegerField(_('surface (m²)'), blank=True, null=True)
+    equipements = models.JSONField(
+        _('équipements'), default=list, blank=True,
+        help_text=_('Liste parmi apps.locations.services.EQUIPEMENTS_HEBERGEMENT_LIBELLES.'))
+    prix_semaine = models.DecimalField(
+        _('prix par semaine (FCFA)'), max_digits=12, decimal_places=0, blank=True, null=True)
+    prix_mois = models.DecimalField(
+        _('prix par mois (FCFA)'), max_digits=12, decimal_places=0, blank=True, null=True)
+    nb_unites = models.PositiveSmallIntegerField(
+        _('nombre d\'unités identiques'), default=1,
+        help_text=_('Chambres identiques disponibles à la vente.'))
+    duree_min_nuits = models.PositiveSmallIntegerField(_('durée minimale (nuits)'), default=1)
+    disponibilite = models.CharField(
+        _('disponibilité'), max_length=12, choices=Disponibilite.choices,
+        default=Disponibilite.DISPONIBLE)
+
+    # Traçabilité (hôtelier, ou admin à sa place) — même convention que Logement.
+    modifie_par_role = models.CharField(_('modifié par (rôle)'), max_length=20, blank=True)
+    modifie_par_nom = models.CharField(_('modifié par (nom)'), max_length=150, blank=True)
+    created_at = models.DateTimeField(_('créé le'), auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(_('modifié le'), auto_now=True, null=True)
+
+    class Meta:
+        verbose_name = _('hébergement')
+        verbose_name_plural = _('hébergements')
+
+    def __str__(self):
+        return f"Hébergement: {self.article.nom}"
 
 
 # ═══════════════════════════════════════════════════════════════════════

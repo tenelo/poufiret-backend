@@ -1,5 +1,5 @@
 """Demandes de visite / réservation, COMMUNES aux métiers de location
-(maisons, véhicules ; chambres d'hôtel plus tard). App séparée
+(maisons, véhicules, hôtels/résidences). App séparée
 de apps.locations — même rôle transverse que apps.orders pour les
 commandes catalogue (apps.orders ne dépend d'aucun vertical particulier ;
 apps.reservations ne dépend pas de apps.locations non plus, seul
@@ -54,7 +54,12 @@ class DemandeReservation(models.Model):
     lieu_prise_en_charge = models.TextField(_('lieu de prise en charge'), blank=True)
     montant_estime = models.DecimalField(
         _('montant estimé (FCFA)'), max_digits=12, decimal_places=0, blank=True, null=True,
-        help_text=_('Calculé à la création (jours × prix/jour).'))
+        help_text=_('Calculé à la création (jours × prix/jour ; nuits × prix × unités pour un hébergement).'))
+
+    # Locations Phase V2 (hébergements) — null pour les autres biens ; nb_unites = 1.
+    nb_adultes = models.PositiveSmallIntegerField(_('nombre d\'adultes'), blank=True, null=True)
+    nb_enfants = models.PositiveSmallIntegerField(_('nombre d\'enfants'), blank=True, null=True)
+    nb_unites = models.PositiveSmallIntegerField(_('nombre d\'unités (chambres)'), default=1)
 
     statut = models.CharField(
         _('statut'), max_length=12, choices=Statut.choices, default=Statut.NOUVELLE)

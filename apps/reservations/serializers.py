@@ -4,7 +4,10 @@ from rest_framework import serializers
 from apps.catalog.models import Article
 
 from .models import DemandeReservation, HistoriqueDemande, NoteAdminDemande
-from .services import regles_reservation_vehicule, vehicule_de, visite_eligible
+from .services import (
+    hebergement_de, regles_reservation_hebergement, regles_reservation_vehicule, vehicule_de,
+    visite_eligible,
+)
 
 
 class HistoriqueDemandeSerializer(serializers.ModelSerializer):
@@ -50,6 +53,7 @@ class DemandeSerializer(serializers.ModelSerializer):
                   'partenaire', 'partenaire_nom', 'client', 'client_nom',
                   'date_souhaitee', 'date_debut', 'date_fin', 'nb_personnes', 'message',
                   'telephone_contact', 'avec_chauffeur', 'lieu_prise_en_charge', 'montant_estime',
+                  'nb_adultes', 'nb_enfants', 'nb_unites',
                   'statut', 'statut_libelle', 'raison_refus',
                   'created_at', 'confirmee_le', 'terminee_le', 'historique']
         read_only_fields = fields
@@ -110,12 +114,23 @@ class CreerDemandeSerializer(serializers.Serializer):
     telephone_contact = serializers.CharField(required=False, allow_blank=True, max_length=20)
     avec_chauffeur = serializers.BooleanField(required=False, allow_null=True, default=None)
     lieu_prise_en_charge = serializers.CharField(required=False, allow_blank=True)
+    nb_adultes = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    nb_enfants = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    nb_unites = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 
     def validate(self, attrs):
         vehicule = vehicule_de(attrs['objet'])
+        hebergement = hebergement_de(attrs['objet'])
         if vehicule is not None and attrs['nature'] == DemandeReservation.Nature.VISITE:
             raise serializers.ValidationError(
                 {'nature': ['Un véhicule se réserve directement (pas de visite).']})
+        if hebergement is not None and attrs['nature'] == DemandeReservation.Nature.VISITE:
+            raise serializers.ValidationError(
+                {'nature': ['Un hébergement se réserve directement (pas de visite).']})
+        if hebergement is None:
+            # Champs propres aux hébergements : ignorés pour les autres biens.
+            for champ in ('nb_adultes', 'nb_enfants', 'nb_unites'):
+                attrs.pop(champ, None)
         if attrs['nature'] == DemandeReservation.Nature.VISITE:
             if not attrs.get('date_souhaitee'):
                 raise serializers.ValidationError({'date_souhaitee': ['Requise pour une visite.']})
@@ -131,6 +146,10 @@ class CreerDemandeSerializer(serializers.Serializer):
                 raise serializers.ValidationError({'date_fin': ['Doit être postérieure à date_debut.']})
             if vehicule is not None:
                 erreurs = regles_reservation_vehicule(vehicule, attrs)
+                if erreurs:
+                    raise serializers.ValidationError(erreurs)
+            if hebergement is not None:
+                erreurs = regles_reservation_hebergement(hebergement, attrs)
                 if erreurs:
                     raise serializers.ValidationError(erreurs)
         return attrs

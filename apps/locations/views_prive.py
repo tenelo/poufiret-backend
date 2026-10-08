@@ -1,8 +1,10 @@
-"""Espace loueur / admin : biens en location — logements (M1) et véhicules
-(V1) — (Article + fiche, une ressource), images, panoramas, disponibilité.
+"""Espace loueur / admin : biens en location — logements (M1), véhicules
+(V1), hébergements (V2) — (Article + fiche, une ressource), images,
+panoramas, disponibilité ; fiche établissement (V2).
 Même contrat pour les deux périmètres (mon-espace/admin), comme
 apps.restaurants — mixins de périmètre + classes de base partagées,
-paramétrées par le type de bien (_BienLogement / _BienVehicule), sous-classes
+paramétrées par le type de bien (_BienLogement / _BienVehicule /
+_BienHebergement), sous-classes
 minces."""
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions
@@ -10,13 +12,16 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.catalog.models import Article, ArticleImage, Logement, Panorama, Vehicule
+from apps.catalog.models import Article, ArticleImage, Hebergement, Logement, Panorama, Vehicule
 from apps.catalog.serializers import ArticleImageSerializer, PanoramaSerializer
 from apps.core.permissions import ADroitDe
 from apps.users.models import ProfilPartenaire
 
 from . import services
-from .serializers import LogementGestionSerializer, VehiculeGestionSerializer
+from .serializers import (
+    EtablissementGestionSerializer, HebergementGestionSerializer, LogementGestionSerializer,
+    VehiculeGestionSerializer,
+)
 
 
 def _journaliser_admin(acteur, partenaire, action, motif):
@@ -103,15 +108,36 @@ class _BienVehicule:
         return services.vehicule_dict(obj, request)
 
 
+class _BienHebergement:
+    types_partenaire = [ProfilPartenaire.TypePartenaire.HOTELIER]
+    message_refus = 'Réservé aux hôteliers.'
+    modele_fiche = Hebergement
+    article_type = Article.Type.HEBERGEMENT
+    serializer_gestion = HebergementGestionSerializer
+    relations_fiche = ('article',)
+    kwarg_objet = 'hebergement_id'
+    libelle = 'Hébergement'
+    action_modif = 'loc_hebergement_modif'
+    action_dispo = 'loc_hebergement_dispo'
+    message_409 = ('Impossible de supprimer : des demandes de réservation '
+                   'portent sur cet hébergement. Désactivez-le plutôt (est_actif=false).')
+
+    @staticmethod
+    def representer(obj, request):
+        return services.hebergement_dict(obj, request)
+
+
 # ═══════════════════════════════════════════════════════════════════════
-# BIENS (logements, véhicules)
+# BIENS (logements, véhicules, hébergements)
 # ═══════════════════════════════════════════════════════════════════════
 
 class _BienQuerysetMixin:
+    relations_fiche = ('article', 'localite__departement', 'quartier_geo')
+
     def _fiches(self, partenaire):
         return (self.modele_fiche.objects
                 .filter(article__partenaire=partenaire, article__type=self.article_type)
-                .select_related('article', 'localite__departement', 'quartier_geo'))
+                .select_related(*self.relations_fiche))
 
     def _contexte(self, partenaire):
         return {'partenaire': partenaire, 'acteur_role': self.acteur_role, 'acteur_nom': self.acteur_nom()}
@@ -260,6 +286,39 @@ class _PanoramaDetailBase(generics.RetrieveUpdateDestroyAPIView):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# FICHE ÉTABLISSEMENT (V2) — créée à la première lecture en gestion.
+# ═══════════════════════════════════════════════════════════════════════
+
+class _EtablissementBase(APIView):
+    """GET/PATCH P/etablissement/"""
+
+    def get(self, request, *args, **kwargs):
+        fiche = services.fiche_etablissement(self.get_partenaire(), creer=True)
+        return Response(services.etablissement_gestion_dict(fiche))
+
+    def patch(self, request, *args, **kwargs):
+        partenaire = self.get_partenaire()
+        fiche = services.fiche_etablissement(partenaire, creer=True)
+        ser = EtablissementGestionSerializer(fiche, data=request.data, partial=True, context={
+            'acteur_role': self.acteur_role, 'acteur_nom': self.acteur_nom()})
+        if not ser.is_valid():
+            return Response({'erreur': True, 'details': ser.errors}, status=400)
+        fiche = ser.save()
+        if self.acteur_role == 'admin':
+            _journaliser_admin(request.user, partenaire, 'loc_etablissement_modif',
+                               f'Fiche établissement « {partenaire.nom_commerce} » modifiée par l\'admin.')
+        return Response(services.etablissement_gestion_dict(fiche))
+
+
+class MonEtablissementView(_BienHebergement, _PerimetreLoueurMixin, _EtablissementBase):
+    """GET/PATCH /locations/mon-espace/etablissement/"""
+
+
+class AdminEtablissementView(_BienHebergement, _PerimetreAdminMixin, _EtablissementBase):
+    """GET/PATCH /locations/admin/<partenaire_id>/etablissement/"""
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Vues concrètes — logements (M1)
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -377,3 +436,63 @@ class AdminVehiculePanoramasView(_BienVehicule, _PerimetreAdminMixin, _Panoramas
 
 class AdminVehiculePanoramaDetailView(_BienVehicule, _PerimetreAdminMixin, _PanoramaDetailBase):
     """GET/PATCH/DELETE /locations/admin/<partenaire_id>/vehicules/<vehicule_id>/panoramas/<id>/"""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Vues concrètes — hébergements (V2)
+# ═══════════════════════════════════════════════════════════════════════
+
+class MonHebergementsView(_BienHebergement, _PerimetreLoueurMixin, _BiensListCreateBase):
+    """GET/POST /locations/mon-espace/hebergements/"""
+
+
+class MonHebergementDetailView(_BienHebergement, _PerimetreLoueurMixin, _BienDetailBase):
+    """GET/PATCH/DELETE /locations/mon-espace/hebergements/<id>/"""
+
+
+class MonHebergementDisponibiliteView(_BienHebergement, _PerimetreLoueurMixin, _DisponibiliteBase):
+    """POST /locations/mon-espace/hebergements/<id>/disponibilite/"""
+
+
+class AdminHebergementsView(_BienHebergement, _PerimetreAdminMixin, _BiensListCreateBase):
+    """GET/POST /locations/admin/<partenaire_id>/hebergements/"""
+
+
+class AdminHebergementDetailView(_BienHebergement, _PerimetreAdminMixin, _BienDetailBase):
+    """GET/PATCH/DELETE /locations/admin/<partenaire_id>/hebergements/<id>/"""
+
+
+class AdminHebergementDisponibiliteView(_BienHebergement, _PerimetreAdminMixin, _DisponibiliteBase):
+    """POST /locations/admin/<partenaire_id>/hebergements/<id>/disponibilite/"""
+
+
+class MonHebergementImagesView(_BienHebergement, _PerimetreLoueurMixin, _ImagesListCreateBase):
+    """GET/POST /locations/mon-espace/hebergements/<hebergement_id>/images/"""
+
+
+class MonHebergementImageDetailView(_BienHebergement, _PerimetreLoueurMixin, _ImageDetailBase):
+    """GET/PATCH/DELETE /locations/mon-espace/hebergements/<hebergement_id>/images/<id>/"""
+
+
+class AdminHebergementImagesView(_BienHebergement, _PerimetreAdminMixin, _ImagesListCreateBase):
+    """GET/POST /locations/admin/<partenaire_id>/hebergements/<hebergement_id>/images/"""
+
+
+class AdminHebergementImageDetailView(_BienHebergement, _PerimetreAdminMixin, _ImageDetailBase):
+    """GET/PATCH/DELETE /locations/admin/<partenaire_id>/hebergements/<hebergement_id>/images/<id>/"""
+
+
+class MonHebergementPanoramasView(_BienHebergement, _PerimetreLoueurMixin, _PanoramasListCreateBase):
+    """GET/POST /locations/mon-espace/hebergements/<hebergement_id>/panoramas/"""
+
+
+class MonHebergementPanoramaDetailView(_BienHebergement, _PerimetreLoueurMixin, _PanoramaDetailBase):
+    """GET/PATCH/DELETE /locations/mon-espace/hebergements/<hebergement_id>/panoramas/<id>/"""
+
+
+class AdminHebergementPanoramasView(_BienHebergement, _PerimetreAdminMixin, _PanoramasListCreateBase):
+    """GET/POST /locations/admin/<partenaire_id>/hebergements/<hebergement_id>/panoramas/"""
+
+
+class AdminHebergementPanoramaDetailView(_BienHebergement, _PerimetreAdminMixin, _PanoramaDetailBase):
+    """GET/PATCH/DELETE /locations/admin/<partenaire_id>/hebergements/<hebergement_id>/panoramas/<id>/"""

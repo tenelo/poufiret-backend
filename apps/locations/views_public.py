@@ -1,16 +1,17 @@
-"""Lecture publique des logements (Locations Phase M1) et des véhicules
-(Phase V1). AllowAny — même mur
+"""Lecture publique des logements (Locations Phase M1), des véhicules
+(Phase V1) et des établissements / hébergements (Phase V2). AllowAny — même mur
 d'inscription que le reste du catalogue : aucune règle nouvelle."""
 from django.db.models import Prefetch
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.catalog.models import Article, ArticleImage, Logement, Panorama, Vehicule
+from apps.catalog.models import Article, ArticleImage, Hebergement, Logement, Panorama, Vehicule
 from apps.catalog.serializers import PanoramaSerializer
 from apps.users.models import ProfilPartenaire
 
 from . import services
+from .models import ProfilEtablissement
 
 
 def _url(request, champ):
@@ -334,6 +335,187 @@ class VehiculeDetailPublicView(APIView):
         })
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# ÉTABLISSEMENTS ET HÉBERGEMENTS (Phase V2)
+# ═══════════════════════════════════════════════════════════════════════
+
+def _hebergements_qs():
+    return (Hebergement.objects
+            .filter(article__type=Article.Type.HEBERGEMENT, article__est_actif=True)
+            .select_related('article'))
+
+
+def _periode(request):
+    """(date_debut, date_fin, erreur) depuis ?date_debut=&date_fin=
+    (AAAA-MM-JJ). (None, None, None) si aucune des deux n'est fournie."""
+    from datetime import date
+    p = request.query_params
+    brut_debut, brut_fin = p.get('date_debut'), p.get('date_fin')
+    if not brut_debut and not brut_fin:
+        return None, None, None
+    try:
+        debut, fin = date.fromisoformat(brut_debut or ''), date.fromisoformat(brut_fin or '')
+    except ValueError:
+        return None, None, 'date_debut et date_fin attendues ensemble, au format AAAA-MM-JJ.'
+    if fin <= debut:
+        return None, None, 'date_fin doit être postérieure à date_debut (au moins 1 nuit).'
+    return debut, fin, None
+
+
+def _carte_hebergement(h, request):
+    a = h.article
+    return {
+        'id': a.id,
+        'titre': a.nom,
+        'photo': _photo_principale(a, request),
+        'type_hebergement': h.type_hebergement,
+        'type_hebergement_libelle': h.get_type_hebergement_display(),
+        'capacite_adultes': h.capacite_adultes,
+        'capacite_enfants': h.capacite_enfants,
+        'lits': h.lits,
+        'prix_nuit': a.prix,
+        'prix_semaine': h.prix_semaine,
+        'prix_mois': h.prix_mois,
+        'disponibilite': h.disponibilite,
+    }
+
+
+class EtablissementPublicView(APIView):
+    """GET /api/v1/locations/partenaires/<id>/etablissement/ — fiche
+    établissement + hébergements actifs. Localisation, contacts, logo,
+    couverture, description = ceux du partenaire. galerie / panoramas =
+    images et panoramas actifs de ses hébergements (pas de galerie propre
+    à l'établissement : aucun modèle dupliqué). Requêtes constantes."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, partenaire_id):
+        partenaire = (ProfilPartenaire.objects
+                      .filter(pk=partenaire_id, type_partenaire=ProfilPartenaire.TypePartenaire.HOTELIER,
+                              statut=ProfilPartenaire.Statut.ACTIF, est_visible=True)
+                      .select_related('profil_etablissement', 'localite', 'quartier_geo').first())
+        if partenaire is None:
+            return Response({'erreur': True, 'message': 'Établissement introuvable.'}, status=404)
+        fiche = services.fiche_etablissement(partenaire)
+        hebergements = list(
+            _hebergements_qs().filter(article__partenaire=partenaire)
+            .order_by('article__prix', 'article_id')
+            .prefetch_related(
+                Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True).order_by('ordre')),
+                Prefetch('article__panoramas', queryset=Panorama.objects.filter(est_active=True).order_by('ordre'))))
+        panoramas = [pano for h in hebergements for pano in h.article.panoramas.all()]
+
+        return Response({
+            'etablissement': {
+                'id': partenaire.id,
+                'nom': partenaire.nom_commerce,
+                'logo': _url(request, partenaire.logo),
+                'couverture': _url(request, partenaire.photo_couverture),
+                'galerie': [_url(request, i.image) for h in hebergements for i in h.article.images.all()],
+                'panoramas': PanoramaSerializer(panoramas, many=True, context={'request': request}).data,
+                'type_etablissement': fiche.type_etablissement,
+                'type_etablissement_libelle': fiche.get_type_etablissement_display(),
+                'etoiles': fiche.etoiles,
+                'description': partenaire.description,
+                'localisation_texte': _localisation_texte(partenaire),
+                'latitude': partenaire.localisation.y if partenaire.localisation else None,
+                'longitude': partenaire.localisation.x if partenaire.localisation else None,
+                'telephone_pro': partenaire.telephone_pro,
+                'whatsapp': partenaire.whatsapp,
+                'heure_arrivee': fiche.heure_arrivee,
+                'heure_depart': fiche.heure_depart,
+                'equipements_etablissement': fiche.equipements,
+                'equipements_etablissement_libelles': services.libelles(
+                    fiche.equipements, services.EQUIPEMENTS_ETABLISSEMENT_LIBELLES),
+                'petit_dejeuner': fiche.petit_dejeuner,
+                'petit_dejeuner_libelle': fiche.get_petit_dejeuner_display(),
+                'prix_petit_dejeuner': fiche.prix_petit_dejeuner,
+                'politique_annulation': fiche.politique_annulation,
+                'conditions': fiche.conditions,
+            },
+            'hebergements': [_carte_hebergement(h, request) for h in hebergements],
+        })
+
+
+def _hebergement_public(pk, avec_medias=False):
+    qs = _hebergements_qs().filter(article_id=pk).select_related(
+        'article__partenaire__profil_etablissement')
+    if avec_medias:
+        qs = qs.prefetch_related(
+            Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True).order_by('ordre')),
+            Prefetch('article__panoramas', queryset=Panorama.objects.filter(est_active=True).order_by('ordre')))
+    return qs.first()
+
+
+class HebergementDetailPublicView(APIView):
+    """GET /api/v1/locations/hebergements/<id>/?date_debut=&date_fin= —
+    fiche complète ; unites_disponibles calculé si les dates sont fournies
+    (null sinon)."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        debut, fin, erreur = _periode(request)
+        if erreur:
+            return Response({'erreur': True, 'message': erreur}, status=400)
+        h = _hebergement_public(pk, avec_medias=True)
+        if h is None:
+            return Response({'erreur': True, 'message': 'Hébergement introuvable.'}, status=404)
+        a = h.article
+        fiche = services.fiche_etablissement(a.partenaire)
+        return Response({
+            'id': a.id,
+            'titre': a.nom,
+            'description': a.description,
+            'galerie': [_url(request, i.image) for i in a.images.all()],
+            'panoramas': PanoramaSerializer(a.panoramas.all(), many=True, context={'request': request}).data,
+            'type_hebergement': h.type_hebergement,
+            'type_hebergement_libelle': h.get_type_hebergement_display(),
+            'capacite_adultes': h.capacite_adultes,
+            'capacite_enfants': h.capacite_enfants,
+            'lits': h.lits,
+            'surface_m2': h.surface_m2,
+            'equipements_hebergement': h.equipements,
+            'equipements_hebergement_libelles': services.libelles(
+                h.equipements, services.EQUIPEMENTS_HEBERGEMENT_LIBELLES),
+            'prix_nuit': a.prix,
+            'prix_semaine': h.prix_semaine,
+            'prix_mois': h.prix_mois,
+            'nb_unites': h.nb_unites,
+            'duree_min_nuits': h.duree_min_nuits,
+            'disponibilite': h.disponibilite,
+            'disponibilite_libelle': h.get_disponibilite_display(),
+            'etablissement': {
+                'id': a.partenaire_id,
+                'nom': a.partenaire.nom_commerce,
+                'heure_arrivee': fiche.heure_arrivee,
+                'heure_depart': fiche.heure_depart,
+                'petit_dejeuner': fiche.petit_dejeuner,
+                'petit_dejeuner_libelle': fiche.get_petit_dejeuner_display(),
+                'prix_petit_dejeuner': fiche.prix_petit_dejeuner,
+                'politique_annulation': fiche.politique_annulation,
+            },
+            'date_debut': debut,
+            'date_fin': fin,
+            'unites_disponibles': services.unites_disponibles(h, debut, fin) if debut else None,
+        })
+
+
+class HebergementDisponibilitePublicView(APIView):
+    """GET /api/v1/locations/hebergements/<id>/disponibilite/?date_debut=&date_fin=
+    → {unites_disponibles} (dates obligatoires)."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        debut, fin, erreur = _periode(request)
+        if erreur or debut is None:
+            return Response({'erreur': True, 'message': erreur or 'date_debut et date_fin sont requises.'},
+                            status=400)
+        h = _hebergement_public(pk)
+        if h is None:
+            return Response({'erreur': True, 'message': 'Hébergement introuvable.'}, status=404)
+        return Response({'date_debut': debut, 'date_fin': fin,
+                         'unites_disponibles': services.unites_disponibles(h, debut, fin)})
+
+
 class MetaLocationsView(APIView):
     """GET /api/v1/locations/meta/ — référentiels publics, construits
     depuis les choix réellement validés par le backend (aucune liste
@@ -353,4 +535,15 @@ class MetaLocationsView(APIView):
             'carburants': [{'valeur': v, 'libelle': l} for v, l in Vehicule.Carburant.choices],
             'equipements_vehicule': [{'valeur': v, 'libelle': l}
                                      for v, l in services.EQUIPEMENTS_VEHICULE_LIBELLES.items()],
+            # Phase V2 (hôtels, résidences meublées)
+            'types_etablissement': [{'valeur': v, 'libelle': l}
+                                    for v, l in ProfilEtablissement.TypeEtablissement.choices],
+            'types_hebergement': [{'valeur': v, 'libelle': l}
+                                  for v, l in Hebergement.TypeHebergement.choices],
+            'equipements_etablissement': [{'valeur': v, 'libelle': l}
+                                          for v, l in services.EQUIPEMENTS_ETABLISSEMENT_LIBELLES.items()],
+            'equipements_hebergement': [{'valeur': v, 'libelle': l}
+                                        for v, l in services.EQUIPEMENTS_HEBERGEMENT_LIBELLES.items()],
+            'petit_dejeuner': [{'valeur': v, 'libelle': l}
+                               for v, l in ProfilEtablissement.PetitDejeuner.choices],
         })

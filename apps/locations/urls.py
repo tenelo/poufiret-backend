@@ -19,10 +19,20 @@ from .views_prive import (
     MonVehiculeImageDetailView, MonVehiculeImagesView,
     MonVehiculePanoramaDetailView, MonVehiculePanoramasView,
     MonVehiculesView,
+    AdminEtablissementView, MonEtablissementView,
+    AdminHebergementDetailView, AdminHebergementDisponibiliteView,
+    AdminHebergementImageDetailView, AdminHebergementImagesView,
+    AdminHebergementPanoramaDetailView, AdminHebergementPanoramasView,
+    AdminHebergementsView,
+    MonHebergementDetailView, MonHebergementDisponibiliteView,
+    MonHebergementImageDetailView, MonHebergementImagesView,
+    MonHebergementPanoramaDetailView, MonHebergementPanoramasView,
+    MonHebergementsView,
 )
 from .views_public import (
     LogementDetailPublicView, LogementsParPartenaireView, MetaLocationsView,
     VehiculeDetailPublicView, VehiculesParPartenaireView,
+    EtablissementPublicView, HebergementDetailPublicView, HebergementDisponibilitePublicView,
 )
 
 app_name = 'locations'
@@ -36,6 +46,11 @@ urlpatterns = [
     path('partenaires/<int:partenaire_id>/vehicules/', VehiculesParPartenaireView.as_view(),
          name='partenaire-vehicules'),
     path('vehicules/<int:pk>/', VehiculeDetailPublicView.as_view(), name='vehicule-detail'),
+    path('partenaires/<int:partenaire_id>/etablissement/', EtablissementPublicView.as_view(),
+         name='partenaire-etablissement'),
+    path('hebergements/<int:pk>/', HebergementDetailPublicView.as_view(), name='hebergement-detail'),
+    path('hebergements/<int:pk>/disponibilite/', HebergementDisponibilitePublicView.as_view(),
+         name='hebergement-disponibilite'),
 
     # ── Loueur de maisons (ses propres logements) ─────────────────────────────────
     path('mon-espace/logements/', MonLogementsView.as_view(), name='mon-logements'),
@@ -65,6 +80,21 @@ urlpatterns = [
     path('mon-espace/vehicules/<int:vehicule_id>/panoramas/<int:pk>/',
          MonVehiculePanoramaDetailView.as_view(), name='mon-vehicule-panorama-detail'),
 
+    # ── Hôtelier (son établissement et ses hébergements) ──────────────
+    path('mon-espace/etablissement/', MonEtablissementView.as_view(), name='mon-etablissement'),
+    path('mon-espace/hebergements/', MonHebergementsView.as_view(), name='mon-hebergements'),
+    path('mon-espace/hebergements/<int:pk>/', MonHebergementDetailView.as_view(), name='mon-hebergement-detail'),
+    path('mon-espace/hebergements/<int:pk>/disponibilite/', MonHebergementDisponibiliteView.as_view(),
+         name='mon-hebergement-disponibilite'),
+    path('mon-espace/hebergements/<int:hebergement_id>/images/', MonHebergementImagesView.as_view(),
+         name='mon-hebergement-images'),
+    path('mon-espace/hebergements/<int:hebergement_id>/images/<int:pk>/',
+         MonHebergementImageDetailView.as_view(), name='mon-hebergement-image-detail'),
+    path('mon-espace/hebergements/<int:hebergement_id>/panoramas/', MonHebergementPanoramasView.as_view(),
+         name='mon-hebergement-panoramas'),
+    path('mon-espace/hebergements/<int:hebergement_id>/panoramas/<int:pk>/',
+         MonHebergementPanoramaDetailView.as_view(), name='mon-hebergement-panorama-detail'),
+
     # ── Admin (à la place d'un loueur donné) ──────────────────────────
     path('admin/', LoueursAdminListeView.as_view(), name='admin-liste'),
     path('admin/<int:partenaire_id>/logements/', AdminLogementsView.as_view(), name='admin-logements'),
@@ -93,4 +123,19 @@ urlpatterns = [
          AdminVehiculePanoramasView.as_view(), name='admin-vehicule-panoramas'),
     path('admin/<int:partenaire_id>/vehicules/<int:vehicule_id>/panoramas/<int:pk>/',
          AdminVehiculePanoramaDetailView.as_view(), name='admin-vehicule-panorama-detail'),
+    path('admin/<int:partenaire_id>/etablissement/', AdminEtablissementView.as_view(),
+         name='admin-etablissement'),
+    path('admin/<int:partenaire_id>/hebergements/', AdminHebergementsView.as_view(), name='admin-hebergements'),
+    path('admin/<int:partenaire_id>/hebergements/<int:pk>/', AdminHebergementDetailView.as_view(),
+         name='admin-hebergement-detail'),
+    path('admin/<int:partenaire_id>/hebergements/<int:pk>/disponibilite/',
+         AdminHebergementDisponibiliteView.as_view(), name='admin-hebergement-disponibilite'),
+    path('admin/<int:partenaire_id>/hebergements/<int:hebergement_id>/images/',
+         AdminHebergementImagesView.as_view(), name='admin-hebergement-images'),
+    path('admin/<int:partenaire_id>/hebergements/<int:hebergement_id>/images/<int:pk>/',
+         AdminHebergementImageDetailView.as_view(), name='admin-hebergement-image-detail'),
+    path('admin/<int:partenaire_id>/hebergements/<int:hebergement_id>/panoramas/',
+         AdminHebergementPanoramasView.as_view(), name='admin-hebergement-panoramas'),
+    path('admin/<int:partenaire_id>/hebergements/<int:hebergement_id>/panoramas/<int:pk>/',
+         AdminHebergementPanoramaDetailView.as_view(), name='admin-hebergement-panorama-detail'),
 ]

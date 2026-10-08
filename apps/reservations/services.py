@@ -102,6 +102,60 @@ def vehicule_de(objet):
     return getattr(objet, 'vehicule', None) if objet.type == objet.Type.VEHICULE else None
 
 
+def hebergement_de(objet):
+    """Fiche hébergement de l'objet (Article) ou None."""
+    return getattr(objet, 'hebergement', None) if objet.type == objet.Type.HEBERGEMENT else None
+
+
+def _locations_services():
+    # Calculs d'unités et de tarif d'un hébergement (source unique dans
+    # apps.locations.services), importés à l'appel : apps.reservations ne
+    # dépend pas de apps.locations au chargement.
+    from apps.locations import services
+    return services
+
+
+def message_unites(restantes, demandees):
+    if restantes == 0:
+        return 'Complet sur ces dates : plus aucune unité disponible.'
+    return (f'Seulement {restantes} unité(s) encore disponible(s) sur ces dates '
+            f'({demandees} demandée(s)).')
+
+
+def regles_reservation_hebergement(hebergement, attrs):
+    """Valide une RÉSERVATION sur un hébergement (Phase V2 ; la visite est
+    refusée en amont par CreerDemandeSerializer) et complète `attrs`
+    (nb_adultes, nb_enfants, nb_unites, montant_estime). Retourne un dict
+    d'erreurs (vide si OK). nuits = date_fin (départ) − date_debut (arrivée)."""
+    debut, fin = attrs['date_debut'], attrs['date_fin']
+    if debut < timezone.localdate():
+        return {'date_debut': ["La date d'arrivée ne peut pas être passée."]}
+    if hebergement.disponibilite != hebergement.Disponibilite.DISPONIBLE:
+        return {'objet_id': ["Cet hébergement n'est pas disponible à la réservation."]}
+    nuits = (fin - debut).days
+    if nuits < hebergement.duree_min_nuits:
+        return {'date_fin': [f'Durée minimale de séjour : {hebergement.duree_min_nuits} nuit(s).']}
+
+    nb_unites = attrs.get('nb_unites') or 1
+    nb_adultes = attrs.get('nb_adultes') or 1
+    nb_enfants = attrs.get('nb_enfants') or 0
+    if nb_adultes > hebergement.capacite_adultes * nb_unites:
+        return {'nb_adultes': [f'Capacité dépassée : {hebergement.capacite_adultes} adulte(s) '
+                               f'maximum par unité ({nb_unites} unité(s)).']}
+    if nb_enfants > hebergement.capacite_enfants * nb_unites:
+        return {'nb_enfants': [f'Capacité dépassée : {hebergement.capacite_enfants} enfant(s) '
+                               f'maximum par unité ({nb_unites} unité(s)).']}
+
+    services = _locations_services()
+    restantes = services.unites_disponibles(hebergement, debut, fin)
+    if nb_unites > restantes:
+        return {'nb_unites': [message_unites(restantes, nb_unites)]}
+
+    attrs.update(nb_unites=nb_unites, nb_adultes=nb_adultes, nb_enfants=nb_enfants,
+                 montant_estime=services.tarif_sejour(hebergement, attrs['objet'].prix, nuits, nb_unites))
+    return {}
+
+
 def chevauchement_confirme(objet_id, date_debut, date_fin, exclure_id=None):
     """Première réservation CONFIRMÉE du même objet dont la période
     [date_debut, date_fin[ chevauche celle donnée (date_fin = jour de
@@ -222,6 +276,14 @@ def appliquer_transition_demande(demande, cible, acteur, acteur_role, commentair
                                          exclure_id=demande.pk)
         if occupee is not None:
             return False, message_chevauchement(occupee)
+    # Hébergement (V2) : jamais plus d'unités confirmées que nb_unites, nuit par nuit.
+    hebergement = hebergement_de(demande.objet) \
+        if demande.nature == DemandeReservation.Nature.RESERVATION else None
+    if cible == 'confirmee' and hebergement is not None:
+        restantes = _locations_services().unites_disponibles(
+            hebergement, demande.date_debut, demande.date_fin, exclure_id=demande.pk)
+        if demande.nb_unites > restantes:
+            return False, message_unites(restantes, demande.nb_unites)
 
     ancien_statut = demande.statut
     demande.statut = cible
@@ -237,8 +299,8 @@ def appliquer_transition_demande(demande, cible, acteur, acteur_role, commentair
     demande.save()
 
     # Logement (M1) uniquement : la confirmation passe le bien en « réservé ».
-    # Un véhicule (V1) garde sa disponibilité globale — l'occupation se lit
-    # par dates (réservations confirmées, periodes_indisponibles).
+    # Un véhicule (V1) ou un hébergement (V2) garde sa disponibilité globale —
+    # l'occupation se lit par dates (et par unités pour un hébergement).
     if demande.nature == DemandeReservation.Nature.RESERVATION:
         logement = _logement_de(demande)
         if logement is not None:

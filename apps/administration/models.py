@@ -49,6 +49,9 @@ class JournalModeration(ModeleBase):
         LOC_DISPO_MODIF = 'loc_dispo_modif', 'Disponibilité de logement modifiée (admin)'
         LOC_VEHICULE_MODIF = 'loc_vehicule_modif', 'Véhicule modifié (admin)'
         LOC_VEHICULE_DISPO = 'loc_vehicule_dispo', 'Disponibilité de véhicule modifiée (admin)'
+        LOC_ETABLISSEMENT_MODIF = 'loc_etablissement_modif', 'Fiche établissement modifiée (admin)'
+        LOC_HEBERGEMENT_MODIF = 'loc_hebergement_modif', 'Hébergement modifié (admin)'
+        LOC_HEBERGEMENT_DISPO = 'loc_hebergement_dispo', 'Disponibilité d\'hébergement modifiée (admin)'
         CAT_CREATION = 'cat_creation', 'Catégorie créée'
         CAT_MODIFICATION = 'cat_modification', 'Catégorie modifiée'
         CAT_SUPPRESSION = 'cat_suppression', 'Catégorie supprimée'
@@ -196,7 +199,7 @@ class PermissionsAdmin(ModeleBase):
         default=False,
     )
     gerer_locations = models.BooleanField(
-        'gérer les locations (logements, véhicules) à la place du loueur',
+        'gérer les locations (logements, véhicules, hébergements) à la place du loueur',
         default=False,
     )
     gerer_reservations = models.BooleanField(

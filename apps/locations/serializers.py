@@ -1,24 +1,28 @@
 """Sérialiseurs d'écriture des biens en location (Article + fiche, une
-seule ressource) : logements (M1) et véhicules (V1). La lecture passe par
-apps.locations.services.logement_dict / vehicule_dict, pas par ces
+seule ressource) : logements (M1), véhicules (V1), hébergements (V2) — et
+de la fiche établissement (V2). La lecture passe par
+apps.locations.services.*_dict, pas par ces
 sérialiseurs (évite de mélanger champs écrits/dérivés)."""
 from decimal import Decimal
 
 from rest_framework import serializers
 
-from apps.catalog.models import Article, Logement, Vehicule
+from apps.catalog.models import Article, Hebergement, Logement, Vehicule
 from apps.geo.coherence import verifier_coherence
 from apps.geo.models import Localite, Quartier
 
-from .services import EQUIPEMENTS_REFERENTIEL, EQUIPEMENTS_VEHICULE_LIBELLES, valider_equipements
+from .models import ProfilEtablissement
+from .services import (
+    EQUIPEMENTS_ETABLISSEMENT_LIBELLES, EQUIPEMENTS_HEBERGEMENT_LIBELLES, EQUIPEMENTS_REFERENTIEL,
+    EQUIPEMENTS_VEHICULE_LIBELLES, valider_equipements,
+)
 
 
-class _BienGestionSerializer(serializers.Serializer):
+class _ArticleFicheSerializer(serializers.Serializer):
     """Base commune : champs portés par l'Article (nom, description, prix,
-    est_actif) + localisation propre au bien (cohérence apps.geo).
-    context requis : partenaire, acteur_role, acteur_nom.
-    Sous-classes : modele_fiche (fiche 1-1), article_type, slug_defaut,
-    champs_creation (valeurs imposées à la création de la fiche)."""
+    est_actif) + fiche 1-1. context requis : partenaire, acteur_role,
+    acteur_nom. Sous-classes : modele_fiche (fiche 1-1), article_type,
+    slug_defaut, champs_creation (valeurs imposées à la création)."""
     modele_fiche = None
     article_type = None
     slug_defaut = 'bien'
@@ -29,6 +33,60 @@ class _BienGestionSerializer(serializers.Serializer):
     prix = serializers.DecimalField(max_digits=12, decimal_places=0)
     est_actif = serializers.BooleanField(required=False)
 
+    def _localisation(self, validated_data):
+        """Champs de localisation propres au bien (aucun par défaut)."""
+        return {}
+
+    def create(self, validated_data):
+        from django.utils.text import slugify
+
+        from apps.catalog.correspondances import categories_correspondantes
+
+        partenaire = self.context['partenaire']
+        nom = validated_data.pop('nom')
+        prix = validated_data.pop('prix')
+        description = validated_data.pop('description', '')
+        est_actif = validated_data.pop('est_actif', True)
+        localisation = self._localisation(validated_data)
+
+        base = slugify(nom)[:200] or self.slug_defaut
+        slug, n = base, 1
+        while Article.objects.filter(partenaire=partenaire, slug=slug).exists():
+            n += 1
+            slug = f'{base}-{n}'[:220]
+        categorie = categories_correspondantes(partenaire.type_partenaire).first()
+
+        article = Article.objects.create(
+            partenaire=partenaire, categorie=categorie, nom=nom, slug=slug,
+            type=self.article_type, prix=prix, description=description, est_actif=est_actif)
+        return self.modele_fiche.objects.create(
+            article=article,
+            modifie_par_role=self.context['acteur_role'], modifie_par_nom=self.context['acteur_nom'],
+            **localisation, **self.champs_creation, **validated_data)
+
+    def update(self, inst, validated_data):
+        article_champs = {k: validated_data.pop(k) for k in
+                          ('nom', 'description', 'prix', 'est_actif') if k in validated_data}
+        if article_champs:
+            for k, v in article_champs.items():
+                setattr(inst.article, k, v)
+            inst.article.save(update_fields=list(article_champs) + ['updated_at'])
+
+        if 'latitude' in validated_data or 'longitude' in validated_data:
+            validated_data.update(self._localisation(validated_data))
+
+        validated_data['modifie_par_role'] = self.context['acteur_role']
+        validated_data['modifie_par_nom'] = self.context['acteur_nom']
+        for k, v in validated_data.items():
+            setattr(inst, k, v)
+        inst.save()
+        return inst
+
+
+class _BienGestionSerializer(_ArticleFicheSerializer):
+    """Bien avec localisation PROPRE (logement, point de prise en charge
+    d'un véhicule) : localité/quartier/secteur/repères + GPS, cohérence
+    apps.geo avec le département du partenaire."""
     localite_id = serializers.PrimaryKeyRelatedField(
         source='localite', queryset=Localite.objects.filter(est_actif=True),
         required=False, allow_null=True)
@@ -41,6 +99,12 @@ class _BienGestionSerializer(serializers.Serializer):
         required=False, allow_null=True, min_value=-90, max_value=90)
     longitude = serializers.FloatField(
         required=False, allow_null=True, min_value=-180, max_value=180)
+
+    def _localisation(self, validated_data):
+        from django.contrib.gis.geos import Point
+        lat = validated_data.pop('latitude', None)
+        lng = validated_data.pop('longitude', None)
+        return {'localisation': Point(lng, lat, srid=4326) if lat is not None else None}
 
     def validate(self, attrs):
         lat_in, lng_in = 'latitude' in attrs, 'longitude' in attrs
@@ -57,57 +121,6 @@ class _BienGestionSerializer(serializers.Serializer):
         if erreurs:
             raise serializers.ValidationError(erreurs)
         return attrs
-
-    def create(self, validated_data):
-        from django.contrib.gis.geos import Point
-        from django.utils.text import slugify
-
-        from apps.catalog.correspondances import categories_correspondantes
-
-        partenaire = self.context['partenaire']
-        nom = validated_data.pop('nom')
-        prix = validated_data.pop('prix')
-        description = validated_data.pop('description', '')
-        est_actif = validated_data.pop('est_actif', True)
-        lat = validated_data.pop('latitude', None)
-        lng = validated_data.pop('longitude', None)
-
-        base = slugify(nom)[:200] or self.slug_defaut
-        slug, n = base, 1
-        while Article.objects.filter(partenaire=partenaire, slug=slug).exists():
-            n += 1
-            slug = f'{base}-{n}'[:220]
-        categorie = categories_correspondantes(partenaire.type_partenaire).first()
-
-        article = Article.objects.create(
-            partenaire=partenaire, categorie=categorie, nom=nom, slug=slug,
-            type=self.article_type, prix=prix, description=description, est_actif=est_actif)
-        return self.modele_fiche.objects.create(
-            article=article, localisation=Point(lng, lat, srid=4326) if lat is not None else None,
-            modifie_par_role=self.context['acteur_role'], modifie_par_nom=self.context['acteur_nom'],
-            **self.champs_creation, **validated_data)
-
-    def update(self, inst, validated_data):
-        from django.contrib.gis.geos import Point
-
-        article_champs = {k: validated_data.pop(k) for k in
-                          ('nom', 'description', 'prix', 'est_actif') if k in validated_data}
-        if article_champs:
-            for k, v in article_champs.items():
-                setattr(inst.article, k, v)
-            inst.article.save(update_fields=list(article_champs) + ['updated_at'])
-
-        if 'latitude' in validated_data or 'longitude' in validated_data:
-            lat = validated_data.pop('latitude', None)
-            lng = validated_data.pop('longitude', None)
-            inst.localisation = Point(lng, lat, srid=4326) if lat is not None else None
-
-        validated_data['modifie_par_role'] = self.context['acteur_role']
-        validated_data['modifie_par_nom'] = self.context['acteur_nom']
-        for k, v in validated_data.items():
-            setattr(inst, k, v)
-        inst.save()
-        return inst
 
 
 class LogementGestionSerializer(_BienGestionSerializer):
@@ -194,3 +207,66 @@ class VehiculeGestionSerializer(_BienGestionSerializer):
             raise serializers.ValidationError({'prix_jour_avec_chauffeur': [
                 'Requis lorsque le chauffeur est disponible.']})
         return attrs
+
+
+def _valider_liste(valeur, referentiel):
+    normalises = valider_equipements(valeur, list(referentiel))
+    if normalises is None:
+        raise serializers.ValidationError(f'Valeurs attendues parmi : {", ".join(referentiel)}.')
+    return normalises
+
+
+class HebergementGestionSerializer(_ArticleFicheSerializer):
+    """Prix de l'Article = prix par nuit. Pas de localisation propre :
+    celle de l'établissement (partenaire)."""
+    modele_fiche = Hebergement
+    article_type = Article.Type.HEBERGEMENT
+    slug_defaut = 'hebergement'
+
+    type_hebergement = serializers.ChoiceField(choices=Hebergement.TypeHebergement.choices)
+    capacite_adultes = serializers.IntegerField(required=False, min_value=1, max_value=50)
+    capacite_enfants = serializers.IntegerField(required=False, min_value=0, max_value=50)
+    lits = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    surface_m2 = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    equipements_hebergement = serializers.ListField(source='equipements', required=False)
+    prix_semaine = serializers.DecimalField(
+        max_digits=12, decimal_places=0, required=False, allow_null=True, min_value=Decimal(0))
+    prix_mois = serializers.DecimalField(
+        max_digits=12, decimal_places=0, required=False, allow_null=True, min_value=Decimal(0))
+    nb_unites = serializers.IntegerField(required=False, min_value=1, max_value=1000)
+    duree_min_nuits = serializers.IntegerField(required=False, min_value=1, max_value=365)
+
+    def validate_equipements_hebergement(self, valeur):
+        return _valider_liste(valeur, EQUIPEMENTS_HEBERGEMENT_LIBELLES)
+
+
+class EtablissementGestionSerializer(serializers.ModelSerializer):
+    """PATCH de la fiche établissement. context requis : acteur_role, acteur_nom."""
+    equipements_etablissement = serializers.ListField(source='equipements', required=False)
+    etoiles = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=5)
+    prix_petit_dejeuner = serializers.DecimalField(
+        max_digits=12, decimal_places=0, required=False, allow_null=True, min_value=Decimal(0))
+
+    class Meta:
+        model = ProfilEtablissement
+        fields = ['type_etablissement', 'etoiles', 'heure_arrivee', 'heure_depart',
+                  'equipements_etablissement', 'petit_dejeuner', 'prix_petit_dejeuner',
+                  'politique_annulation', 'conditions']
+
+    def validate_equipements_etablissement(self, valeur):
+        return _valider_liste(valeur, EQUIPEMENTS_ETABLISSEMENT_LIBELLES)
+
+    def validate(self, attrs):
+        inst = self.instance
+        formule = attrs.get('petit_dejeuner', inst.petit_dejeuner if inst else None)
+        prix = attrs['prix_petit_dejeuner'] if 'prix_petit_dejeuner' in attrs else (
+            inst.prix_petit_dejeuner if inst else None)
+        if formule == ProfilEtablissement.PetitDejeuner.EN_OPTION and prix is None:
+            raise serializers.ValidationError({'prix_petit_dejeuner': [
+                'Requis lorsque le petit-déjeuner est en option.']})
+        return attrs
+
+    def update(self, inst, validated_data):
+        validated_data['modifie_par_role'] = self.context['acteur_role']
+        validated_data['modifie_par_nom'] = self.context['acteur_nom']
+        return super().update(inst, validated_data)
