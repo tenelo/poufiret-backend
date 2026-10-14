@@ -269,6 +269,7 @@ class ValiderPanierView(APIView):
 
         commande = Commande.objects.create(
             numero=_numero_commande(), user=request.user, partenaire=panier.partenaire,
+            categorie_id=panier.categorie_id,
             mode_livraison=mode_liv,
             localisation_livraison=point_livraison,
             adresse=adresse_obj, adresse_snapshot=adresse_snap,

@@ -183,6 +183,12 @@ class Commande(models.Model):
         ProfilPartenaire, on_delete=models.PROTECT,
         related_name='commandes', verbose_name=_('commerçant'),
     )
+    categorie = models.ForeignKey(
+        'catalog.Categorie', on_delete=models.SET_NULL,
+        blank=True, null=True,
+        related_name='commandes', verbose_name=_('catégorie'),
+        help_text=_('Catégorie du panier d\'origine (panier pur partenaire + catégorie).'),
+    )
 
     # ── Mode de livraison et adresse ─────────────────────────────────
     mode_livraison = models.CharField(

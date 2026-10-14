@@ -16,7 +16,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
 
-from apps.core.permissions import EstAdmin, EstSuperAdmin, ADroitDe, PeutGererAdmins
+from apps.core.permissions import EstAdmin, EstSuperAdmin, ADroitDe, ADroitDeUnDe, PeutGererAdmins
 from apps.core.exports import reponse_csv
 from apps.core.validateurs import generer_pin_aleatoire
 from . import services, moderation, faveurs, partenaires
@@ -609,7 +609,8 @@ def _admin_dict(u, noms_capacites=None):
 CAPACITES_PRIVILEGIEES = {'gerer_admins', 'gerer_geographie', 'gerer_formules_pub',
                           'gerer_commandes', 'gerer_restaurants',
                           'modifier_identifiant_partenaire', 'gerer_parametres',
-                          'gerer_locations', 'gerer_reservations'}
+                          'gerer_locations', 'gerer_reservations',
+                          'gerer_interventions'}
 
 
 def _filtrer_anti_escalade(capacites_payload, acteur):
@@ -840,6 +841,11 @@ def _interventions_qs(request):
     return qs
 
 
+# Lecture : voir_interventions OU gerer_interventions (la gestion implique
+# la lecture). Toute future écriture admin : ADroitDe('gerer_interventions').
+_LECTURE_INTERVENTIONS = [IsAuthenticated, ADroitDeUnDe('voir_interventions', 'gerer_interventions')]
+
+
 class InterventionsAdminView(APIView):
     """GET /administration/interventions/ — supervision en LECTURE SEULE de
     toutes les demandes d'intervention, tous artisans confondus (le client
@@ -852,7 +858,7 @@ class InterventionsAdminView(APIView):
     artisan). Liste complète triée par -created_at (pas de pagination DRF :
     ce module n'en utilise nulle part ailleurs, cf. JournalModerationView).
     """
-    permission_classes = [IsAuthenticated, ADroitDe('voir_interventions')]
+    permission_classes = _LECTURE_INTERVENTIONS
 
     def get(self, request):
         qs = _interventions_qs(request)
@@ -863,7 +869,7 @@ class InterventionsAdminView(APIView):
 class InterventionsAdminExportView(APIView):
     """GET /administration/interventions/export/ — export CSV des demandes
     d'intervention, mêmes filtres et mêmes champs que InterventionsAdminView."""
-    permission_classes = [IsAuthenticated, ADroitDe('voir_interventions')]
+    permission_classes = _LECTURE_INTERVENTIONS
 
     def get(self, request):
         qs = _interventions_qs(request)

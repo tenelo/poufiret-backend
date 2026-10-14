@@ -138,3 +138,16 @@ def ADroitDe(*capacites):
 
     _ADroitDe.__name__ = 'ADroitDe_' + '_'.join(capacites)
     return _ADroitDe
+
+
+def ADroitDeUnDe(*capacites):
+    """Comme ADroitDe, mais AU MOINS UNE des capacités suffit (OU logique).
+    Ex. lecture accordée par 'voir_x' ou par 'gerer_x' (qui implique la lecture)."""
+    class _ADroitDeUnDe(permissions.BasePermission):
+        message = "Vous n'avez pas la permission pour cette action."
+
+        def has_permission(self, request, view):
+            return any(ADroitDe(cap)().has_permission(request, view) for cap in capacites)
+
+    _ADroitDeUnDe.__name__ = 'ADroitDeUnDe_' + '_'.join(capacites)
+    return _ADroitDeUnDe

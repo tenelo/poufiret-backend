@@ -14,6 +14,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.catalog.models import Categorie
 from apps.core.exports import reponse_csv
 from apps.core.permissions import ADroitDe
 from apps.livraison.models import Course
@@ -46,6 +47,16 @@ def _parser_date(valeur):
         return datetime.strptime(valeur[:10], '%Y-%m-%d').date()
     except (ValueError, TypeError):
         return None
+
+
+def _filtre_categorie(qs, valeur):
+    """?categorie=<id> (Commande.categorie). Retourne (qs, erreur)."""
+    if not valeur:
+        return qs, None
+    try:
+        return qs.filter(categorie_id=int(valeur)), None
+    except (ValueError, TypeError):
+        return qs.none(), 'Catégorie invalide.'
 
 
 def _commandes_admin_qs(request, avec_groupe_statut=True):
@@ -86,6 +97,9 @@ def _commandes_admin_qs(request, avec_groupe_statut=True):
             qs = qs.filter(user_id=int(client))
         except (ValueError, TypeError):
             return qs.none(), 'Client invalide.'
+    qs, erreur = _filtre_categorie(qs, p.get('categorie'))
+    if erreur:
+        return qs, erreur
     if p.get('restauration') == '1':
         qs = qs.filter(partenaire__type_partenaire__in=services_restaurants.TYPES_RESTAURATION)
     type_partenaire = p.get('type_partenaire')
@@ -145,6 +159,22 @@ def _compteurs_groupe(request):
     return compteurs
 
 
+def _categories_avec_commandes():
+    """Catégories ayant au moins une commande (une seule requête agrégée) :
+    Restaurants (types_partenaire de restauration) en premier, puis l'ordre
+    de la grille (Categorie.ordre, nom)."""
+    cats = (Categorie.objects
+            .annotate(nb_commandes=Count('commandes', distinct=True),
+                      nb_a_traiter=Count('commandes', distinct=True, filter=Q(
+                          commandes__statut__in=STATUTS_PAR_GROUPE['a_traiter'])))
+            .filter(nb_commandes__gt=0)
+            .order_by('ordre', 'nom'))
+    restauration = set(services_restaurants.TYPES_RESTAURATION)
+    cats = sorted(cats, key=lambda c: not restauration & set(c.types_partenaire or []))
+    return [{'id': c.id, 'nom': c.nom, 'icone': c.icone,
+             'nb_commandes': c.nb_commandes, 'nb_a_traiter': c.nb_a_traiter} for c in cats]
+
+
 class MetaAdminCommandesView(APIView):
     """GET /orders/admin/meta/ — statuts, groupes, modes de livraison."""
     permission_classes = _PERMISSION
@@ -158,7 +188,8 @@ class MetaAdminCommandesView(APIView):
         types_partenaire = [{'valeur': v, 'libelle': l}
                             for v, l in ProfilPartenaire.TypePartenaire.choices]
         return Response({'statuts': statuts, 'groupes': groupes, 'modes_livraison': modes,
-                         'types_partenaire': types_partenaire})
+                         'types_partenaire': types_partenaire,
+                         'categories': _categories_avec_commandes()})
 
 
 class CommandesAdminListView(generics.ListAPIView):
@@ -291,7 +322,7 @@ class NotesAdminCommandeView(APIView):
 
 
 class StatsAdminCommandesView(APIView):
-    """GET /orders/admin/stats/?du=&au=&partenaire=&departement=
+    """GET /orders/admin/stats/?du=&au=&partenaire=&departement=&categorie=
     (défaut : 30 derniers jours). Agrégations en base, sans N+1."""
     permission_classes = _PERMISSION
 
@@ -313,6 +344,9 @@ class StatsAdminCommandesView(APIView):
                 qs = qs.filter(partenaire__departement_id=int(departement))
             except (ValueError, TypeError):
                 return Response({'erreur': True, 'message': 'Département invalide.'}, status=400)
+        qs, erreur = _filtre_categorie(qs, p.get('categorie'))
+        if erreur:
+            return Response({'erreur': True, 'message': erreur}, status=400)
 
         total = qs.count()
         par_statut_brut = dict(qs.order_by().values_list('statut').annotate(n=Count('id')))

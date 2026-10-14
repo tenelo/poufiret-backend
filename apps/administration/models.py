@@ -206,6 +206,10 @@ class PermissionsAdmin(ModeleBase):
         "gérer le centre de demandes (visite/réservation)",
         default=False,
     )
+    gerer_interventions = models.BooleanField(
+        "gérer les demandes d'intervention (écriture ; implique la lecture)",
+        default=False,
+    )
 
     class Meta:
         verbose_name = 'permissions admin'
