@@ -198,7 +198,8 @@ try:
            and {'statuts', 'urgences', 'types'} <= set(r.json())
            and {'valeur', 'libelle'} <= set(r.json()['types'][0]), r.content)
         ok('meta sans droit -> 403', req('get', f'{B}meta/', sans).status_code == 403)
-        r = req('get', f'{B}?urgence=urgent&type=depannage_urgent&artisan={artisan.id}&q=QA', gerer)
+        # ?q= cherche numéro, téléphone/nom du client, nom de l'artisan (pas la description).
+        r = req('get', f'{B}?urgence=urgent&type=depannage_urgent&artisan={artisan.id}&q={d1.numero}', gerer)
         d = r.json()
         ok('liste filtree (gerer implique lecture) contient d1', r.status_code == 200
            and d1.id in {x['id'] for x in d['resultats']}, r.content[:300])
@@ -208,7 +209,7 @@ try:
         ok('compteurs_statut (tous statuts + total)', 'compteurs_statut' in d
            and d['compteurs_statut']['en_attente'] >= 1
            and d['compteurs_statut']['total'] == sum(v for k, v in d['compteurs_statut'].items() if k != 'total'))
-        r = req('get', f'{B}?urgence=flexible&q=QA C4', voir)
+        r = req('get', f'{B}?urgence=flexible&q={d1.numero}', voir)
         ok('filtre urgence exclut d1', d1.id not in {x['id'] for x in r.json()['resultats']})
         aujourdhui = timezone.localdate().isoformat()
         ok('filtres du/au', d1.id in {x['id'] for x in req('get', f'{B}?du={aujourdhui}&au={aujourdhui}', voir).json()['resultats']})

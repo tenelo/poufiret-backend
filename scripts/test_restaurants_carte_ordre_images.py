@@ -97,8 +97,12 @@ try:
         pa.statut, pa.est_visible = ProfilPartenaire.Statut.ACTIF, True
         pa.save(update_fields=['statut', 'est_visible'])
         fiche = services.fiche_de(pa)
-        modele = Article.objects.filter(partenaire=pa).first()
-        categorie = modele.categorie if modele else None
+        # Même résolution que la création de plat par l'API (le partenaire
+        # de test peut n'avoir encore aucun article), repli sur une catégorie quelconque.
+        from apps.catalog.models import Categorie
+        from apps.restaurants.views_carte import _categorie_par_defaut
+        categorie = _categorie_par_defaut(pa) or Categorie.objects.order_by('id').first()
+        ok('categorie disponible pour les plats de test', categorie is not None)
 
         admin_sans = User.objects.create(telephone='+22507100001', username='t_ord_sans', role='admin',
                                          is_staff=True, is_superuser=False, est_verifie=True)
