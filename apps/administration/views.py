@@ -14,7 +14,7 @@ from rest_framework import status
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 
 from apps.core.permissions import EstAdmin, EstSuperAdmin, ADroitDe, ADroitDeUnDe, PeutGererAdmins
 from apps.core.exports import reponse_csv
@@ -25,7 +25,7 @@ from apps.users.serializers import MonProfilPartenaireSerializer
 from apps.publicites.models import CreditFormulePub, FormulePublicite, Publicite
 from apps.publicites import credits as credits_pub
 from apps.messaging.models import DemandeIntervention
-from .models import JournalModeration, PermissionsAdmin
+from .models import ConnexionAdmin, JournalModeration, PermissionsAdmin
 from .serializers import (InterventionAdminSerializer, PartenaireListeAdminSerializer,
                           ConnexionAdminSerializer)
 
@@ -113,6 +113,8 @@ class JournalModerationView(APIView):
             'cible': j.cible_identifiant,
             'cible_role': j.cible_role,
             'motif': j.motif,
+            'occurrences': j.occurrences,
+            'derniere_occurrence': (j.derniere_occurrence or j.cree_le).isoformat(),
         } for j in entrees]
         return Response({'total': JournalModeration.objects.count(),
                          'entrees': data})
@@ -124,7 +126,8 @@ class JournalExportView(APIView):
 
     def get(self, request):
         from django.utils import timezone
-        entetes = ['date', 'action', 'acteur', 'cible', 'cible_role', 'motif']
+        entetes = ['date', 'action', 'acteur', 'cible', 'cible_role', 'motif',
+                   'occurrences', 'derniere_occurrence']
         lignes = []
         for j in JournalModeration.objects.select_related('acteur').iterator():
             lignes.append([
@@ -134,6 +137,8 @@ class JournalExportView(APIView):
                 j.cible_identifiant,
                 j.cible_role,
                 j.motif,
+                j.occurrences,
+                timezone.localtime(j.derniere_occurrence or j.cree_le).strftime('%Y-%m-%d %H:%M:%S'),
             ])
         return reponse_csv('journal_moderation', entetes, lignes)
 
@@ -821,24 +826,60 @@ class AdminDetailView(APIView):
         return Response({'detail': 'Admin révoqué.'}, status=status.HTTP_200_OK)
 
 
-def _interventions_qs(request):
-    """Queryset commun (filtres ?statut=/?q=) pour la liste et l'export
-    admin des demandes d'intervention. Recherche large volontaire (numéro,
-    téléphone client, nom du commerce artisan), cohérente avec
-    RecherchePartenairesView/RechercheComptesView du même module."""
+def _interventions_qs(request, avec_statut=True):
+    """Queryset commun pour la liste, les compteurs et l'export admin des
+    demandes d'intervention. Filtres : ?statut=&urgence=&type=&artisan=
+    &du=&au=&q= (q : numéro, téléphone/nom client, nom du commerce artisan).
+    Valeur inconnue → aucun résultat (même convention que ?statut=).
+    avec_statut=False : ignore ?statut= (compteurs_statut)."""
+    from datetime import datetime
+
+    def _date(valeur):
+        try:
+            return datetime.strptime((valeur or '')[:10], '%Y-%m-%d').date()
+        except ValueError:
+            return None
+
+    p = request.query_params
     qs = DemandeIntervention.objects.select_related(
         'user', 'artisan').order_by('-created_at')
-    statut = request.query_params.get('statut')
-    if statut:
-        qs = qs.filter(statut=statut)
-    q = request.query_params.get('q')
+    if avec_statut and p.get('statut'):
+        qs = qs.filter(statut=p['statut'])
+    if p.get('urgence'):
+        qs = qs.filter(urgence=p['urgence'])
+    if p.get('type'):
+        qs = qs.filter(type_intervention=p['type'])
+    if p.get('artisan'):
+        try:
+            qs = qs.filter(artisan_id=int(p['artisan']))
+        except ValueError:
+            qs = qs.none()
+    du, au = _date(p.get('du')), _date(p.get('au'))
+    if du:
+        qs = qs.filter(created_at__date__gte=du)
+    if au:
+        qs = qs.filter(created_at__date__lte=au)
+    q = p.get('q')
     if q:
         qs = qs.filter(
             Q(numero__icontains=q)
             | Q(user__telephone__icontains=q)
+            | Q(user__first_name__icontains=q)
+            | Q(user__last_name__icontains=q)
             | Q(artisan__nom_commerce__icontains=q)
         )
     return qs
+
+
+def _compteurs_statut_interventions(request):
+    """{statut: n} pour tous les statuts + total (ignore ?statut=, respecte
+    les autres filtres) — onglets de la liste."""
+    compteurs = {v: 0 for v in DemandeIntervention.Statut.values}
+    for statut, n in (_interventions_qs(request, avec_statut=False).order_by()
+                      .values_list('statut').annotate(n=Count('id'))):
+        compteurs[statut] = n
+    compteurs['total'] = sum(compteurs.values())
+    return compteurs
 
 
 # Lecture : voir_interventions OU gerer_interventions (la gestion implique
@@ -863,7 +904,8 @@ class InterventionsAdminView(APIView):
     def get(self, request):
         qs = _interventions_qs(request)
         donnees = InterventionAdminSerializer(qs, many=True).data
-        return Response({'total': len(donnees), 'resultats': donnees})
+        return Response({'total': len(donnees), 'resultats': donnees,
+                         'compteurs_statut': _compteurs_statut_interventions(request)})
 
 
 class InterventionsAdminExportView(APIView):
@@ -1005,41 +1047,55 @@ def _depuis_jours(request):
 
 
 def _connexions_admin_qs(request):
-    """Queryset commun (filtres ?jours=/?q=/?utilisateur=) pour la trace
-    des connexions admin et son export CSV.
+    """Queryset commun (filtres ?jours=/?q=/?utilisateur=) pour la liste
+    des connexions admin et son export CSV : UNE ligne par admin
+    (ConnexionAdmin), triée par dernière connexion. ?jours=N : admins
+    connectés au moins une fois sur la période.
 
     Cloisonné aux comptes is_staff=True uniquement — c'est la garde qui
     empêche d'exposer les connexions des clients/partenaires/livreurs.
+    est_active / derniere_activite_le / appareil_nom sont lus sur les
+    sessions appareils (sous-requêtes, pas de N+1).
     """
-    qs = SessionAppareil.objects.filter(
-        user__is_staff=True).select_related('user').order_by('-cree_le')
+    from django.db.models import Exists, Max, OuterRef, Subquery
+
+    sessions = SessionAppareil.objects.filter(user=OuterRef('admin_id'))
+    qs = (ConnexionAdmin.objects.filter(admin__is_staff=True)
+          .select_related('admin')
+          .annotate(
+              session_active=Exists(sessions.filter(est_active=True)),
+              derniere_activite=Subquery(
+                  sessions.values('user').annotate(m=Max('derniere_activite_le')).values('m')[:1]),
+              appareil_nom=Subquery(sessions.order_by('-derniere_activite_le').values('appareil_nom')[:1]))
+          .order_by('-derniere_connexion'))
 
     depuis = _depuis_jours(request)
     if depuis is not None:
-        qs = qs.filter(cree_le__gte=depuis)
+        qs = qs.filter(derniere_connexion__gte=depuis)
 
     utilisateur = request.query_params.get('utilisateur')
     if utilisateur:
         try:
-            qs = qs.filter(user_id=int(utilisateur))
+            qs = qs.filter(admin_id=int(utilisateur))
         except (ValueError, TypeError):
             qs = qs.none()
 
     q = request.query_params.get('q')
     if q:
         qs = qs.filter(
-            Q(user__telephone__icontains=q)
-            | Q(user__first_name__icontains=q)
-            | Q(user__last_name__icontains=q)
-            | Q(user__username__icontains=q)
+            Q(admin__telephone__icontains=q)
+            | Q(admin__first_name__icontains=q)
+            | Q(admin__last_name__icontains=q)
+            | Q(admin__username__icontains=q)
         )
     return qs
 
 
 class ConnexionsAdminView(APIView):
-    """GET /administration/connexions-admin/ — trace des connexions des
-    comptes admin (is_staff=True) uniquement, une ligne par connexion
-    (SessionAppareil), triée -cree_le.
+    """GET /administration/connexions-admin/ — connexions des comptes admin
+    (is_staff=True) uniquement, UNE ligne par admin (ConnexionAdmin), triée
+    par dernière connexion. Mêmes champs qu'avant (date_connexion = dernière
+    connexion) + nb_connexions, premiere_connexion, dernier_appareil.
 
     Filtres optionnels : ?jours=N (fenêtre glissante), ?q=<texte>
     (téléphone/nom), ?utilisateur=<id> (une seule personne). Liste
@@ -1055,32 +1111,37 @@ class ConnexionsAdminView(APIView):
 
 
 class ConnexionsAdminExportView(APIView):
-    """GET /administration/connexions-admin/export/ — export CSV de la
-    trace des connexions admin, mêmes filtres et mêmes colonnes que
-    ConnexionsAdminView."""
+    """GET /administration/connexions-admin/export/ — export CSV, une ligne
+    par admin, mêmes filtres que ConnexionsAdminView."""
     permission_classes = [IsAuthenticated, ADroitDe('lire_journal')]
 
     def get(self, request):
         from django.utils import timezone as tz
+
+        def _fmt(dt):
+            return tz.localtime(dt).strftime('%Y-%m-%d %H:%M:%S') if dt else ''
 
         qs = _connexions_admin_qs(request)
         entetes = [
             'id', 'utilisateur_id', 'telephone', 'nom', 'superadmin',
             'date_connexion', 'adresse_ip', 'plateforme', 'appareil_nom',
             'active', 'derniere_activite',
+            'nb_connexions', 'premiere_connexion', 'dernier_appareil',
         ]
+        libelles = dict(SessionAppareil.Plateforme.choices)
         lignes = []
-        for s in qs:
-            u = s.user
+        for c in qs:
+            u = c.admin
             lignes.append([
-                str(s.id), u.id, u.telephone,
+                c.id, u.id, u.telephone,
                 u.get_full_name() or u.username or u.telephone,
                 'oui' if u.is_superuser else 'non',
-                tz.localtime(s.cree_le).strftime('%Y-%m-%d %H:%M:%S'),
-                s.adresse_ip or '',
-                s.get_plateforme_display(),
-                s.appareil_nom,
-                'oui' if s.est_active else 'non',
-                tz.localtime(s.derniere_activite_le).strftime('%Y-%m-%d %H:%M:%S'),
+                _fmt(c.derniere_connexion),
+                c.derniere_ip or '',
+                libelles.get(c.derniere_plateforme, c.derniere_plateforme),
+                c.appareil_nom or '',
+                'oui' if c.session_active else 'non',
+                _fmt(c.derniere_activite),
+                c.nb_connexions, _fmt(c.premiere_connexion), c.dernier_appareil,
             ])
         return reponse_csv('connexions_admin', entetes, lignes)

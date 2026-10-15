@@ -1,48 +1,18 @@
 """Vues messaging — bloc C : DemandeIntervention."""
 from datetime import datetime
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from apps.users.models import ProfilPartenaire, AdresseClient
-from .models import DemandeIntervention, DemandeInterventionPhoto
+from .models import DemandeIntervention, DemandeInterventionPhoto, HistoriqueIntervention
 from .serializers import DemandeInterventionSerializer, DemandeInterventionPhotoSerializer
-from apps.notifications.fcm import notifier_utilisateur
-
-_LIBELLES_INTERVENTION = {
-    'acceptee': 'a ete acceptee',
-    'refusee': 'a ete refusee',
-    'en_cours': 'est en cours',
-    'terminee': 'est terminee',
-}
-
-
-def _notifier_transition_intervention(demande, cible, acteur_est_client, request):
-    """Notifie la bonne partie apres un changement de statut d'intervention."""
-    num = demande.numero
-    if cible == 'annulee' and acteur_est_client:
-        dest = getattr(demande.artisan, 'user', None)
-        if dest:
-            notifier_utilisateur(
-                dest, 'Demande annulee',
-                f'La demande {num} a ete annulee par le client.',
-                data={'type': 'intervention', 'id': str(demande.id), 'est_artisan': '1'}, request=request)
-        return
-    libelle = _LIBELLES_INTERVENTION.get(cible)
-    if libelle:
-        notifier_utilisateur(
-            demande.user, 'Suivi de demande',
-            f'Votre demande {num} {libelle}.',
-            data={'type': 'intervention', 'id': str(demande.id), 'est_artisan': '0'}, request=request)
-
-
-TRANSITIONS = {
-    'en_attente': ['acceptee', 'refusee', 'annulee'],
-    'acceptee': ['en_cours', 'annulee'],
-    'en_cours': ['terminee', 'annulee'],
-    'terminee': [], 'refusee': [], 'annulee': [],
-}
+# Machine d'état, historique et notifications centralisés (apps.messaging.services).
+from .services import (
+    TRANSITIONS, appliquer_transition_intervention, notifier_admins_intervention_nouvelle,
+)
 
 
 def _numero():
@@ -81,6 +51,7 @@ class DemandesView(APIView):
             latitude=request.data.get('latitude') or None,
             longitude=request.data.get('longitude') or None,
         )
+        transaction.on_commit(lambda: notifier_admins_intervention_nouvelle(demande))
         return Response(DemandeInterventionSerializer(demande, context={'request': request}).data,
                         status=status.HTTP_201_CREATED)
 
@@ -127,14 +98,17 @@ class TransitionDemandeView(APIView):
         # Le client ne peut qu'annuler
         if est_client and not est_artisan and cible != 'annulee':
             return Response({'erreur': True, 'message': "En tant que client, vous ne pouvez qu'annuler."}, status=403)
+        champs = {}
         if cible == 'acceptee':
-            d.date_proposee = request.data.get('date_proposee') or None
-            d.prix_propose = request.data.get('prix_propose') or None
+            champs = {'date_proposee': request.data.get('date_proposee') or None,
+                      'prix_propose': request.data.get('prix_propose') or None}
         elif cible == 'refusee':
-            d.raison_refus = request.data.get('raison_refus', '')
-        d.statut = cible
-        d.save()
-        _notifier_transition_intervention(d, cible, est_client and not est_artisan, request)
+            champs = {'raison_refus': request.data.get('raison_refus', '')}
+        role = (HistoriqueIntervention.ActeurRole.CLIENT if est_client and not est_artisan
+                else HistoriqueIntervention.ActeurRole.ARTISAN)
+        appliquer_transition_intervention(
+            d, cible, u, role, commentaire=champs.get('raison_refus', ''),
+            request=request, champs=champs)
         return Response(DemandeInterventionSerializer(d, context={'request': request}).data)
 
 

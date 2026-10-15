@@ -5,8 +5,12 @@ Chaque action de modération (suspension, bannissement, suppression,
 réactivation) DOIT créer une entrée ici — traçabilité obligatoire
 décidée avec Tenelo : qui, quand, quoi, sur qui, pourquoi.
 """
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
+from django.db.models import F
+from django.utils import timezone
 
 from apps.core.models import ModeleBase
 
@@ -87,6 +91,16 @@ class JournalModeration(ModeleBase):
     cible_role = models.CharField('rôle de la cible', max_length=20, blank=True)
     action = models.CharField('action', max_length=30, choices=Action.choices)
     motif = models.CharField('motif', max_length=255, blank=True)
+    # Regroupement des entrées identiques rapprochées (voir enregistrer()).
+    occurrences = models.PositiveIntegerField('occurrences', default=1)
+    derniere_occurrence = models.DateTimeField(
+        'dernière occurrence', blank=True, null=True,
+        help_text='Date de la dernière occurrence regroupée (= cree_le si une seule).')
+
+    # Fenêtre de regroupement : une entrée identique (même acteur, même
+    # action, même cible) créée moins de 10 min après la précédente
+    # incrémente `occurrences` au lieu de créer une ligne.
+    FENETRE_REGROUPEMENT = timedelta(minutes=10)
 
     class Meta:
         verbose_name = 'entrée de journal de modération'
@@ -95,7 +109,43 @@ class JournalModeration(ModeleBase):
         indexes = [
             models.Index(fields=['cible', 'cree_le']),
             models.Index(fields=['action', 'cree_le']),
+            # Liste du journal (tri -cree_le, [:200]) et purge par date.
+            models.Index(fields=['-cree_le'], name='journal_cree_le_idx'),
+            # Recherche de l'entrée à regrouper.
+            models.Index(fields=['acteur', 'action', '-derniere_occurrence'],
+                         name='journal_regroupement_idx'),
         ]
+
+    @classmethod
+    def enregistrer(cls, acteur, cible, action, motif='', cible_identifiant=None, cible_role=None):
+        """Point d'écriture unique du journal, avec regroupement.
+
+        « Même cible » = même compte cible ; sans compte cible (ex.
+        catégories), le motif doit aussi être identique pour regrouper.
+        Le motif conservé est celui de la dernière occurrence."""
+        maintenant = timezone.now()
+        motif = (motif or '')[:255]
+        if cible_identifiant is None:
+            cible_identifiant = getattr(cible, 'telephone', '') if cible else ''
+        if cible_role is None:
+            cible_role = getattr(cible, 'role', '') if cible else ''
+        filtre = {'acteur': acteur, 'action': action,
+                  'derniere_occurrence__gte': maintenant - cls.FENETRE_REGROUPEMENT}
+        if cible is not None:
+            filtre['cible'] = cible
+        else:
+            filtre.update(cible__isnull=True, cible_identifiant=cible_identifiant, motif=motif)
+        precedente = cls.objects.filter(**filtre).order_by('-derniere_occurrence').first()
+        if precedente is not None:
+            cls.objects.filter(pk=precedente.pk).update(
+                occurrences=F('occurrences') + 1, derniere_occurrence=maintenant,
+                motif=motif, modifie_le=maintenant)
+            precedente.refresh_from_db()
+            return precedente
+        return cls.objects.create(
+            acteur=acteur, cible=cible, cible_identifiant=cible_identifiant,
+            cible_role=cible_role, action=action, motif=motif,
+            derniere_occurrence=maintenant)
 
     def __str__(self):
         return (f'{self.get_action_display()} — {self.cible_identifiant} '
@@ -218,3 +268,51 @@ class PermissionsAdmin(ModeleBase):
     def __str__(self):
         return f'Permissions de {self.admin}'
 
+
+
+class ConnexionAdmin(models.Model):
+    """Suivi des connexions d'un compte admin : UNE ligne par admin, mise à
+    jour à chaque connexion (pas de nouvelle ligne) — alimente la liste
+    /administration/connexions-admin/. Les sessions par appareil restent
+    dans users.SessionAppareil (révocation ciblée, « mes appareils »)."""
+    admin = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name='connexion_admin', verbose_name='compte admin',
+    )
+    premiere_connexion = models.DateTimeField('première connexion')
+    derniere_connexion = models.DateTimeField('dernière connexion', db_index=True)
+    nb_connexions = models.PositiveIntegerField('nombre de connexions', default=1)
+    derniere_ip = models.GenericIPAddressField('dernière adresse IP', blank=True, null=True)
+    dernier_appareil = models.CharField(
+        'dernier appareil (user agent)', max_length=500, blank=True)
+    derniere_plateforme = models.CharField('dernière plateforme', max_length=10, blank=True)
+
+    class Meta:
+        verbose_name = 'connexion admin'
+        verbose_name_plural = 'connexions admin'
+        ordering = ['-derniere_connexion']
+
+    def __str__(self):
+        return f'{self.admin} — {self.nb_connexions} connexion(s)'
+
+    @classmethod
+    def enregistrer(cls, user, ip=None, user_agent='', plateforme=''):
+        """Compte une connexion (admins is_staff uniquement) : crée la ligne
+        à la première, sinon l'incrémente atomiquement."""
+        if not (user and user.is_staff):
+            return None
+        maintenant = timezone.now()
+        valeurs = {'derniere_connexion': maintenant, 'derniere_ip': ip or None,
+                   'dernier_appareil': (user_agent or '')[:500],
+                   'derniere_plateforme': (plateforme or '')[:10]}
+        n = cls.objects.filter(admin=user).update(nb_connexions=F('nb_connexions') + 1, **valeurs)
+        if n == 0:
+            from django.db import IntegrityError, transaction
+            try:
+                with transaction.atomic():
+                    cls.objects.create(admin=user, premiere_connexion=maintenant,
+                                       nb_connexions=1, **valeurs)
+            except IntegrityError:  # connexion concurrente : la ligne existe déjà
+                cls.objects.filter(admin=user).update(
+                    nb_connexions=F('nb_connexions') + 1, **valeurs)
+        return cls.objects.get(admin=user)

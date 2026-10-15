@@ -92,12 +92,9 @@ class UserAdmin(DjangoUserAdmin):
                 # journalisation best-effort
                 try:
                     from apps.administration.models import JournalModeration
-                    JournalModeration.objects.create(
-                        acteur=request.user, cible=serializer._user,
-                        cible_identifiant=serializer._user.telephone,
-                        cible_role=serializer._user.role,
-                        action=JournalModeration.Action.CREER_PARTENAIRE,
-                        motif=f"Création partenaire « {serializer._profil.nom_commerce} » (admin Django)",
+                    JournalModeration.enregistrer(
+                        request.user, serializer._user, JournalModeration.Action.CREER_PARTENAIRE,
+                        f"Création partenaire « {serializer._profil.nom_commerce} » (admin Django)",
                     )
                 except Exception:
                     pass

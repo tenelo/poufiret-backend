@@ -13,7 +13,7 @@ class DemandeInterventionPhotoSerializer(serializers.ModelSerializer):
 class DemandeInterventionSerializer(serializers.ModelSerializer):
     photos = DemandeInterventionPhotoSerializer(many=True, read_only=True)
     client_nom = serializers.SerializerMethodField()
-    client_telephone = serializers.CharField(source='client.telephone', read_only=True)
+    client_telephone = serializers.CharField(source='user.telephone', read_only=True)
     artisan_telephone = serializers.SerializerMethodField()
     artisan_nom = serializers.CharField(source='artisan.nom_commerce', read_only=True)
 

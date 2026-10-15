@@ -9,6 +9,8 @@ from rest_framework import serializers
 from apps.messaging.models import DemandeIntervention
 from apps.users.models import ProfilPartenaire, SessionAppareil
 
+from .models import ConnexionAdmin
+
 
 class InterventionAdminSerializer(serializers.ModelSerializer):
     """Vue de supervision (lecture seule) d'une demande d'intervention,
@@ -16,6 +18,7 @@ class InterventionAdminSerializer(serializers.ModelSerializer):
     """
     statut_libelle = serializers.CharField(source='get_statut_display', read_only=True)
     urgence_libelle = serializers.CharField(source='get_urgence_display', read_only=True)
+    type_libelle = serializers.CharField(source='get_type_intervention_display', read_only=True)
 
     client_telephone = serializers.CharField(source='user.telephone', read_only=True)
     client_nom = serializers.SerializerMethodField()
@@ -28,7 +31,7 @@ class InterventionAdminSerializer(serializers.ModelSerializer):
         model = DemandeIntervention
         fields = [
             'id', 'numero', 'statut', 'statut_libelle',
-            'type_intervention', 'type_libre', 'description',
+            'type_intervention', 'type_libelle', 'type_libre', 'description',
             'urgence', 'urgence_libelle',
             'client_telephone', 'client_nom',
             'artisan_id', 'artisan_nom', 'artisan_type',
@@ -87,27 +90,42 @@ class PartenaireListeAdminSerializer(serializers.ModelSerializer):
 
 
 class ConnexionAdminSerializer(serializers.ModelSerializer):
-    """Une ligne SessionAppareil = une connexion — vue de supervision des
-    connexions des ADMINS uniquement (le filtre user__is_staff=True vit
-    dans la vue, pas ici) — réservée à ADroitDe('lire_journal'), même
-    capacité que le journal d'audit.
+    """Une ligne ConnexionAdmin = un admin — vue de supervision des
+    connexions des ADMINS uniquement (le filtre admin__is_staff=True et les
+    annotations session_active / derniere_activite / appareil_nom vivent
+    dans la vue) — réservée à ADroitDe('lire_journal').
+
+    Champs historiques conservés (date_connexion = dernière connexion,
+    adresse_ip = dernière IP…) + nb_connexions, premiere_connexion,
+    derniere_connexion, dernier_appareil (user agent).
     """
-    utilisateur_id = serializers.IntegerField(source='user.id', read_only=True)
-    telephone = serializers.CharField(source='user.telephone', read_only=True)
+    utilisateur_id = serializers.IntegerField(source='admin.id', read_only=True)
+    telephone = serializers.CharField(source='admin.telephone', read_only=True)
     nom = serializers.SerializerMethodField()
-    is_superuser = serializers.BooleanField(source='user.is_superuser', read_only=True)
-    date_connexion = serializers.DateTimeField(source='cree_le', read_only=True)
-    plateforme_libelle = serializers.CharField(
-        source='get_plateforme_display', read_only=True)
+    is_superuser = serializers.BooleanField(source='admin.is_superuser', read_only=True)
+    date_connexion = serializers.DateTimeField(source='derniere_connexion', read_only=True)
+    adresse_ip = serializers.IPAddressField(source='derniere_ip', read_only=True)
+    plateforme = serializers.CharField(source='derniere_plateforme', read_only=True)
+    plateforme_libelle = serializers.SerializerMethodField()
+    appareil_nom = serializers.CharField(read_only=True, default='')
+    est_active = serializers.BooleanField(source='session_active', read_only=True, default=False)
+    derniere_activite_le = serializers.DateTimeField(
+        source='derniere_activite', read_only=True, default=None)
 
     class Meta:
-        model = SessionAppareil
+        model = ConnexionAdmin
         fields = [
             'id', 'utilisateur_id', 'telephone', 'nom', 'is_superuser',
             'date_connexion', 'adresse_ip', 'plateforme', 'plateforme_libelle',
             'appareil_nom', 'est_active', 'derniere_activite_le',
+            'nb_connexions', 'premiere_connexion', 'derniere_connexion',
+            'derniere_ip', 'dernier_appareil',
         ]
         read_only_fields = fields
 
     def get_nom(self, obj):
-        return obj.user.get_full_name() or obj.user.username or obj.user.telephone
+        return obj.admin.get_full_name() or obj.admin.username or obj.admin.telephone
+
+    def get_plateforme_libelle(self, obj):
+        return dict(SessionAppareil.Plateforme.choices).get(
+            obj.derniere_plateforme, obj.derniere_plateforme)

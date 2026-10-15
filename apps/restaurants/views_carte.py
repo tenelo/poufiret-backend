@@ -3,7 +3,9 @@ d'options) — mêmes vues et serializers pour restaurateur et admin (seul le
 périmètre change, via les mixins de views_prive.py), réutilisant
 intégralement apps.catalog (aucune duplication de modèle ni de logique).
 """
+from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -193,6 +195,73 @@ class MonPlatEpuiseView(_PerimetreRestaurateurMixin, _PlatEpuiseBase):
 
 class AdminPlatEpuiseView(_PerimetreAdminMixin, _PlatEpuiseBase):
     """POST /restaurants/admin/<partenaire_id>/carte/plats/<id>/epuise/"""
+
+
+# ── Ordre des plats d'une section ───────────────────────────────────────
+
+class _PlatsOrdreBase(APIView):
+    """POST .../carte/plats/ordre/ {"section_id": <id>, "ordre": [ids des plats]}
+    — réattribue ordre = 1..n aux plats listés, dans cet ordre. Les autres
+    plats de la section (absents de la liste) suivent, n+1.., dans leur
+    ordre actuel. 400 si la section ou un plat n'appartient pas au
+    restaurant, ou si un plat n'est pas dans la section."""
+
+    def post(self, request, *args, **kwargs):
+        partenaire = self.get_partenaire()
+        section_id, ids = request.data.get('section_id'), request.data.get('ordre')
+        try:
+            section_id = int(section_id)
+            ids = [int(i) for i in ids]
+        except (TypeError, ValueError):
+            return Response({'erreur': True, 'message':
+                             'section_id (entier) et ordre (liste d\'ids) sont requis.'}, status=400)
+        if not ids or len(set(ids)) != len(ids):
+            return Response({'erreur': True, 'message':
+                             'ordre doit être une liste non vide, sans doublon.'}, status=400)
+        section = SectionMenu.objects.filter(pk=section_id, partenaire=partenaire).first()
+        if section is None:
+            return Response({'erreur': True, 'message':
+                             "Cette section n'appartient pas à ce restaurant."}, status=400)
+
+        plats = {a.id: a for a in Article.objects.filter(
+            partenaire=partenaire, type=Article.Type.PLAT, section_menu=section)}
+        hors_section = [i for i in ids if i not in plats]
+        if hors_section:
+            return Response({'erreur': True, 'plats_invalides': hors_section, 'message':
+                             "Plat(s) hors de cette section ou de ce restaurant : "
+                             f"{', '.join(map(str, hors_section))}."}, status=400)
+
+        listes = set(ids)
+        restants = sorted((a for i, a in plats.items() if i not in listes),
+                          key=lambda a: (a.ordre, a.nom.casefold(), a.id))
+        maintenant, nom = timezone.now(), self.acteur_nom()
+        modifies = []
+        for rang, article in enumerate([plats[i] for i in ids] + restants, start=1):
+            if article.ordre != rang:
+                article.ordre = rang
+                article.modifie_par_role, article.modifie_par_nom = self.acteur_role, nom
+                article.updated_at = maintenant
+                modifies.append(article)
+        with transaction.atomic():
+            Article.objects.bulk_update(
+                modifies, ['ordre', 'modifie_par_role', 'modifie_par_nom', 'updated_at'])
+        if self.acteur_role == ActeurRole.ADMIN and modifies:
+            _journaliser_admin(request.user, partenaire, 'resto_plat_modif',
+                               f'Ordre des plats de la section « {section.nom} » '
+                               f'modifié par l\'admin.')
+        qs = (Article.objects.filter(partenaire=partenaire, type=Article.Type.PLAT, section_menu=section)
+              .select_related('section_menu')
+              .prefetch_related('images', 'variantes', 'groupes_options__options')
+              .order_by('ordre', 'nom'))
+        return Response(ArticleCarteGestionSerializer(qs, many=True, context={'request': request}).data)
+
+
+class MonPlatsOrdreView(_PerimetreRestaurateurMixin, _PlatsOrdreBase):
+    """POST /restaurants/mon-restaurant/carte/plats/ordre/"""
+
+
+class AdminPlatsOrdreView(_PerimetreAdminMixin, _PlatsOrdreBase):
+    """POST /restaurants/admin/<partenaire_id>/carte/plats/ordre/"""
 
 
 # ═══════════════════════════════════════════════════════════════════════

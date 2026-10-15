@@ -26,7 +26,8 @@ class NotificationAdminSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = ['id', 'type', 'titre', 'message', 'lue', 'cree_le',
-                  'publicite_id', 'statut_publicite', 'commande_id', 'groupe']
+                  'publicite_id', 'statut_publicite', 'commande_id', 'groupe',
+                  'canal', 'cible']
 
     def get_publicite_id(self, obj):
         return obj.data.get('publicite_id')

@@ -38,15 +38,10 @@ def _sync_profil_partenaire(cible, statut, visible):
 
 
 def _journaliser(acteur, cible, action, motif):
-    """Crée l'entrée d'audit. cible peut être None (suppression hard)."""
-    JournalModeration.objects.create(
-        acteur=acteur,
-        cible=cible,
-        cible_identifiant=getattr(cible, 'telephone', '') if cible else '',
-        cible_role=getattr(cible, 'role', '') if cible else '',
-        action=action,
-        motif=motif or '',
-    )
+    """Crée l'entrée d'audit, ou la regroupe avec une entrée identique
+    récente (JournalModeration.enregistrer). cible peut être None
+    (suppression hard)."""
+    return JournalModeration.enregistrer(acteur, cible, action, motif)
 
 
 @transaction.atomic

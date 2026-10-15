@@ -62,8 +62,27 @@ class ConnexionView(TokenObtainPairView):
                 if appareil_id:
                     SessionAppareil.objects.update_or_create(
                         user=user, appareil_id=appareil_id, defaults=defaults)
+                elif user.is_staff:
+                    # Admin sans appareil_id (back-office web) : une seule
+                    # session « sans identifiant » réutilisée, au lieu d'une
+                    # nouvelle ligne à chaque connexion.
+                    session = (SessionAppareil.objects.filter(user=user, appareil_id='')
+                               .order_by('-cree_le').first())
+                    if session is None:
+                        SessionAppareil.objects.create(user=user, **defaults)
+                    else:
+                        for champ, valeur in defaults.items():
+                            setattr(session, champ, valeur)
+                        session.revoque_par = None
+                        session.save()
                 else:
                     SessionAppareil.objects.create(user=user, **defaults)
+                if user.is_staff:
+                    from apps.administration.models import ConnexionAdmin
+                    ConnexionAdmin.enregistrer(
+                        user, ip=_ip_client(request),
+                        user_agent=request.META.get('HTTP_USER_AGENT', ''),
+                        plateforme=defaults['plateforme'])
         return response
 
 
@@ -389,13 +408,9 @@ class CreerPartenaireParAdminView(APIView):
         # Journalisation de l'action (best-effort, ne bloque pas la creation)
         try:
             from apps.administration.models import JournalModeration
-            JournalModeration.objects.create(
-                acteur=request.user,
-                cible=serializer._user,
-                cible_identifiant=serializer._user.telephone,
-                action=JournalModeration.Action.CREER_PARTENAIRE,
-                cible_role=serializer._user.role,
-                motif=f"Création partenaire « {profil.nom_commerce} »",
+            JournalModeration.enregistrer(
+                request.user, serializer._user, JournalModeration.Action.CREER_PARTENAIRE,
+                f"Création partenaire « {profil.nom_commerce} »",
             )
         except Exception:
             pass

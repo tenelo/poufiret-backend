@@ -17,6 +17,30 @@ from .models import (
 )
 
 
+def image_plat(article):
+    """Image d'un plat : l'image principale active, sinon la première image
+    active par ordre (puis id), sinon None. Lit article.images.all() pour
+    profiter du prefetch posé par les vues (pas de requête par plat)."""
+    images = [i for i in article.images.all() if i.est_active and i.image]
+    if not images:
+        return None
+    principale = next((i for i in images if i.est_principale), None)
+    return principale or min(images, key=lambda i: (i.ordre, i.id))
+
+
+def url_image_plat(article, requete):
+    """URL ABSOLUE (si requête fournie) de image_plat(article), ou None."""
+    img = image_plat(article)
+    if img is None:
+        return None
+    return requete.build_absolute_uri(img.image.url) if requete else img.image.url
+
+
+def _cle_tri(obj):
+    """Tri « ordre puis nom » (insensible à la casse), id en départage."""
+    return (obj.ordre, (obj.nom or '').casefold(), obj.id)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # FICHE (restaurateur / admin)
 # ═══════════════════════════════════════════════════════════════════════
@@ -117,12 +141,7 @@ class LigneMenuSerializer(serializers.ModelSerializer):
         read_only_fields = ['modifie_par_role', 'modifie_par_nom', 'modifie_le']
 
     def get_plat_image(self, obj):
-        img = obj.plat.images.filter(est_principale=True, est_active=True).first() \
-              or obj.plat.images.filter(est_active=True).first()
-        if not img or not img.image:
-            return None
-        requete = self.context.get('request')
-        return requete.build_absolute_uri(img.image.url) if requete else img.image.url
+        return url_image_plat(obj.plat, self.context.get('request'))
 
     def get_stock_restant(self, obj):
         return services.stock_restant(obj)
@@ -143,7 +162,7 @@ class LigneMenuSerializer(serializers.ModelSerializer):
 
 
 class MenuProgrammeSerializer(serializers.ModelSerializer):
-    lignes = LigneMenuSerializer(many=True, read_only=True)
+    lignes = serializers.SerializerMethodField()
     commandable = serializers.SerializerMethodField()
 
     class Meta:
@@ -154,6 +173,11 @@ class MenuProgrammeSerializer(serializers.ModelSerializer):
                   'modifie_par_role', 'modifie_par_nom', 'modifie_le', 'cree_le']
         read_only_fields = ['restaurant', 'modifie_par_role', 'modifie_par_nom',
                             'modifie_le', 'cree_le']
+
+    def get_lignes(self, obj):
+        lignes = (obj.lignes.select_related('plat').prefetch_related('plat__images')
+                  .order_by('ordre', 'id'))
+        return LigneMenuSerializer(lignes, many=True, context=self.context).data
 
     def get_commandable(self, obj):
         return services.menu_commandable(obj)
@@ -222,12 +246,7 @@ class PlatCartePubliqueSerializer(serializers.ModelSerializer):
                   'image', 'est_disponible', 'est_epuise', 'variantes', 'groupes_options']
 
     def get_image(self, obj):
-        img = obj.images.filter(est_principale=True, est_active=True).first() \
-              or obj.images.filter(est_active=True).first()
-        if not img or not img.image:
-            return None
-        requete = self.context.get('request')
-        return requete.build_absolute_uri(img.image.url) if requete else img.image.url
+        return url_image_plat(obj, self.context.get('request'))
 
     def get_variantes(self, obj):
         return VariantePubliqueSerializer(
@@ -250,8 +269,8 @@ class SectionCartePubliqueSerializer(serializers.ModelSerializer):
         fields = ['id', 'nom', 'icone', 'ordre', 'plats']
 
     def get_plats(self, obj):
-        plats = [a for a in obj.articles.all()
-                 if a.est_actif and not a.est_reserve_aux_menus]
+        plats = sorted((a for a in obj.articles.all()
+                        if a.est_actif and not a.est_reserve_aux_menus), key=_cle_tri)
         return PlatCartePubliqueSerializer(plats, many=True, context=self.context).data
 
 
@@ -280,15 +299,14 @@ def _resume_menu_du_jour(fiche):
     menu = next((m for m in menus.values() if m), None)
     if menu is None:
         return None
-    lignes = list(menu.lignes.select_related('plat').order_by('ordre')[:3])
+    lignes = list(menu.lignes.select_related('plat').prefetch_related('plat__images')
+                  .order_by('ordre', 'id')[:3])
     plats = []
     for ligne in lignes:
-        img = ligne.plat.images.filter(est_principale=True, est_active=True).first() \
-              or ligne.plat.images.filter(est_active=True).first()
         plats.append({
             'nom': ligne.plat.nom,
             'prix': ligne.prix_effectif,
-            'image': img.image.url if (img and img.image) else None,
+            'image': url_image_plat(ligne.plat, None),
         })
     return {'id': menu.id, 'titre': menu.titre, 'service': menu.service, 'plats': plats}
 
@@ -410,5 +428,6 @@ class RestaurantDetailPubliqueSerializer(serializers.Serializer):
                for s, m in menus.items()}
 
     def get_carte(self, obj):
-        sections = obj.sections_menu.filter(est_active=True).order_by('ordre')
+        # sections_menu (actives) et leurs articles sont préchargés par la vue.
+        sections = sorted((s for s in obj.sections_menu.all() if s.est_active), key=_cle_tri)
         return SectionCartePubliqueSerializer(sections, many=True, context=self.context).data

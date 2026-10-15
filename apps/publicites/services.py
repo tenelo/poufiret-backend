@@ -421,10 +421,14 @@ def _notifier_admins_pub(pub, type_notif, titre, message):
         destinataires = User.objects.filter(is_active=True).filter(
             Q(is_superuser=True)
             | Q(is_staff=True, permissions_admin__valider_publicite=True))
+        from apps.notifications.canaux import champs_canal
+
+        data = {'publicite_id': str(pub.id), 'statut_publicite': pub.statut}
+        canal = champs_canal(type_notif, data)
         Notification.objects.bulk_create([
             Notification(
                 user=u, type=type_notif, titre=titre, contenu=message,
-                data={'publicite_id': str(pub.id), 'statut_publicite': pub.statut},
+                data=data, **canal,
             ) for u in destinataires
         ])
     except Exception:

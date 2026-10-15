@@ -10,6 +10,11 @@ from .views_categories import (
     TypesPartenaireCategoriesView,
 )
 from .views_edition import PartenaireEditionView
+from .views_interventions import (
+    InterventionAdminArtisansCompatiblesView, InterventionAdminAssignerView,
+    InterventionAdminDetailView, InterventionAdminNotesView, InterventionAdminTransitionView,
+    InterventionsMetaView,
+)
 from .views_position import PositionPartenaireView
 from .views_telephone import ChangerTelephonePartenaireView, HistoriqueTelephonePartenaireView
 from .views import (DashboardG5View, AppareilsExportView, ModerationView,
@@ -76,6 +81,16 @@ urlpatterns = [
     path('interventions/', InterventionsAdminView.as_view(), name='interventions'),
     path('interventions/export/', InterventionsAdminExportView.as_view(),
          name='interventions-export'),
+    path('interventions/meta/', InterventionsMetaView.as_view(), name='interventions-meta'),
+    path('interventions/<int:pk>/', InterventionAdminDetailView.as_view(), name='intervention-detail'),
+    path('interventions/<int:pk>/transition/', InterventionAdminTransitionView.as_view(),
+         name='intervention-transition'),
+    path('interventions/<int:pk>/assigner/', InterventionAdminAssignerView.as_view(),
+         name='intervention-assigner'),
+    path('interventions/<int:pk>/artisans-compatibles/',
+         InterventionAdminArtisansCompatiblesView.as_view(), name='intervention-artisans-compatibles'),
+    path('interventions/<int:pk>/notes/', InterventionAdminNotesView.as_view(),
+         name='intervention-notes'),
     path('connexions-admin/', ConnexionsAdminView.as_view(), name='connexions-admin'),
     path('connexions-admin/export/', ConnexionsAdminExportView.as_view(),
          name='connexions-admin-export'),

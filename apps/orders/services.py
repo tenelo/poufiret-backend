@@ -135,11 +135,15 @@ def _notifier_admins_commande(commande, type_notif, titre, message):
         destinataires = User.objects.filter(is_active=True).filter(
             Q(is_superuser=True)
             | Q(is_staff=True, permissions_admin__gerer_commandes=True))
+        from apps.notifications.canaux import champs_canal
+
         groupe = GROUPE_PAR_STATUT.get(commande.statut, '')
+        data = {'commande_id': commande.id, 'groupe': groupe}
+        canal = champs_canal(type_notif, data, commande=commande)
         Notification.objects.bulk_create([
             Notification(
                 user=u, type=type_notif, titre=titre, contenu=message,
-                data={'commande_id': commande.id, 'groupe': groupe},
+                data=data, **canal,
             ) for u in destinataires
         ])
     except Exception:

@@ -234,6 +234,11 @@ class Notification(models.Model):
         COMMANDE_ANNULEE_CLIENT = 'commande_annulee_client', _('Commande annulée par le client')
         COMPTE_TELEPHONE_MODIFIE = 'compte_telephone_modifie', _('Numéro de connexion modifié')
         RESERVATION_NOUVELLE = 'reservation_nouvelle', _('Nouvelle demande (visite/réservation)')
+        INTERVENTION_NOUVELLE = 'intervention_nouvelle', _('Nouvelle demande d\'intervention')
+
+    class Canal(models.TextChoices):
+        RESTAURANT = 'restaurant', _('Restaurant')
+        GENERAL = 'general', _('Général')
 
     user = models.ForeignKey(
         User, on_delete=models.CASCADE,
@@ -253,6 +258,13 @@ class Notification(models.Model):
         help_text=_('Données pour le deep-linking (ex: {"article_id": 42, "commande_id": 7}).'),
     )
 
+    # Notifications admin : canal (centre restaurant / général) et écran
+    # cible du deep-linking {"ecran": ..., "id": ...} — voir
+    # apps.notifications.canaux.champs_canal (calcul unique).
+    canal = models.CharField(
+        _('canal'), max_length=20, choices=Canal.choices, default=Canal.GENERAL)
+    cible = models.JSONField(_('cible'), blank=True, null=True)
+
     lu = models.BooleanField(_('lue'), default=False)
     lu_le = models.DateTimeField(_('lue le'), blank=True, null=True)
 
@@ -265,6 +277,7 @@ class Notification(models.Model):
         indexes = [
             models.Index(fields=['user', 'lu', '-created_at']),
             models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['user', 'lu', 'canal'], name='notif_user_lu_canal_idx'),
         ]
 
     def __str__(self):

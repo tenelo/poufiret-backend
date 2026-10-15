@@ -281,3 +281,69 @@ class DemandeInterventionPhoto(models.Model):
 
     def __str__(self):
         return f"Photo #{self.ordre} de {self.demande.numero}"
+
+# ═══════════════════════════════════════════════════════════════════════
+# HISTORIQUE ET NOTES ADMIN (demandes d'intervention — comme les commandes)
+# ═══════════════════════════════════════════════════════════════════════
+
+class HistoriqueIntervention(models.Model):
+    """Trace chaque changement de statut (ou réassignation) d'une demande
+    d'intervention, quel que soit le chemin (client, artisan, admin) —
+    écrite depuis apps.messaging.services, jamais directement par les vues."""
+    class ActeurRole(models.TextChoices):
+        CLIENT = 'client', _('Client')
+        ARTISAN = 'artisan', _('Artisan')
+        ADMIN = 'admin', _('Admin')
+
+    demande = models.ForeignKey(
+        DemandeIntervention, on_delete=models.CASCADE,
+        related_name='historique', verbose_name=_('demande d\'intervention'),
+    )
+    statut = models.CharField(
+        _('statut atteint'), max_length=20, choices=DemandeIntervention.Statut.choices,
+    )
+    acteur = models.ForeignKey(
+        User, on_delete=models.SET_NULL,
+        blank=True, null=True, related_name='+',
+        verbose_name=_('acteur'),
+    )
+    acteur_role = models.CharField(
+        _('rôle de l\'acteur'), max_length=12, choices=ActeurRole.choices,
+    )
+    commentaire = models.TextField(_('commentaire'), blank=True)
+    cree_le = models.DateTimeField(_('créé le'), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('historique de demande d\'intervention')
+        verbose_name_plural = _('historiques de demandes d\'intervention')
+        ordering = ['cree_le']
+        indexes = [
+            models.Index(fields=['demande', 'cree_le'], name='hist_interv_demande_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.demande.numero} → {self.statut} ({self.get_acteur_role_display()})'
+
+
+class NoteAdminIntervention(models.Model):
+    """Note interne sur une demande d'intervention, visible UNIQUEMENT par
+    les admins (jamais par le client ni l'artisan)."""
+    demande = models.ForeignKey(
+        DemandeIntervention, on_delete=models.CASCADE,
+        related_name='notes_admin', verbose_name=_('demande d\'intervention'),
+    )
+    auteur = models.ForeignKey(
+        User, on_delete=models.SET_NULL,
+        blank=True, null=True, related_name='+',
+        verbose_name=_('auteur'),
+    )
+    texte = models.TextField(_('texte'))
+    cree_le = models.DateTimeField(_('créé le'), auto_now_add=True)
+
+    class Meta:
+        verbose_name = _('note admin sur demande d\'intervention')
+        verbose_name_plural = _('notes admin sur demandes d\'intervention')
+        ordering = ['-cree_le']
+
+    def __str__(self):
+        return f'Note sur {self.demande.numero}'
