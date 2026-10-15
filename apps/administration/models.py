@@ -97,9 +97,9 @@ class JournalModeration(ModeleBase):
         'dernière occurrence', blank=True, null=True,
         help_text='Date de la dernière occurrence regroupée (= cree_le si une seule).')
 
-    # Fenêtre de regroupement : une entrée identique (même acteur, même
-    # action, même cible) créée moins de 10 min après la précédente
-    # incrémente `occurrences` au lieu de créer une ligne.
+    # Fenêtre de regroupement : une entrée IDENTIQUE (même acteur, même
+    # action, même cible, même motif) créée moins de 10 min après la
+    # précédente incrémente `occurrences` au lieu de créer une ligne.
     FENETRE_REGROUPEMENT = timedelta(minutes=10)
 
     class Meta:
@@ -118,28 +118,31 @@ class JournalModeration(ModeleBase):
 
     @classmethod
     def enregistrer(cls, acteur, cible, action, motif='', cible_identifiant=None, cible_role=None):
-        """Point d'écriture unique du journal, avec regroupement.
+        """Point d'écriture unique du journal, avec regroupement des seules
+        entrées strictement identiques (motif compris).
 
-        « Même cible » = même compte cible ; sans compte cible (ex.
-        catégories), le motif doit aussi être identique pour regrouper.
-        Le motif conservé est celui de la dernière occurrence."""
+        Le motif fait partie de l'identité : il porte le contenu de
+        l'action (ex. « ancien → nouveau » d'un changement de numéro, lu
+        par l'historique téléphone). Regrouper des motifs différents
+        effacerait ce contenu — seules les répétitions exactes (ex. même
+        plat ré-enregistré) sont factorisées."""
         maintenant = timezone.now()
         motif = (motif or '')[:255]
         if cible_identifiant is None:
             cible_identifiant = getattr(cible, 'telephone', '') if cible else ''
         if cible_role is None:
             cible_role = getattr(cible, 'role', '') if cible else ''
-        filtre = {'acteur': acteur, 'action': action,
+        filtre = {'acteur': acteur, 'action': action, 'motif': motif,
                   'derniere_occurrence__gte': maintenant - cls.FENETRE_REGROUPEMENT}
         if cible is not None:
             filtre['cible'] = cible
         else:
-            filtre.update(cible__isnull=True, cible_identifiant=cible_identifiant, motif=motif)
+            filtre.update(cible__isnull=True, cible_identifiant=cible_identifiant)
         precedente = cls.objects.filter(**filtre).order_by('-derniere_occurrence').first()
         if precedente is not None:
             cls.objects.filter(pk=precedente.pk).update(
                 occurrences=F('occurrences') + 1, derniere_occurrence=maintenant,
-                motif=motif, modifie_le=maintenant)
+                modifie_le=maintenant)
             precedente.refresh_from_db()
             return precedente
         return cls.objects.create(

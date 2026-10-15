@@ -30,6 +30,11 @@ from apps.orders.services import _notifier_admins_commande
 from apps.users.models import ProfilPartenaire, SessionAppareil, User
 
 HOST = 'poufiret.tenelo.cloud'
+# Limitation de débit DRF désactivée pour ce script : sinon tous les scripts partagent
+# le compteur anonyme (60/min, client de test = 127.0.0.1) et la suite complète reçoit des 429.
+from unittest import mock as _mock_debit
+from rest_framework.views import APIView as _APIViewDebit
+_mock_debit.patch.object(_APIViewDebit, 'get_throttles', return_value=[]).start()
 NB = 0
 
 
@@ -390,10 +395,17 @@ try:
         print('\n=== 6. JOURNAL : REGROUPEMENT ET PURGE (SIMULATION) ===')
         cible = client
         e1 = JournalModeration.enregistrer(superadmin, cible, 'resto_plat_modif', 'Plat A')
-        e2 = JournalModeration.enregistrer(superadmin, cible, 'resto_plat_modif', 'Plat B')
-        ok('identique < 10 min -> meme ligne, occurrences=2, dernier motif',
-           e1.pk == e2.pk and e2.occurrences == 2 and e2.motif == 'Plat B'
-           and e2.derniere_occurrence > e1.derniere_occurrence)
+        e2 = JournalModeration.enregistrer(superadmin, cible, 'resto_plat_modif', 'Plat A')
+        ok('identique < 10 min -> meme ligne, occurrences=2',
+           e1.pk == e2.pk and e2.occurrences == 2 and e2.derniere_occurrence > e1.derniere_occurrence)
+        e_b = JournalModeration.enregistrer(superadmin, cible, 'resto_plat_modif', 'Plat B')
+        ok('motif different -> nouvelle ligne (contenu jamais ecrase)',
+           e_b.pk != e1.pk and JournalModeration.objects.get(pk=e1.pk).motif == 'Plat A')
+        t1 = JournalModeration.enregistrer(superadmin, cible, 'partenaire_telephone_modif', 'A → B : motif')
+        t2 = JournalModeration.enregistrer(superadmin, cible, 'partenaire_telephone_modif', 'B → C : motif')
+        ok('deux changements de numero rapproches -> deux entrees (historique telephone)',
+           t1.pk != t2.pk and JournalModeration.objects.filter(
+               cible=cible, action='partenaire_telephone_modif', pk__in=[t1.pk, t2.pk]).count() == 2)
         e3 = JournalModeration.enregistrer(superadmin, cible, 'resto_menu_modif', 'Menu')
         ok('autre action -> nouvelle ligne', e3.pk != e1.pk)
         e4 = JournalModeration.enregistrer(superadmin, voir, 'resto_plat_modif', 'Plat A')
@@ -402,8 +414,8 @@ try:
         ok('autre acteur -> nouvelle ligne', e5.pk != e1.pk)
         JournalModeration.objects.filter(pk=e1.pk).update(
             derniere_occurrence=timezone.now() - timedelta(minutes=11))
-        e6 = JournalModeration.enregistrer(superadmin, cible, 'resto_plat_modif', 'Plat C')
-        ok('> 10 min -> nouvelle ligne', e6.pk != e1.pk and e6.occurrences == 1)
+        e6 = JournalModeration.enregistrer(superadmin, cible, 'resto_plat_modif', 'Plat A')
+        ok('meme motif mais > 10 min -> nouvelle ligne', e6.pk != e1.pk and e6.occurrences == 1)
         s1 = JournalModeration.enregistrer(superadmin, None, 'cat_suppression', '« X » supprimée')
         s2 = JournalModeration.enregistrer(superadmin, None, 'cat_suppression', '« Y » supprimée')
         s3 = JournalModeration.enregistrer(superadmin, None, 'cat_suppression', '« Y » supprimée')

@@ -18,6 +18,11 @@ from apps.catalog.models import Categorie, Article, SectionMenu
 from apps.users.models import ProfilPartenaire, User
 
 HOST = 'poufiret.tenelo.cloud'
+# Limitation de débit DRF désactivée pour ce script : sinon tous les scripts partagent
+# le compteur anonyme (60/min, client de test = 127.0.0.1) et la suite complète reçoit des 429.
+from unittest import mock as _mock_debit
+from rest_framework.views import APIView as _APIViewDebit
+_mock_debit.patch.object(_APIViewDebit, 'get_throttles', return_value=[]).start()
 class Rollback(Exception): pass
 NB = 0
 def ok(l, c, d=''):
