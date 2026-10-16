@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import generics
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -16,7 +16,7 @@ from apps.catalog.models import (
     Article, ArticleImage, Categorie, GroupeOption, OptionGroupe, SectionMenu, Variante,
 )
 from apps.catalog.serializers import (
-    ArticleCarteGestionSerializer, ArticleImageSerializer, GroupeOptionSerializer,
+    ArticleCarteGestionSerializer, ArticleImageImbriqueeSerializer, GroupeOptionSerializer,
     OptionGroupeSerializer, SectionMenuSerializer, VarianteSerializer,
 )
 
@@ -265,35 +265,34 @@ class AdminPlatsOrdreView(_PerimetreAdminMixin, _PlatsOrdreBase):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# IMAGES D'UN PLAT (comme /catalogue/images/ existant — même comportement,
-# y compris le quota du plan et l'absence de bascule auto d'image
-# principale : PATCH l'ancienne à est_principale=false avant d'en poser
-# une nouvelle, comme pour /catalogue/).
+# IMAGES D'UN PLAT (comme /catalogue/images/ : quota du plan, pas de
+# bascule auto d'image principale — PATCH l'ancienne à est_principale=false
+# avant d'en poser une nouvelle). Le plat est celui de l'URL : champ
+# "article" du corps facultatif (400 s'il diffère) ; quota dépassé → 400.
 # ═══════════════════════════════════════════════════════════════════════
 
 class _PlatImagesListCreateBase(generics.ListCreateAPIView):
-    serializer_class = ArticleImageSerializer
+    serializer_class = ArticleImageImbriqueeSerializer
 
     def _plat(self):
-        return get_object_or_404(
-            Article, pk=self.kwargs['plat_id'], partenaire=self.get_partenaire(),
-            type=Article.Type.PLAT)
+        if not hasattr(self, '_plat_cache'):
+            self._plat_cache = get_object_or_404(
+                Article.objects.select_related('partenaire__plan'), pk=self.kwargs['plat_id'],
+                partenaire=self.get_partenaire(), type=Article.Type.PLAT)
+        return self._plat_cache
 
     def get_queryset(self):
         return self._plat().images.order_by('ordre')
 
+    def get_serializer_context(self):
+        return {**super().get_serializer_context(), 'article': self._plat()}
+
     def perform_create(self, serializer):
-        plat = self._plat()
-        maxi = plat.partenaire.plan.nb_photos_par_article
-        if maxi and plat.images.count() >= maxi:
-            raise PermissionDenied(
-                f'Quota photos atteint ({maxi}/article pour le plan '
-                f'{plat.partenaire.plan.libelle}).')
-        serializer.save(article=plat, est_active=True)
+        serializer.save(article=self._plat(), est_active=True)
 
 
 class _PlatImageDetailBase(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = ArticleImageSerializer
+    serializer_class = ArticleImageImbriqueeSerializer
 
     def get_queryset(self):
         return ArticleImage.objects.filter(

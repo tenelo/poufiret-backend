@@ -136,15 +136,34 @@ try:
         ok('POST image 1 -> 201', r.status_code == 201, r.content)
         r = j(f'{base_mon}/plats/{plat_id}/images/', 'get', pa.user)
         ok('GET images -> 1', r.status_code == 200 and len(r.json()['results']) == 1, r.content)
-        # Quota du plan = 3 : 2 images de plus doivent passer, la 4e doit etre refusee.
+        autre_article = autre_pa.articles.first().id if autre_pa and autre_pa.articles.exists() else 999999
+        r = upload(f'{base_mon}/plats/{plat_id}/images/', pa.user,
+                   {'article': autre_article,
+                    'image': SimpleUploadedFile('px.png', PNG_1PX, content_type='image/png')})
+        ok('POST image avec un autre article dans le corps -> 400',
+           r.status_code == 400 and 'article' in r.json()['details'], r.content)
+        # Quota du plan = 3 : 2 images de plus SANS champ article (déduit de
+        # l'URL) doivent passer, la 4e doit etre refusee (400, message clair).
         for i in range(2):
             r = upload(f'{base_mon}/plats/{plat_id}/images/', pa.user,
-                       {'article': plat_id,
-                        'image': SimpleUploadedFile(f'p{i+2}.png', PNG_1PX, content_type='image/png')})
-            ok(f'POST image {i+2} -> 201 (sous le quota)', r.status_code == 201, r.content)
-        r = upload(f'{base_mon}/plats/{plat_id}/images/', pa.user,
-                   {'article': plat_id, 'image': SimpleUploadedFile('p4.png', PNG_1PX, content_type='image/png')})
-        ok('POST image 4 -> 403 (quota atteint, comme /catalogue/ existant)', r.status_code == 403, r.content)
+                       {'image': SimpleUploadedFile(f'p{i+2}.png', PNG_1PX, content_type='image/png')})
+            ok(f'POST image {i+2} sans champ article -> 201 (sous le quota)',
+               r.status_code == 201 and r.json()['article'] == plat_id, r.content)
+        r = upload(f'{base_admin}/plats/{plat_id}/images/', admin_avec,
+                   {'image': SimpleUploadedFile('p4.png', PNG_1PX, content_type='image/png')})
+        ok('POST image 4 (admin) -> 400 quota atteint', r.status_code == 400, r.content)
+        ok('quota : message explicite (limite, plan, nombre actuel)',
+           'Quota de photos atteint : 3 photo(s)' in r.json()['message']
+           and r.json()['details']['quota'] == 3 and r.json()['details']['nb_images'] == 3, r.json())
+        ok('quota : aucune image creee', Article.objects.get(pk=plat_id).images.count() == 3)
+        image_id = j(f'{base_mon}/plats/{plat_id}/images/', 'get', pa.user).json()['results'][0]['id']
+        r = j(f'{base_mon}/plats/{plat_id}/images/{image_id}/', 'patch', pa.user, {'article': autre_article})
+        ok('PATCH image vers un autre article -> 400 (plus de deplacement possible)',
+           r.status_code == 400, r.content)
+        r = j(f'{base_mon}/plats/{plat_id}/images/{image_id}/', 'patch', pa.user, {'legende': 'Vue de dessus'})
+        ok('PATCH legende sans article -> 200, article inchange',
+           r.status_code == 200 and r.json()['article'] == plat_id and r.json()['legende'] == 'Vue de dessus',
+           r.content)
 
         print('=== VARIANTES (?plat=) ===')
         r = j(f'{base_mon}/variantes/', 'post', pa.user,

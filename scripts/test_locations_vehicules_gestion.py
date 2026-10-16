@@ -188,6 +188,18 @@ try:
         r = req('post', f'{MON}{vid}/images/', loueur_user, multipart={'article': vid, 'image': png('a.png'), 'ordre': 1})
         ok('image loueur -> 201', r.status_code == 201, r.content)
         img_id = r.json()['id']
+        # Quota fixé à 2 pour ce test (annulé au rollback) : ne dépend pas du plan réel.
+        PlanAbonnement.objects.filter(pk=loueur_user.profil_partenaire.plan_id).update(nb_photos_par_article=2)
+        r = req('post', f'{MON}{vid}/images/', loueur_user, multipart={'image': png('a2.png'), 'ordre': 2})
+        ok('2e image SANS champ article -> 201 (article deduit de l URL)',
+           r.status_code == 201 and r.json()['article'] == vid, r.content)
+        img2_id = r.json()['id']
+        r = req('post', f'{ADM}{vid}/images/', admin_avec, multipart={'image': png('a3.png')})
+        ok('3e image (admin) -> 400 quota atteint, message explicite',
+           r.status_code == 400 and 'Quota de photos atteint : 2 photo(s)' in r.json()['message'], r.content)
+        r = req('post', f'{MON}{vid}/images/', loueur_user, multipart={'article': vid + 999999, 'image': png('ax.png')})
+        ok('article different de l URL -> 400', r.status_code == 400 and 'article' in r.json()['details'], r.content)
+        ok('2e image : delete -> 204', req('delete', f'{MON}{vid}/images/{img2_id}/', loueur_user).status_code == 204)
         r = req('get', f'{ADM}{vid}/images/', admin_avec)
         ok('images listees cote admin', r.status_code == 200 and len(r.json()['results'] if isinstance(r.json(), dict) else r.json()) == 1, r.content)
         ok('image : delete -> 204', req('delete', f'{MON}{vid}/images/{img_id}/', loueur_user).status_code == 204)

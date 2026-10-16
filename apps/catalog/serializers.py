@@ -77,6 +77,48 @@ class ArticleImageSerializer(serializers.ModelSerializer):
         read_only_fields = ['est_active']
 
 
+class _ArticleDeLUrlMixin:
+    """Routes imbriquées …/<plat|logement|vehicule|hebergement>_id/images|panoramas/ :
+    l'article est celui de l'URL (context['article'] à la création, l'article
+    de l'instance en modification). Champ "article" du corps facultatif et
+    ignoré ; refusé (400) s'il désigne un autre article."""
+
+    def _article_url(self):
+        return self.context.get('article') or getattr(self.instance, 'article', None)
+
+    def validate(self, attrs):
+        article = self._article_url()
+        donnees = self.initial_data if hasattr(self.initial_data, 'get') else {}
+        brut = donnees.get('article')
+        if article is not None and brut not in (None, '') and str(brut) != str(article.pk):
+            message = (f"Le champ article ({brut}) ne correspond pas à l'article de l'URL "
+                       f"({article.pk}) : il est facultatif, omettez-le.")
+            raise serializers.ValidationError({'detail': message, 'article': message})
+        return super().validate(attrs)
+
+
+class ArticleImageImbriqueeSerializer(_ArticleDeLUrlMixin, ArticleImageSerializer):
+    """Image d'un article sur une route imbriquée (article déduit de l'URL),
+    avec le quota de photos du plan vérifié à la création (400, message clair)."""
+
+    class Meta(ArticleImageSerializer.Meta):
+        read_only_fields = ['article', 'est_active']
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        article = self._article_url()
+        if self.instance is None and article is not None:
+            plan = article.partenaire.plan
+            maxi, nb = plan.nb_photos_par_article, article.images.count()
+            if maxi and nb >= maxi:
+                message = (f"Quota de photos atteint : {maxi} photo(s) par article avec le plan "
+                           f"« {plan.libelle} » ({nb} déjà). Supprimez une photo ou passez "
+                           f"à un plan supérieur pour en ajouter.")
+                raise serializers.ValidationError(
+                    {'detail': message, 'quota': maxi, 'nb_images': nb})
+        return attrs
+
+
 class VarianteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Variante
@@ -123,6 +165,13 @@ class PanoramaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Panorama
         fields = ['id', 'article', 'image', 'titre', 'type_vue', 'ordre', 'est_active']
+
+
+class PanoramaImbriqueSerializer(_ArticleDeLUrlMixin, PanoramaSerializer):
+    """Panorama sur une route imbriquée (article déduit de l'URL)."""
+
+    class Meta(PanoramaSerializer.Meta):
+        read_only_fields = ['article']
 
 
 class LogementSerializer(serializers.ModelSerializer):

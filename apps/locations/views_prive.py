@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.catalog.models import Article, ArticleImage, Hebergement, Logement, Panorama, Vehicule
-from apps.catalog.serializers import ArticleImageSerializer, PanoramaSerializer
+from apps.catalog.serializers import ArticleImageImbriqueeSerializer, PanoramaImbriqueSerializer
 from apps.core.permissions import ADroitDe
 from apps.users.models import ProfilPartenaire
 
@@ -226,34 +226,35 @@ class _DisponibiliteBase(_BienQuerysetMixin, APIView):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# IMAGES (même comportement que /catalogue/images/ existant : quota du
-# plan, pas de bascule auto d'image principale).
+# IMAGES (comme /catalogue/images/ : quota du plan, pas de bascule auto
+# d'image principale). Le bien est celui de l'URL : champ "article" du
+# corps facultatif (400 s'il diffère) ; quota dépassé → 400.
 # ═══════════════════════════════════════════════════════════════════════
 
 class _BienArticleMixin:
     def _bien_article(self):
-        return get_object_or_404(
-            Article, pk=self.kwargs[self.kwarg_objet], partenaire=self.get_partenaire(),
-            type=self.article_type)
+        if not hasattr(self, '_bien_cache'):
+            self._bien_cache = get_object_or_404(
+                Article.objects.select_related('partenaire__plan'), pk=self.kwargs[self.kwarg_objet],
+                partenaire=self.get_partenaire(), type=self.article_type)
+        return self._bien_cache
+
+    def get_serializer_context(self):
+        return {**super().get_serializer_context(), 'article': self._bien_article()}
 
 
 class _ImagesListCreateBase(_BienArticleMixin, generics.ListCreateAPIView):
-    serializer_class = ArticleImageSerializer
+    serializer_class = ArticleImageImbriqueeSerializer
 
     def get_queryset(self):
         return self._bien_article().images.order_by('ordre')
 
     def perform_create(self, serializer):
-        article = self._bien_article()
-        maxi = article.partenaire.plan.nb_photos_par_article
-        if maxi and article.images.count() >= maxi:
-            raise PermissionDenied(
-                f'Quota photos atteint ({maxi}/article pour le plan {article.partenaire.plan.libelle}).')
-        serializer.save(article=article, est_active=True)
+        serializer.save(article=self._bien_article(), est_active=True)
 
 
 class _ImageDetailBase(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = ArticleImageSerializer
+    serializer_class = ArticleImageImbriqueeSerializer
 
     def get_queryset(self):
         return ArticleImage.objects.filter(
@@ -267,7 +268,7 @@ class _ImageDetailBase(generics.RetrieveUpdateDestroyAPIView):
 # ═══════════════════════════════════════════════════════════════════════
 
 class _PanoramasListCreateBase(_BienArticleMixin, generics.ListCreateAPIView):
-    serializer_class = PanoramaSerializer
+    serializer_class = PanoramaImbriqueSerializer
 
     def get_queryset(self):
         return self._bien_article().panoramas.order_by('ordre')
@@ -277,7 +278,7 @@ class _PanoramasListCreateBase(_BienArticleMixin, generics.ListCreateAPIView):
 
 
 class _PanoramaDetailBase(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = PanoramaSerializer
+    serializer_class = PanoramaImbriqueSerializer
 
     def get_queryset(self):
         return Panorama.objects.filter(
