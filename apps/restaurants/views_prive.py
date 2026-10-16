@@ -7,6 +7,7 @@ sous-classes minces qui ne différent que par `get_restaurant()` et les
 permissions — restaurateur (son propre restaurant) ou admin
 (`<partenaire_id>` de l'URL, capacité gerer_restaurants).
 """
+from django.db import transaction
 from django.db.models import Prefetch
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied
@@ -19,8 +20,8 @@ from apps.users.models import HoraireOuverture, ProfilPartenaire
 from . import services
 from .models import ActeurRole, LigneMenu, MenuProgramme, ProfilRestaurant, TelephoneRestaurant
 from .serializers import (
-    HoraireOuvertureSerializer, LigneMenuSerializer, MenuProgrammeSerializer,
-    ProfilRestaurantSerializer, TelephoneRestaurantSerializer,
+    HoraireEcritureSerializer, HoraireOuvertureSerializer, LigneMenuSerializer,
+    MenuProgrammeSerializer, ProfilRestaurantSerializer, TelephoneRestaurantSerializer,
 )
 
 
@@ -108,11 +109,13 @@ class AdminFicheRestaurantView(_PerimetreAdminMixin, _FicheRestaurantBase):
 # ═══════════════════════════════════════════════════════════════════════
 
 class _HorairesBase(APIView):
-    """GET : liste (0=lundi..6=dimanche, HoraireOuverture, réutilisé).
-    PUT {"horaires": [{jour_semaine, ouvert, heure_ouverture?, heure_fermeture?,
-    pause_debut?, pause_fin?, note?}, ...]} — remplace l'intégralité de la
-    semaine (upsert par jour_semaine, les jours absents de la liste ne sont
-    PAS touchés — pour n'envoyer que les jours modifiés si besoin)."""
+    """GET : liste brute (0=lundi..6=dimanche, HoraireOuverture, réutilisé).
+    PUT : soit la même liste brute que le GET, soit {"horaires": [...]} ;
+    chaque élément {jour_semaine, ouvert, heure_ouverture?, heure_fermeture?,
+    pause_debut?, pause_fin?, note?} — heures "" ou null acceptées (jour
+    fermé). Upsert par jour_semaine ; les jours absents ne sont PAS touchés
+    (pour n'envoyer que les jours modifiés si besoin). Corps invalide → 400
+    {"erreur": true, "details": ...}, rien n'est écrit (tout ou rien)."""
 
     def get(self, request, *args, **kwargs):
         partenaire = self.get_partenaire()
@@ -121,25 +124,28 @@ class _HorairesBase(APIView):
 
     def put(self, request, *args, **kwargs):
         partenaire = self.get_partenaire()
-        lignes = request.data.get('horaires', [])
+        lignes = request.data
+        if isinstance(lignes, dict):
+            lignes = lignes.get('horaires')
+        if not isinstance(lignes, list):
+            return Response({'erreur': True, 'message': 'Corps invalide.', 'details': {
+                'horaires': 'Attendu : une liste d\'horaires, ou {"horaires": [...]}.'}},
+                status=status.HTTP_400_BAD_REQUEST)
+        ser = HoraireEcritureSerializer(data=lignes, many=True)
+        if not ser.is_valid():
+            return Response({'erreur': True, 'message': 'Horaires invalides.', 'details': ser.errors},
+                            status=status.HTTP_400_BAD_REQUEST)
+        jours = [l['jour_semaine'] for l in ser.validated_data]
+        if len(jours) != len(set(jours)):
+            return Response({'erreur': True, 'message': 'Horaires invalides.', 'details': {
+                'jour_semaine': 'Chaque jour ne peut apparaître qu\'une fois.'}},
+                status=status.HTTP_400_BAD_REQUEST)
         resultat = []
-        for ligne in lignes:
-            jour = ligne.get('jour_semaine')
-            if jour is None or not (0 <= int(jour) <= 6):
-                return Response(
-                    {'erreur': True, 'message': 'jour_semaine doit être entre 0 (lundi) et 6 (dimanche).'},
-                    status=status.HTTP_400_BAD_REQUEST)
-            horaire, _c = HoraireOuverture.objects.update_or_create(
-                partenaire=partenaire, jour_semaine=jour,
-                defaults={
-                    'ouvert': ligne.get('ouvert', True),
-                    'heure_ouverture': ligne.get('heure_ouverture'),
-                    'heure_fermeture': ligne.get('heure_fermeture'),
-                    'pause_debut': ligne.get('pause_debut'),
-                    'pause_fin': ligne.get('pause_fin'),
-                    'note': ligne.get('note', ''),
-                })
-            resultat.append(horaire)
+        with transaction.atomic():
+            for ligne in ser.validated_data:
+                horaire, _c = HoraireOuverture.objects.update_or_create(
+                    partenaire=partenaire, jour_semaine=ligne.pop('jour_semaine'), defaults=ligne)
+                resultat.append(horaire)
         if self.acteur_role == ActeurRole.ADMIN and resultat:
             _journaliser_admin(
                 request.user, partenaire, 'resto_fiche_modif',

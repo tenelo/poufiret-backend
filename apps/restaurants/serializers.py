@@ -52,6 +52,34 @@ class HoraireOuvertureSerializer(serializers.ModelSerializer):
                   'pause_debut', 'pause_fin', 'note']
 
 
+class _HeureOptionnelle(serializers.TimeField):
+    """Heure facultative : absente, null ou "" → None (jour fermé, champ vidé
+    côté formulaire)."""
+    def __init__(self, **kwargs):
+        super().__init__(required=False, allow_null=True, default=None, **kwargs)
+
+    def to_internal_value(self, value):
+        if value in ('', None):
+            return None
+        return super().to_internal_value(value)
+
+
+class HoraireEcritureSerializer(serializers.Serializer):
+    """Un élément du PUT .../horaires/ (validation seule ; l'écriture est un
+    upsert par jour_semaine dans la vue)."""
+    jour_semaine = serializers.ChoiceField(choices=HoraireOuverture.Jour.choices)
+    ouvert = serializers.BooleanField(required=False, default=True)
+    heure_ouverture = _HeureOptionnelle()
+    heure_fermeture = _HeureOptionnelle()
+    pause_debut = _HeureOptionnelle()
+    pause_fin = _HeureOptionnelle()
+    note = serializers.CharField(required=False, allow_blank=True, allow_null=True,
+                                 max_length=200, default='')
+
+    def validate_note(self, valeur):
+        return valeur or ''
+
+
 class TelephoneRestaurantSerializer(serializers.ModelSerializer):
     class Meta:
         model = TelephoneRestaurant
