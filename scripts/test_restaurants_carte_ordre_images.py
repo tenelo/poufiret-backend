@@ -13,8 +13,9 @@ Execution :
 import json
 from datetime import time
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 
@@ -152,6 +153,30 @@ try:
            par_id[p_b.id]['image'] == f'https://{HOST}/media/articles/qa_b_1.png', par_id[p_b.id]['image'])
         ok('sans image -> null', par_id[p_c.id]['image'] is None)
 
+        print('\n=== 1b. LISTE "images" DES PLATS ===')
+        media = f'https://{HOST}/media/articles/'
+        ok('images : principale en premier, puis par ordre (URL absolues)',
+           par_id[p_a.id]['images'] == [media + 'qa_a_principale.png', media + 'qa_a_2.png'],
+           par_id[p_a.id]['images'])
+        ok('images : sans principale, par ordre, inactive exclue',
+           par_id[p_b.id]['images'] == [media + 'qa_b_1.png', media + 'qa_b_3.png'], par_id[p_b.id]['images'])
+        ok('images : plat sans image -> []', par_id[p_c.id]['images'] == [])
+        ok('image (inchangee) = 1er element de images',
+           all(p['image'] == (p['images'][0] if p['images'] else None) for p in par_id.values()))
+
+        def nb_requetes():
+            with CaptureQueriesContext(connection) as ctx:
+                ok_ = j(f'/api/v1/restaurants/{pa.id}/').status_code == 200
+            return ok_, len([q for q in ctx.captured_queries if 'catalog_articleimage' in q['sql']])
+        _ok, avant_images = nb_requetes()
+        for n in range(3):  # 3 plats de plus, 2 images chacun
+            extra = plat(f'QA Extra {n}', 10 + n, section=sec_c)
+            image(extra, f'qa_extra_{n}_a', 1, principale=True)
+            image(extra, f'qa_extra_{n}_b', 2)
+        ok_detail, apres_images = nb_requetes()
+        ok('carte : requetes sur les images constantes (prefetch, pas de N+1)',
+           ok_detail and apres_images == avant_images, (avant_images, apres_images))
+
         print('\n=== 2. ORDRE SECTIONS ET PLATS ===')
         ids_sections = [s['id'] for s in data['carte']]
         ok('sections : ordre puis nom (qa alpha, QA Zeta, QA Aaa)',
@@ -188,6 +213,9 @@ try:
             ok(f'API {cle} : plat_image absolue (meme regle)',
                lignes[0]['plat_image'] == f'https://{HOST}/media/articles/qa_a_principale.png'
                and lignes[1]['plat_image'] == f'https://{HOST}/media/articles/qa_b_1.png', lignes)
+            ok(f'API {cle} : plat_images (meme regle que la carte)',
+               lignes[0]['plat_images'] == [media + 'qa_a_principale.png', media + 'qa_a_2.png']
+               and lignes[1]['plat_images'] == [media + 'qa_b_1.png', media + 'qa_b_3.png'], lignes)
 
         print('\n=== 4. POST .../carte/plats/ordre/ (restaurateur) ===')
         url_mon = '/api/v1/restaurants/mon-restaurant/carte/plats/ordre/'

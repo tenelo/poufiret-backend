@@ -273,7 +273,8 @@ class _LignesMenuListCreateBase(generics.ListCreateAPIView):
 
     def get_queryset(self):
         fiche = _get_or_create_fiche(self.get_partenaire())
-        qs = LigneMenu.objects.filter(menu__restaurant=fiche).select_related('plat', 'menu')
+        qs = (LigneMenu.objects.filter(menu__restaurant=fiche).select_related('plat', 'menu')
+              .prefetch_related('plat__images'))
         menu_id = self.request.query_params.get('menu')
         return qs.filter(menu_id=menu_id) if menu_id else qs
 
@@ -291,7 +292,8 @@ class _LigneMenuDetailBase(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         fiche = _get_or_create_fiche(self.get_partenaire())
-        return LigneMenu.objects.filter(menu__restaurant=fiche).select_related('plat', 'menu')
+        return (LigneMenu.objects.filter(menu__restaurant=fiche).select_related('plat', 'menu')
+                .prefetch_related('plat__images'))
 
     def perform_update(self, serializer):
         ligne = serializer.save(modifie_par_role=self.acteur_role,

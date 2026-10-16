@@ -36,6 +36,15 @@ def url_image_plat(article, requete):
     return requete.build_absolute_uri(img.image.url) if requete else img.image.url
 
 
+def urls_images_plat(article, requete):
+    """URL ABSOLUES (si requête fournie) de toutes les images actives du plat :
+    la principale en premier, puis par ordre (id en départage). Même source
+    que image_plat (article.images.all(), prefetch des vues : 0 requête)."""
+    images = sorted((i for i in article.images.all() if i.est_active and i.image),
+                    key=lambda i: (not i.est_principale, i.ordre, i.id))
+    return [requete.build_absolute_uri(i.image.url) if requete else i.image.url for i in images]
+
+
 def _cle_tri(obj):
     """Tri « ordre puis nom » (insensible à la casse), id en départage."""
     return (obj.ordre, (obj.nom or '').casefold(), obj.id)
@@ -157,19 +166,23 @@ class ProfilRestaurantSerializer(serializers.ModelSerializer):
 class LigneMenuSerializer(serializers.ModelSerializer):
     plat_nom = serializers.CharField(source='plat.nom', read_only=True)
     plat_image = serializers.SerializerMethodField()
+    plat_images = serializers.SerializerMethodField()
     prix_effectif = serializers.DecimalField(max_digits=12, decimal_places=0, read_only=True)
     stock_restant = serializers.SerializerMethodField()
     est_epuise = serializers.SerializerMethodField()
 
     class Meta:
         model = LigneMenu
-        fields = ['id', 'menu', 'plat', 'plat_nom', 'plat_image', 'prix_menu',
+        fields = ['id', 'menu', 'plat', 'plat_nom', 'plat_image', 'plat_images', 'prix_menu',
                   'prix_effectif', 'stock_initial', 'stock_restant', 'est_epuise',
                   'ordre', 'modifie_par_role', 'modifie_par_nom', 'modifie_le']
         read_only_fields = ['modifie_par_role', 'modifie_par_nom', 'modifie_le']
 
     def get_plat_image(self, obj):
         return url_image_plat(obj.plat, self.context.get('request'))
+
+    def get_plat_images(self, obj):
+        return urls_images_plat(obj.plat, self.context.get('request'))
 
     def get_stock_restant(self, obj):
         return services.stock_restant(obj)
@@ -264,6 +277,7 @@ class GroupeOptionPubliqueSerializer(serializers.ModelSerializer):
 
 class PlatCartePubliqueSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
+    images = serializers.SerializerMethodField()
     variantes = serializers.SerializerMethodField()
     groupes_options = serializers.SerializerMethodField()
     est_epuise = serializers.SerializerMethodField()
@@ -271,10 +285,13 @@ class PlatCartePubliqueSerializer(serializers.ModelSerializer):
     class Meta:
         model = Article
         fields = ['id', 'nom', 'slug', 'description', 'prix', 'prix_promotion',
-                  'image', 'est_disponible', 'est_epuise', 'variantes', 'groupes_options']
+                  'image', 'images', 'est_disponible', 'est_epuise', 'variantes', 'groupes_options']
 
     def get_image(self, obj):
         return url_image_plat(obj, self.context.get('request'))
+
+    def get_images(self, obj):
+        return urls_images_plat(obj, self.context.get('request'))
 
     def get_variantes(self, obj):
         return VariantePubliqueSerializer(
