@@ -1,5 +1,7 @@
 """Serializers du module Catalogue."""
 from rest_framework import serializers
+
+from apps.core.exceptions import ErreurMetier
 from .models import (
     Categorie, Article, ArticleImage, ArticleVideo, SectionMenu, Variante, Supplement,
     GroupeOption, OptionGroupe,
@@ -93,7 +95,7 @@ class _ArticleDeLUrlMixin:
         if article is not None and brut not in (None, '') and str(brut) != str(article.pk):
             message = (f"Le champ article ({brut}) ne correspond pas à l'article de l'URL "
                        f"({article.pk}) : il est facultatif, omettez-le.")
-            raise serializers.ValidationError({'detail': message, 'article': message})
+            raise ErreurMetier(message, {'article': [message]})
         return super().validate(attrs)
 
 
@@ -114,8 +116,7 @@ class ArticleImageImbriqueeSerializer(_ArticleDeLUrlMixin, ArticleImageSerialize
                 message = (f"Quota de photos atteint : {maxi} photo(s) par article avec le plan "
                            f"« {plan.libelle} » ({nb} déjà). Supprimez une photo ou passez "
                            f"à un plan supérieur pour en ajouter.")
-                raise serializers.ValidationError(
-                    {'detail': message, 'quota': maxi, 'nb_images': nb})
+                raise ErreurMetier(message, {'quota': maxi, 'nb_images': nb})
         return attrs
 
 

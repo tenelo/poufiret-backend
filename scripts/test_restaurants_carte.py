@@ -152,9 +152,13 @@ try:
         r = upload(f'{base_admin}/plats/{plat_id}/images/', admin_avec,
                    {'image': SimpleUploadedFile('p4.png', PNG_1PX, content_type='image/png')})
         ok('POST image 4 (admin) -> 400 quota atteint', r.status_code == 400, r.content)
-        ok('quota : message explicite (limite, plan, nombre actuel)',
-           'Quota de photos atteint : 3 photo(s)' in r.json()['message']
-           and r.json()['details']['quota'] == 3 and r.json()['details']['nb_images'] == 3, r.json())
+        corps = r.json()
+        ok('quota : message explicite au premier niveau (limite, plan, nombre actuel)',
+           corps['erreur'] is True and isinstance(corps['message'], str)
+           and corps['message'].startswith('Quota de photos atteint : 3 photo(s) par article avec le plan')
+           and '(3 déjà)' in corps['message'], corps)
+        ok('quota : details = {"quota": 3, "nb_images": 3} (entiers)',
+           corps['details'] == {'quota': 3, 'nb_images': 3}, corps['details'])
         ok('quota : aucune image creee', Article.objects.get(pk=plat_id).images.count() == 3)
         image_id = j(f'{base_mon}/plats/{plat_id}/images/', 'get', pa.user).json()['results'][0]['id']
         r = j(f'{base_mon}/plats/{plat_id}/images/{image_id}/', 'patch', pa.user, {'article': autre_article})
