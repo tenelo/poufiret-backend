@@ -2,7 +2,7 @@
 from datetime import datetime
 
 from django.contrib.gis.geos import Point # type: ignore
-from django.db.models import Sum
+from django.db.models import Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status
@@ -56,6 +56,24 @@ def _snapshot_options_choisies(article, option_ids):
     return snapshot
 
 
+def _paniers_qs():
+    """Paniers avec lignes, articles et images préchargés : une requête par
+    relation, jamais par ligne (image de ligne, apps.orders.serializers)."""
+    return (Panier.objects.select_related('partenaire', 'categorie')
+            .prefetch_related(Prefetch(
+                'lignes', queryset=LignePanier.objects.select_related('article')
+                .prefetch_related('article__images').order_by('created_at', 'id'))))
+
+
+def _commandes_qs():
+    """Commandes avec lignes, articles et images préchargés (même principe).
+    Commande/LigneCommande : importés plus bas dans ce module (bloc commandes)."""
+    return (Commande.objects.select_related('user', 'partenaire')
+            .prefetch_related(Prefetch(
+                'lignes', queryset=LigneCommande.objects.select_related('article')
+                .prefetch_related('article__images'))))
+
+
 def _parser_date(valeur):
     """Parse une date 'YYYY-MM-DD'. Retourne None si absente ou invalide
     (jamais d'exception — un paramètre mal formé est simplement ignoré)."""
@@ -71,8 +89,7 @@ class MesPaniersView(APIView):
     """GET /orders/paniers/ — tous les paniers du client (1 par partenaire)."""
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request):
-        paniers = (Panier.objects.filter(user=request.user)
-                   .select_related('partenaire').prefetch_related('lignes__article'))
+        paniers = _paniers_qs().filter(user=request.user)
         return Response(PanierSerializer(paniers, many=True, context={'request': request}).data)
 
 
@@ -133,8 +150,7 @@ class AjouterLigneView(APIView):
             supplements=supplements, quantite=quantite, prix_unitaire=prix,
             note_speciale=request.data.get('note_speciale', ''),
         )
-        panier.refresh_from_db()
-        return Response(PanierSerializer(panier, context={'request': request}).data,
+        return Response(PanierSerializer(_paniers_qs().get(pk=panier.pk), context={'request': request}).data,
                         status=status.HTTP_201_CREATED)
 
 
@@ -155,7 +171,8 @@ class LigneDetailView(APIView):
         if 'note_speciale' in request.data:
             ligne.note_speciale = request.data['note_speciale']
         ligne.save()
-        return Response(PanierSerializer(ligne.panier, context={'request': request}).data)
+        return Response(PanierSerializer(_paniers_qs().get(pk=ligne.panier_id),
+                                         context={'request': request}).data)
 
     def delete(self, request, pk=None):
         ligne = self._get(request, pk)
@@ -164,7 +181,7 @@ class LigneDetailView(APIView):
         if not panier.lignes.exists():
             panier.delete()
             return Response({'message': 'Panier vide et supprimé.'}, status=status.HTTP_200_OK)
-        return Response(PanierSerializer(panier, context={'request': request}).data)
+        return Response(PanierSerializer(_paniers_qs().get(pk=panier.pk), context={'request': request}).data)
 
 
 class ViderPanierView(APIView):
@@ -316,18 +333,41 @@ class ValiderPanierView(APIView):
             f'→ {commande.partenaire.nom_commerce} ({int(commande.total)} FCFA)',
         ))
 
-        return Response(CommandeSerializer(commande, context={'request': request}).data,
+        return Response(CommandeSerializer(_commandes_qs().get(pk=commande.pk),
+                                           context={'request': request}).data,
                         status=status.HTTP_201_CREATED)
 
 
 class MesCommandesClientView(APIView):
-    """GET /orders/commandes/ — commandes du client connecté."""
+    """GET /orders/commandes/ — commandes du client connecté (liste complète,
+    sans pagination, comme avant).
+
+    Filtres optionnels, combinables :
+    - ?statut=
+    - ?q= : référence (numéro), nom d'un produit commandé (snapshot de la
+      ligne), nom du partenaire — insensible à la casse ;
+    - ?du=AAAA-MM-JJ&au=AAAA-MM-JJ : date de création, bornes incluses,
+      chacune facultative ; une date mal formée est ignorée (comme
+      CommandesPartenaireView).
+    """
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request):
-        qs = (Commande.objects.filter(user=request.user)
-              .select_related('partenaire').prefetch_related('lignes'))
-        s = request.query_params.get('statut')
+        p = request.query_params
+        qs = _commandes_qs().filter(user=request.user)
+        s = p.get('statut')
         if s: qs = qs.filter(statut=s)
+        q = (p.get('q') or '').strip()
+        if q:
+            ids = (Commande.objects.filter(user=request.user)
+                   .filter(Q(numero__icontains=q) | Q(lignes__nom_article__icontains=q)
+                           | Q(partenaire__nom_commerce__icontains=q))
+                   .values('id'))
+            qs = qs.filter(id__in=ids)  # sous-requête : pas de doublon via la jointure des lignes
+        du, au = _parser_date(p.get('du')), _parser_date(p.get('au'))
+        if du:
+            qs = qs.filter(created_at__date__gte=du)
+        if au:
+            qs = qs.filter(created_at__date__lte=au)
         return Response(CommandeSerializer(qs, many=True, context={'request': request}).data)
 
 
@@ -345,8 +385,7 @@ class CommandesPartenaireView(APIView):
     def get(self, request):
         if not hasattr(request.user, 'profil_partenaire'):
             return Response({'erreur': True, 'message': 'Réservé aux partenaires.'}, status=403)
-        qs = (Commande.objects.filter(partenaire=request.user.profil_partenaire)
-              .select_related('user').prefetch_related('lignes'))
+        qs = _commandes_qs().filter(partenaire=request.user.profil_partenaire)
         s = request.query_params.get('statut')
         if s: qs = qs.filter(statut=s)
 
@@ -408,7 +447,7 @@ class CommandeDetailView(APIView):
     """GET /orders/commandes/<id>/ — détail (client propriétaire OU partenaire concerné)."""
     permission_classes = [permissions.IsAuthenticated]
     def get(self, request, pk=None):
-        c = get_object_or_404(Commande, pk=pk)
+        c = get_object_or_404(_commandes_qs(), pk=pk)
         u = request.user
         est_client = c.user_id == u.id
         est_part = hasattr(u, 'profil_partenaire') and c.partenaire_id == u.profil_partenaire.id
@@ -465,7 +504,7 @@ class TransitionCommandeView(APIView):
             commentaire=request.data.get('raison_refus', ''), request=request)
         if not ok:
             return Response({'erreur': True, 'message': message}, status=400)
-        return Response(CommandeSerializer(c, context={'request': request}).data)
+        return Response(CommandeSerializer(_commandes_qs().get(pk=c.pk), context={'request': request}).data)
 
 
 class CommanderLivreurView(APIView):

@@ -4,18 +4,32 @@ from apps.catalog.models import Article, Variante, Supplement
 from .models import Panier, LignePanier
 
 
+def _image_article(article, context):
+    """URL absolue de l'image principale de l'article (même règle que la carte
+    restaurant : principale active, sinon 1re active par ordre), ou None.
+    Lit article.images.all() : préchargé par les vues (0 requête par ligne)."""
+    if article is None:
+        return None
+    from apps.restaurants.serializers import url_image_plat
+    return url_image_plat(article, context.get('request'))
+
+
 class LignePanierSerializer(serializers.ModelSerializer):
     article_nom = serializers.CharField(source='article.nom', read_only=True)
+    image = serializers.SerializerMethodField()
     prix_ligne = serializers.SerializerMethodField()
     variante_nom = serializers.SerializerMethodField()
     options = serializers.SerializerMethodField()
 
     class Meta:
         model = LignePanier
-        fields = ['id', 'article', 'article_nom', 'variante_id', 'variante_nom',
+        fields = ['id', 'article', 'article_nom', 'image', 'variante_id', 'variante_nom',
                   'supplements', 'options', 'ligne_menu', 'quantite', 'prix_unitaire',
                   'prix_ligne', 'note_speciale', 'created_at']
         read_only_fields = ['prix_unitaire']
+
+    def get_image(self, obj):
+        return _image_article(obj.article, self.context)
 
     def get_prix_ligne(self, obj):
         supp = sum(s.get('prix', 0) for s in (obj.supplements or []))
@@ -55,10 +69,16 @@ from .models import Commande, LigneCommande
 
 
 class LigneCommandeSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = LigneCommande
-        fields = ['id', 'article', 'nom_article', 'variante_nom', 'supplements',
+        fields = ['id', 'article', 'nom_article', 'image', 'variante_nom', 'supplements',
                   'quantite', 'prix_unitaire', 'prix_ligne', 'note_speciale']
+
+    def get_image(self, obj):
+        """null si l'article a été supprimé depuis la commande (article SET_NULL)."""
+        return _image_article(obj.article, self.context)
 
 
 class CommandeSerializer(serializers.ModelSerializer):
