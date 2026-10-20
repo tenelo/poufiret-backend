@@ -204,7 +204,12 @@ try:
         r = req('post', A + 'ordre/', avec, {'parent_id': None, 'ordre': [niveau[1].id, niveau[0].id]})
         ok('POST ordre/ -> 200 (meme logique que parametres)', r.status_code == 200, r.content)
         t = req('get', A + 'types-partenaire/', avec).json()['resultats']
-        ok('16 types', len(t) == 16, len(t))
+        from apps.users.models import ProfilPartenaire as _PP
+        ok('tous les types de partenaire (dont fast_food, boutique_mode)',
+           len(t) == len(_PP.TypePartenaire.choices)
+           and {'fast_food', 'boutique_mode'} <= {x['valeur'] for x in t}, len(t))
+        ok('fast_food -> Restaurants (rattachement P1)',
+           any(x['valeur'] == 'fast_food' and x['categorie_nom'] == 'Restaurants' for x in t), t)
         ok('restaurateur -> Restaurants', any(x['valeur'] == 'restaurateur' and x['categorie_nom'] == 'Restaurants' for x in t))
         ok('autre -> declare par la categorie creee pendant l archivage', any(
             x['valeur'] == 'autre' and x['categorie_nom'] == f'QA Concurrente {uid}' for x in t))

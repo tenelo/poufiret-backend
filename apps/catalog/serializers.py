@@ -80,7 +80,8 @@ class ArticleImageSerializer(serializers.ModelSerializer):
 class VarianteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Variante
-        fields = ['id', 'article', 'nom', 'prix_supplement', 'est_par_defaut', 'ordre', 'est_active']
+        fields = ['id', 'article', 'nom', 'prix_supplement', 'est_par_defaut', 'ordre', 'est_active',
+                  'stock', 'est_epuise']
 
 
 class SupplementSerializer(serializers.ModelSerializer):
@@ -225,7 +226,9 @@ class ArticleCarteGestionSerializer(serializers.ModelSerializer):
     périmètre seul différent — apps.restaurants.views_carte). Réutilise les
     sous-serializers existants (images, variantes, groupes d'options) sans
     duplication ; leur écriture se fait via leurs propres endpoints
-    (plats/<id>/images/, variantes/?plat=, groupes-options/?plat=)."""
+    (plats/<id>/images/, variantes/?plat=, groupes-options/?plat=).
+    fiche_specifique est validée selon le gabarit du partenaire par la vue
+    (apps.restaurants.views_carte), qui connaît le périmètre."""
     images = ArticleImageSerializer(many=True, read_only=True)
     variantes = VarianteSerializer(many=True, read_only=True)
     groupes_options = GroupeOptionSerializer(many=True, read_only=True)
@@ -240,6 +243,7 @@ class ArticleCarteGestionSerializer(serializers.ModelSerializer):
                   'section_menu_nom', 'prix', 'prix_promotion', 'prix_effectif',
                   'est_en_promotion', 'est_actif', 'est_disponible', 'est_epuise',
                   'est_reserve_aux_menus', 'ordre', 'temps_preparation_min', 'details',
+                  'fiche_specifique',
                   'images', 'variantes', 'groupes_options', 'partenaire',
                   'modifie_par_role', 'modifie_par_nom', 'modifie_le']
         read_only_fields = ['slug', 'partenaire', 'modifie_par_role', 'modifie_par_nom']

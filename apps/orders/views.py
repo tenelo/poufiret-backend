@@ -9,6 +9,7 @@ from rest_framework import permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from apps.catalog.models import Article, OptionGroupe, Supplement, Variante
+from apps.restaurants import gabarits
 from apps.restaurants import services as services_restaurants
 from apps.restaurants.models import LigneMenu
 from .models import Panier, LignePanier
@@ -82,11 +83,13 @@ class AjouterLigneView(APIView):
     Body: article (id) OU ligne_menu (id) — l'un des deux obligatoire ;
     quantite, variante_id? (ignoré pour ligne_menu, prix déjà fixé),
     supplement_ids?[], option_ids?[] (GroupeOption, restaurants : respect
-    du min/max de chaque groupe vérifié ici), note_speciale?"""
+    du min/max de chaque groupe vérifié ici), note_speciale?
+    Gabarits : médicament sur ordonnance refusé (pharmacie) ; variante
+    épuisée ou stock insuffisant refusés."""
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        ligne_menu = None
+        ligne_menu = v = None
         ligne_menu_id = request.data.get('ligne_menu')
         if ligne_menu_id:
             ligne_menu = get_object_or_404(
@@ -96,18 +99,26 @@ class AjouterLigneView(APIView):
             prix = ligne_menu.prix_effectif
             variante_id = None
         else:
-            article = get_object_or_404(Article, pk=request.data.get('article'), est_actif=True)
+            article = get_object_or_404(
+                Article.objects.select_related('partenaire'), pk=request.data.get('article'), est_actif=True)
+            if gabarits.sur_ordonnance(article):
+                return Response({'erreur': True, 'message': gabarits.MESSAGE_ORDONNANCE}, status=400)
             prix = article.prix_promotion if (article.est_en_promotion and article.prix_promotion) else article.prix
             prix = prix or 0
             variante_id = request.data.get('variante_id')
             if variante_id:
                 v = Variante.objects.filter(pk=variante_id, article=article).first()
                 if v:
+                    if gabarits.variante_epuisee(v):
+                        return Response({'erreur': True, 'message': f'« {v.nom} » est épuisé.'}, status=400)
                     prix += v.prix_supplement
 
         quantite = int(request.data.get('quantite', 1))
         if quantite < 1:
             return Response({'erreur': True, 'message': 'Quantité invalide.'}, status=400)
+        if variante_id and v and v.stock is not None and quantite > v.stock:
+            return Response({'erreur': True, 'message':
+                             f'Stock insuffisant pour « {v.nom} » ({v.stock} restant(s)).'}, status=400)
 
         # Panier pur (partenaire + catégorie de cet article), créé si absent
         panier, _ = Panier.objects.get_or_create(

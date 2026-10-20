@@ -37,13 +37,15 @@ def _journaliser_admin(acteur, partenaire, action, motif):
 # ═══════════════════════════════════════════════════════════════════════
 
 class _PerimetreRestaurateurMixin:
-    """Le restaurateur gère son propre restaurant."""
+    """Le restaurateur (ou tout partenaire d'un type du moteur : boulanger,
+    pharmacien, mode, libraire — apps.restaurants.gabarits) gère son propre
+    établissement."""
     permission_classes = [permissions.IsAuthenticated]
     acteur_role = ActeurRole.RESTAURATEUR
 
     def get_partenaire(self):
         profil = getattr(self.request.user, 'profil_partenaire', None)
-        if profil is None or profil.type_partenaire not in services.TYPES_RESTAURATION:
+        if profil is None or profil.type_partenaire not in services.TYPES_MOTEUR:
             raise PermissionDenied('Réservé aux restaurateurs.')
         return profil
 
@@ -53,14 +55,15 @@ class _PerimetreRestaurateurMixin:
 
 
 class _PerimetreAdminMixin:
-    """L'admin gère le restaurant d'un partenaire donné (<partenaire_id>)."""
+    """L'admin gère l'établissement d'un partenaire donné (<partenaire_id>,
+    type du moteur)."""
     permission_classes = [permissions.IsAuthenticated, ADroitDe('gerer_restaurants')]
     acteur_role = ActeurRole.ADMIN
 
     def get_partenaire(self):
         partenaire = ProfilPartenaire.objects.filter(
             pk=self.kwargs['partenaire_id'],
-            type_partenaire__in=services.TYPES_RESTAURATION).first()
+            type_partenaire__in=services.TYPES_MOTEUR).first()
         if partenaire is None:
             from django.http import Http404
             raise Http404('Restaurant introuvable.')
@@ -220,6 +223,8 @@ class _MenusListCreateBase(generics.ListCreateAPIView):
         return qs
 
     def perform_create(self, serializer):
+        from .views_carte import _exiger_fonction
+        _exiger_fonction(self.get_partenaire(), 'menus_actifs', 'Menus')
         fiche = _get_or_create_fiche(self.get_partenaire())
         menu = serializer.save(restaurant=fiche, modifie_par_role=self.acteur_role,
                                modifie_par_nom=self.acteur_nom())
@@ -272,6 +277,8 @@ class _LignesMenuListCreateBase(generics.ListCreateAPIView):
         return qs.filter(menu_id=menu_id) if menu_id else qs
 
     def perform_create(self, serializer):
+        from .views_carte import _exiger_fonction
+        _exiger_fonction(self.get_partenaire(), 'menus_actifs', 'Menus')
         ligne = serializer.save(modifie_par_role=self.acteur_role,
                                 modifie_par_nom=self.acteur_nom())
         if self.acteur_role == ActeurRole.ADMIN:

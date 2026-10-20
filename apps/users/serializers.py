@@ -250,11 +250,12 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
     localite_nom = serializers.CharField(source='localite.nom', read_only=True, default=None)
     quartier_id = serializers.IntegerField(source='quartier_geo.id', read_only=True, default=None)
     quartier_nom = serializers.CharField(source='quartier_geo.nom', read_only=True, default=None)
+    gabarit = serializers.SerializerMethodField()
 
     class Meta:
         model = ProfilPartenaire
         fields = [
-            'id', 'nom_commerce', 'type_partenaire', 'type_partenaire_libelle',
+            'id', 'nom_commerce', 'type_partenaire', 'type_partenaire_libelle', 'gabarit',
             'description', 'logo', 'photo_couverture',
             'adresse', 'quartier', 'secteur', 'ville', 'departement', 'region', 'description_acces',
             'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom',
@@ -262,6 +263,11 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
             'nombre_likes', 'nb_vues', 'est_like_par_moi', 'est_favori_par_moi',
         ]
         read_only_fields = fields
+
+    def get_gabarit(self, obj):
+        """Gabarit d'affichage (apps.restaurants.gabarits, source unique)."""
+        from apps.restaurants.gabarits import gabarit_de_type
+        return gabarit_de_type(obj.type_partenaire)
 
     def get_nombre_likes(self, obj):
         return obj.likes.count() if hasattr(obj, 'likes') else 0
