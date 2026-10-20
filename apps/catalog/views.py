@@ -369,6 +369,9 @@ class CartePartenairesView(_APIView):
         return _Response(donnees)
 
 
+from apps.restaurants.gabarits import gabarit_de_type  # noqa: E402
+
+
 class PartenairesParCategorieView(_APIView):
     """GET /categories/<slug>/partenaires/ — partenaires visibles ayant
     au moins un article actif dans la catégorie."""
@@ -438,6 +441,7 @@ class PartenairesParCategorieView(_APIView):
                 'localite_nom': p.localite.nom if p.localite_id else None,
                 'quartier_nom': p.quartier_geo.nom if p.quartier_geo_id else None,
                 'secteur': p.secteur,
+                'gabarit': gabarit_de_type(p.type_partenaire),
             })
         return _Response(donnees)
 

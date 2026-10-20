@@ -11,7 +11,7 @@ from rest_framework import serializers
 from apps.catalog.models import Article, GroupeOption, OptionGroupe, SectionMenu, Variante
 from apps.users.models import HoraireOuverture
 
-from . import services
+from . import gabarits, services
 from .models import (
     LigneMenu, MenuProgramme, ModeService, ProfilRestaurant, TelephoneRestaurant,
 )
@@ -121,10 +121,13 @@ class ProfilRestaurantSerializer(serializers.ModelSerializer):
     est_ouvert = serializers.SerializerMethodField()
     prochaine_ouverture = serializers.SerializerMethodField()
     message_statut = serializers.SerializerMethodField()
+    gabarit = serializers.SerializerMethodField()
+    type_partenaire = serializers.CharField(source='partenaire.type_partenaire', read_only=True)
+    de_garde = serializers.SerializerMethodField()
 
     class Meta:
         model = ProfilRestaurant
-        fields = ['id', 'partenaire_id', 'nom_commerce', 'logo', 'photo_couverture',
+        fields = ['id', 'partenaire_id', 'type_partenaire', 'gabarit', 'nom_commerce', 'logo', 'photo_couverture',
                   'adresse', 'quartier', 'ville', 'localite_id', 'localite_nom',
                   'quartier_id', 'quartier_nom', 'telephone_pro', 'whatsapp',
                   'ferme_exceptionnellement', 'motif_fermeture', 'ferme_jusqu_au',
@@ -132,8 +135,15 @@ class ProfilRestaurantSerializer(serializers.ModelSerializer):
                   'facebook', 'instagram', 'tiktok', 'specialites',
                   'horaires', 'telephones',
                   'est_ouvert', 'prochaine_ouverture', 'message_statut',
+                  'de_garde_jusqu_au', 'de_garde',
                   'modifie_par_role', 'modifie_par_nom', 'modifie_le', 'cree_le']
         read_only_fields = ['modifie_par_role', 'modifie_par_nom', 'modifie_le', 'cree_le']
+
+    def get_gabarit(self, obj):
+        return gabarits.gabarit_de(obj.partenaire)
+
+    def get_de_garde(self, obj):
+        return gabarits.de_garde(obj)
 
     def get_horaires(self, obj):
         return HoraireOuvertureSerializer(
@@ -252,15 +262,27 @@ class MenuProgrammeSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════════════════════════════
 
 class VariantePubliqueSerializer(serializers.ModelSerializer):
+    est_epuise = serializers.SerializerMethodField()
+
     class Meta:
         model = Variante
-        fields = ['id', 'nom', 'prix_supplement', 'est_par_defaut']
+        fields = ['id', 'nom', 'prix_supplement', 'est_par_defaut', 'stock', 'est_epuise']
+
+    def get_est_epuise(self, obj):
+        return gabarits.variante_epuisee(obj)
 
 
 class OptionGroupePubliqueSerializer(serializers.ModelSerializer):
     class Meta:
         model = OptionGroupe
         fields = ['id', 'nom', 'prix_supplement']
+
+
+def _actifs_tries(elements, champ_actif):
+    """Filtre/tri en Python sur une relation préchargée (prefetch_related) :
+    mêmes résultats que .filter(<actif>=True).order_by('ordre'), sans
+    requête supplémentaire par objet."""
+    return sorted((e for e in elements if getattr(e, champ_actif)), key=lambda e: e.ordre)
 
 
 class GroupeOptionPubliqueSerializer(serializers.ModelSerializer):
@@ -272,38 +294,83 @@ class GroupeOptionPubliqueSerializer(serializers.ModelSerializer):
 
     def get_options(self, obj):
         return OptionGroupePubliqueSerializer(
-            obj.options.filter(est_actif=True).order_by('ordre'), many=True).data
+            _actifs_tries(obj.options.all(), 'est_actif'), many=True).data
+
+
+def _gabarit_contexte(serializer, article):
+    return serializer.context.get('gabarit') or gabarits.gabarit_de(article.partenaire)
 
 
 class PlatCartePubliqueSerializer(serializers.ModelSerializer):
+    """Produit public (plat, ou produit d'un autre gabarit). Lit les
+    relations préchargées (images, variantes, groupes_options__options) :
+    pas de N+1 quand la vue les précharge."""
     image = serializers.SerializerMethodField()
     images = serializers.SerializerMethodField()
     variantes = serializers.SerializerMethodField()
     groupes_options = serializers.SerializerMethodField()
     est_epuise = serializers.SerializerMethodField()
+    commandable = serializers.SerializerMethodField()
 
     class Meta:
         model = Article
         fields = ['id', 'nom', 'slug', 'description', 'prix', 'prix_promotion',
-                  'image', 'images', 'est_disponible', 'est_epuise', 'variantes', 'groupes_options']
+                  'image', 'images', 'est_disponible', 'est_epuise', 'commandable', 'fiche_specifique',
+                  'variantes', 'groupes_options']
 
     def get_image(self, obj):
         return url_image_plat(obj, self.context.get('request'))
 
     def get_images(self, obj):
+        """Carte : liste d'URL. La fiche produit (ProduitDetailPubliqueSerializer)
+        redéfinit images en objets {id, url, est_principale}."""
         return urls_images_plat(obj, self.context.get('request'))
 
     def get_variantes(self, obj):
         return VariantePubliqueSerializer(
-            obj.variantes.filter(est_active=True).order_by('ordre'), many=True).data
+            _actifs_tries(obj.variantes.all(), 'est_active'), many=True).data
 
     def get_groupes_options(self, obj):
         return GroupeOptionPubliqueSerializer(
-            obj.groupes_options.filter(est_actif=True).order_by('ordre'), many=True,
+            _actifs_tries(obj.groupes_options.all(), 'est_actif'), many=True,
             context=self.context).data
 
     def get_est_epuise(self, obj):
         return not obj.est_disponible
+
+    def get_commandable(self, obj):
+        return gabarits.commandable(obj, _gabarit_contexte(self, obj))
+
+
+class ProduitPubliqueSerializer(PlatCartePubliqueSerializer):
+    """Ligne de GET /restaurants/<id>/produits/ : produit + sa section."""
+    section_id = serializers.IntegerField(source='section_menu_id', read_only=True)
+    section_nom = serializers.CharField(source='section_menu.nom', read_only=True, default=None)
+
+    class Meta(PlatCartePubliqueSerializer.Meta):
+        fields = PlatCartePubliqueSerializer.Meta.fields + ['section_id', 'section_nom']
+
+
+class ProduitDetailPubliqueSerializer(ProduitPubliqueSerializer):
+    """GET /restaurants/produits/<id>/ : + toutes les images (principale en
+    premier) + partenaire résumé. autres_produits est ajouté par la vue."""
+    images = serializers.SerializerMethodField()
+    partenaire = serializers.SerializerMethodField()
+
+    class Meta(ProduitPubliqueSerializer.Meta):
+        # images est déjà dans les champs hérités (carte) : redéfini ici en objets.
+        fields = ProduitPubliqueSerializer.Meta.fields + ['partenaire']
+
+    def get_images(self, obj):
+        requete = self.context.get('request')
+        images = sorted((i for i in obj.images.all() if i.est_active and i.image),
+                        key=lambda i: (not i.est_principale, i.ordre, i.id))
+        return [{'id': i.id, 'url': _url_absolue(i.image, requete), 'est_principale': i.est_principale}
+                for i in images]
+
+    def get_partenaire(self, obj):
+        p = obj.partenaire
+        return {'id': p.id, 'nom': p.nom_commerce, 'gabarit': gabarits.gabarit_de(p)}
 
 
 class SectionCartePubliqueSerializer(serializers.ModelSerializer):
@@ -317,6 +384,17 @@ class SectionCartePubliqueSerializer(serializers.ModelSerializer):
         plats = sorted((a for a in obj.articles.all()
                         if a.est_actif and not a.est_reserve_aux_menus), key=_cle_tri)
         return PlatCartePubliqueSerializer(plats, many=True, context=self.context).data
+
+
+class SectionResumePubliqueSerializer(serializers.ModelSerializer):
+    """Section sans ses produits (gabarits à pagination publique) :
+    nb_produits annoté par la vue ; les produits se lisent sur
+    /restaurants/<id>/produits/?section=."""
+    nb_produits = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = SectionMenu
+        fields = ['id', 'nom', 'icone', 'ordre', 'nb_produits']
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -399,9 +477,11 @@ class RestaurantListeSerializer(serializers.Serializer):
 class RestaurantDetailPubliqueSerializer(serializers.Serializer):
     """GET /restaurants/<id>/ — fiche complète + menus en vigueur + carte,
     en une seule réponse (sans N+1 : les sections/plats/variantes/groupes
-    sont préchargés par la vue)."""
+    sont préchargés par la vue). + gabarit, de_garde / de_garde_jusqu_au
+    (pharmacie ; false/null ailleurs)."""
     id = serializers.IntegerField()
     nom = serializers.CharField(source='nom_commerce')
+    gabarit = serializers.SerializerMethodField()
     description = serializers.CharField()
     logo = serializers.SerializerMethodField()
     couverture = serializers.SerializerMethodField()
@@ -421,10 +501,18 @@ class RestaurantDetailPubliqueSerializer(serializers.Serializer):
     est_ouvert = serializers.SerializerMethodField()
     prochaine_ouverture = serializers.SerializerMethodField()
     message_statut = serializers.SerializerMethodField()
+    de_garde = serializers.SerializerMethodField()
+    de_garde_jusqu_au = serializers.DateTimeField(source='fiche.de_garde_jusqu_au', read_only=True)
     fiche = serializers.SerializerMethodField()
     menus_du_jour = serializers.SerializerMethodField()
     menus_en_vigueur_maintenant = serializers.SerializerMethodField()
     carte = serializers.SerializerMethodField()
+
+    def get_gabarit(self, obj):
+        return gabarits.gabarit_de(obj)
+
+    def get_de_garde(self, obj):
+        return gabarits.de_garde(obj.fiche)
 
     def _url(self, champ):
         return _url_absolue(champ, self.context.get('request'))
@@ -473,6 +561,11 @@ class RestaurantDetailPubliqueSerializer(serializers.Serializer):
                for s, m in menus.items()}
 
     def get_carte(self, obj):
-        # sections_menu (actives) et leurs articles sont préchargés par la vue.
+        """Sections actives (préchargées par la vue), triées par ordre puis nom.
+        Gabarit à pagination publique : sections sans produits, avec
+        nb_produits (annoté par la vue)."""
         sections = sorted((s for s in obj.sections_menu.all() if s.est_active), key=_cle_tri)
-        return SectionCartePubliqueSerializer(sections, many=True, context=self.context).data
+        contexte = {**self.context, 'gabarit': gabarits.gabarit_de(obj)}
+        if gabarits.definition(contexte['gabarit'])['pagination_publique']:
+            return SectionResumePubliqueSerializer(sections, many=True).data
+        return SectionCartePubliqueSerializer(sections, many=True, context=contexte).data

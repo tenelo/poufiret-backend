@@ -313,6 +313,13 @@ class Article(models.Model):
         help_text=_('Champs variables par type d\'article (allergènes, halal, etc.).'),
     )
 
+    # Champs propres au gabarit d'affichage du partenaire (pharmacie,
+    # librairie, mode…), validés par apps.restaurants.gabarits — distinct de
+    # `details` (libre, historique) pour ne pas contraindre l'existant.
+    fiche_specifique = models.JSONField(
+        _('fiche spécifique au gabarit'), default=dict, blank=True,
+        help_text=_('Ex. {"auteur": "…", "isbn": "…"} pour un livre.'))
+
     # ── Spécifique resto / fast-food ─────────────────────────────────
     section_menu = models.ForeignKey(
         SectionMenu,
@@ -821,6 +828,9 @@ class Variante(models.Model):
     est_par_defaut = models.BooleanField(_('variante par défaut'), default=False)
     ordre = models.IntegerField(_('ordre'), default=0)
     est_active = models.BooleanField(_('variante active'), default=True)
+    # Stock par format/pointure (gabarits boutique) : null = illimité.
+    stock = models.PositiveIntegerField(_('stock'), blank=True, null=True)
+    est_epuise = models.BooleanField(_('épuisée'), default=False)
 
     class Meta:
         verbose_name = _('variante')

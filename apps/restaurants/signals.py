@@ -8,5 +8,5 @@ from . import services
 
 @receiver(post_save, sender=ProfilPartenaire)
 def creer_fiche_restaurant(sender, instance, **kwargs):
-    if instance.type_partenaire in services.TYPES_RESTAURATION:
+    if instance.type_partenaire in services.TYPES_MOTEUR:
         services.fiche_de(instance)

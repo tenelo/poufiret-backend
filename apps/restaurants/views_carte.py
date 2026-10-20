@@ -2,6 +2,11 @@
 d'options) — mêmes vues et serializers pour restaurateur et admin (seul le
 périmètre change, via les mixins de views_prive.py), réutilisant
 intégralement apps.catalog (aucune duplication de modèle ni de logique).
+
+Gabarits (apps.restaurants.gabarits) : les « plats » sont des Article de
+type 'plat' (restauration) ou 'produit' (boulangerie, pharmacie, mode,
+librairie) ; fiche_specifique validée selon le gabarit ; groupes d'options
+refusés quand le gabarit ne les active pas.
 """
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -20,6 +25,7 @@ from apps.catalog.serializers import (
     OptionGroupeSerializer, SectionMenuSerializer, VarianteSerializer,
 )
 
+from . import gabarits
 from .models import ActeurRole
 from .views_prive import _PerimetreAdminMixin, _PerimetreRestaurateurMixin, _journaliser_admin
 
@@ -33,10 +39,28 @@ def _slug_unique(partenaire, nom):
     return slug
 
 
-def _categorie_par_defaut(partenaire):
-    return Categorie.objects.filter(
-        types_partenaire__contains=[partenaire.type_partenaire],
-        types_articles__contains=['plat']).first()
+def _categorie_par_defaut(partenaire, type_article=Article.Type.PLAT):
+    """Catégorie du type de partenaire acceptant ce type d'article, sinon
+    n'importe quelle catégorie rattachée au type (P1)."""
+    base = Categorie.objects.filter(types_partenaire__contains=[partenaire.type_partenaire])
+    return base.filter(types_articles__contains=[type_article]).first() or base.first()
+
+
+def _fiche_specifique_validee(partenaire, valeur):
+    """fiche_specifique normalisée selon le gabarit du partenaire, ou 400
+    details["fiche_specifique.<cle>"]."""
+    fiche, erreurs = gabarits.valider_fiche_specifique(gabarits.gabarit_de(partenaire), valeur)
+    if erreurs:
+        raise ValidationError(erreurs)
+    return fiche
+
+
+def _exiger_fonction(partenaire, fonction, libelle):
+    """400 si le gabarit du partenaire n'active pas cette fonction
+    (menus_actifs / options_actives)."""
+    gabarit = gabarits.gabarit_de(partenaire)
+    if not gabarits.definition(gabarit)[fonction]:
+        raise ValidationError({'gabarit': [f'{libelle} non disponibles pour le gabarit « {gabarit} ».']})
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -100,7 +124,8 @@ class _PlatsListCreateBase(generics.ListCreateAPIView):
     serializer_class = ArticleCarteGestionSerializer
 
     def get_queryset(self):
-        qs = (Article.objects.filter(partenaire=self.get_partenaire(), type=Article.Type.PLAT)
+        qs = (Article.objects.filter(partenaire=self.get_partenaire(),
+                                     type__in=gabarits.types_articles_moteur())
               .select_related('section_menu')
               .prefetch_related('images', 'variantes', 'groupes_options__options'))
         p = self.request.query_params
@@ -118,9 +143,14 @@ class _PlatsListCreateBase(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         partenaire = self.get_partenaire()
         self._verifier_section(partenaire, serializer.validated_data.get('section_menu'))
-        categorie = serializer.validated_data.get('categorie') or _categorie_par_defaut(partenaire)
+        fiche = _fiche_specifique_validee(partenaire, serializer.validated_data.get('fiche_specifique'))
+        type_article = gabarits.type_article(gabarits.gabarit_de(partenaire))
+        categorie = serializer.validated_data.get('categorie') or _categorie_par_defaut(partenaire, type_article)
+        if categorie is None:
+            raise ValidationError({'categorie': [
+                'Aucune catégorie rattachée à ce type de partenaire : précisez « categorie ».']})
         article = serializer.save(
-            partenaire=partenaire, categorie=categorie, type=Article.Type.PLAT,
+            partenaire=partenaire, categorie=categorie, type=type_article, fiche_specifique=fiche,
             slug=_slug_unique(partenaire, serializer.validated_data['nom']),
             modifie_par_role=self.acteur_role, modifie_par_nom=self.acteur_nom())
         if self.acteur_role == ActeurRole.ADMIN:
@@ -132,12 +162,16 @@ class _PlatDetailBase(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ArticleCarteGestionSerializer
 
     def get_queryset(self):
-        return (Article.objects.filter(partenaire=self.get_partenaire(), type=Article.Type.PLAT)
+        return (Article.objects.filter(partenaire=self.get_partenaire(),
+                                       type__in=gabarits.types_articles_moteur())
                 .select_related('section_menu')
                 .prefetch_related('images', 'variantes', 'groupes_options__options'))
 
     def perform_update(self, serializer):
         partenaire = self.get_partenaire()
+        if 'fiche_specifique' in serializer.validated_data:
+            serializer.validated_data['fiche_specifique'] = _fiche_specifique_validee(
+                partenaire, serializer.validated_data['fiche_specifique'])
         if 'section_menu' in serializer.validated_data:
             section = serializer.validated_data.get('section_menu')
             if section is not None and section.partenaire_id != partenaire.id:
@@ -175,7 +209,7 @@ class _PlatEpuiseBase(APIView):
     def post(self, request, *args, **kwargs):
         partenaire = self.get_partenaire()
         article = get_object_or_404(
-            Article, pk=kwargs['pk'], partenaire=partenaire, type=Article.Type.PLAT)
+            Article, pk=kwargs['pk'], partenaire=partenaire, type__in=gabarits.types_articles_moteur())
         epuise = bool(request.data.get('epuise'))
         article.est_disponible = not epuise
         article.modifie_par_role = self.acteur_role
@@ -224,7 +258,7 @@ class _PlatsOrdreBase(APIView):
                              "Cette section n'appartient pas à ce restaurant."}, status=400)
 
         plats = {a.id: a for a in Article.objects.filter(
-            partenaire=partenaire, type=Article.Type.PLAT, section_menu=section)}
+            partenaire=partenaire, type__in=gabarits.types_articles_moteur(), section_menu=section)}
         hors_section = [i for i in ids if i not in plats]
         if hors_section:
             return Response({'erreur': True, 'plats_invalides': hors_section, 'message':
@@ -249,7 +283,8 @@ class _PlatsOrdreBase(APIView):
             _journaliser_admin(request.user, partenaire, 'resto_plat_modif',
                                f'Ordre des plats de la section « {section.nom} » '
                                f'modifié par l\'admin.')
-        qs = (Article.objects.filter(partenaire=partenaire, type=Article.Type.PLAT, section_menu=section)
+        qs = (Article.objects.filter(partenaire=partenaire, type__in=gabarits.types_articles_moteur(),
+                                     section_menu=section)
               .select_related('section_menu')
               .prefetch_related('images', 'variantes', 'groupes_options__options')
               .order_by('ordre', 'nom'))
@@ -278,7 +313,7 @@ class _PlatImagesListCreateBase(generics.ListCreateAPIView):
         if not hasattr(self, '_plat_cache'):
             self._plat_cache = get_object_or_404(
                 Article.objects.select_related('partenaire__plan'), pk=self.kwargs['plat_id'],
-                partenaire=self.get_partenaire(), type=Article.Type.PLAT)
+                partenaire=self.get_partenaire(), type__in=gabarits.types_articles_moteur())
         return self._plat_cache
 
     def get_queryset(self):
@@ -375,6 +410,10 @@ class _GroupesOptionsListCreateBase(_SousRessourcePlatListCreateBase):
     model = GroupeOption
     serializer_class = GroupeOptionSerializer
 
+    def perform_create(self, serializer):
+        _exiger_fonction(self.get_partenaire(), 'options_actives', "Groupes d'options")
+        super().perform_create(serializer)
+
 
 class _GroupeOptionDetailBase(_SousRessourcePlatDetailBase):
     model = GroupeOption
@@ -406,6 +445,7 @@ class _OptionsListCreateBase(generics.ListCreateAPIView):
         return qs.filter(groupe_id=groupe_id) if groupe_id else qs
 
     def perform_create(self, serializer):
+        _exiger_fonction(self.get_partenaire(), 'options_actives', 'Options')
         groupe = serializer.validated_data.get('groupe')
         if groupe is None or groupe.article.partenaire_id != self.get_partenaire().id:
             raise ValidationError({'groupe': "Ce groupe n'appartient pas à ce restaurant."})

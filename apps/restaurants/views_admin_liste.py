@@ -11,19 +11,25 @@ from apps.core.permissions import ADroitDe
 from apps.orders.models import Commande
 from apps.users.models import ProfilPartenaire
 
-from . import services
+from . import gabarits, services
 from .models import ProfilRestaurant
 
 
 class RestaurantsAdminListeView(APIView):
-    """GET /api/v1/restaurants/admin/ — tous les restaurants (type dans
-    TYPES_RESTAURATION), avec indicateurs : commandes du jour, menu du
-    jour publié ou non, ouvert ou fermé."""
+    """GET /api/v1/restaurants/admin/?gabarit= — tous les établissements du
+    moteur (type dans TYPES_MOTEUR : restaurants, fast-foods, boulangeries,
+    pharmacies, mode, librairies), avec type_partenaire, gabarit et
+    indicateurs : commandes du jour, menu du jour publié ou non, ouvert ou
+    fermé."""
     permission_classes = [permissions.IsAuthenticated, ADroitDe('gerer_restaurants')]
 
     def get(self, request):
+        types = services.TYPES_MOTEUR
+        gabarit = request.query_params.get('gabarit')
+        if gabarit:
+            types = [t for t in types if gabarits.gabarit_de_type(t) == gabarit]
         partenaires = list(
-            ProfilPartenaire.objects.filter(type_partenaire__in=services.TYPES_RESTAURATION)
+            ProfilPartenaire.objects.filter(type_partenaire__in=types)
             .select_related('profil_restaurant', 'departement').order_by('nom_commerce'))
         aujourdhui = timezone.localdate()
         commandes_jour = dict(
@@ -43,6 +49,8 @@ class RestaurantsAdminListeView(APIView):
             resultats.append({
                 'id': p.id,
                 'nom': p.nom_commerce,
+                'type_partenaire': p.type_partenaire,
+                'gabarit': gabarits.gabarit_de(p),
                 'departement_nom': getattr(p.departement, 'nom', ''),
                 'a_une_fiche': fiche is not None,
                 'ouvert': ouvert,

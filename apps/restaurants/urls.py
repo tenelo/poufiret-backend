@@ -26,7 +26,10 @@ from .views_prive import (
     MonMenuRestaurantDetailView, MonMenusRestaurantView,
     MonTelephoneRestaurantDetailView, MonTelephonesRestaurantView,
 )
-from .views_public import MenusDuJourView, RestaurantDetailPublicView, RestaurantsListeView
+from .views_public import (
+    MenusDuJourView, MetaGabaritsView, ProduitDetailPublicView, ProduitsPublicView,
+    RestaurantDetailPublicView, RestaurantsListeView,
+)
 
 app_name = 'restaurants'
 
@@ -35,6 +38,9 @@ urlpatterns = [
     path('menus-du-jour/', MenusDuJourView.as_view(), name='menus-du-jour'),
     path('', RestaurantsListeView.as_view(), name='liste'),
     path('<int:pk>/', RestaurantDetailPublicView.as_view(), name='detail'),
+    path('meta/gabarits/', MetaGabaritsView.as_view(), name='meta-gabarits'),
+    path('<int:pk>/produits/', ProduitsPublicView.as_view(), name='produits'),
+    path('produits/<int:pk>/', ProduitDetailPublicView.as_view(), name='produit-detail'),
 
     # ── Restaurateur (son propre restaurant) ──────────────────────────
     path('mon-restaurant/fiche/', MonFicheRestaurantView.as_view(), name='mon-fiche'),

@@ -81,6 +81,9 @@ class ProfilRestaurant(ChampsTracabiliteMixin, models.Model):
         _('spécialités'), default=list, blank=True,
         help_text=_('Liste courte, ex. ["Garba", "Grillades", "Pizza"].'))
 
+    # Gabarit pharmacie : pharmacie de garde jusqu'à cette date/heure.
+    de_garde_jusqu_au = models.DateTimeField(_('de garde jusqu\'au'), blank=True, null=True)
+
     cree_le = models.DateTimeField(_('créé le'), auto_now_add=True)
 
     class Meta:

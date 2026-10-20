@@ -13,10 +13,14 @@ from apps.users.models import ProfilPartenaire
 
 from .models import LigneMenu, MenuProgramme, ProfilRestaurant, StockJournalierLigneMenu
 
-# Types de partenaires concernés par ce module. 'fastfood' sera ajouté à
-# ProfilPartenaire.TypePartenaire et à cette liste quand ce vertical sera
-# activé — aucune autre valeur n'existe aujourd'hui en base.
-TYPES_RESTAURATION = [ProfilPartenaire.TypePartenaire.RESTAURATEUR]
+from .gabarits import RESTAURANT, TYPES_MOTEUR, gabarit_de_type
+
+# Types de la RESTAURATION (gabarit « restaurant ») : liste publique
+# /restaurants/, menus du jour, filtre admin des commandes ?restauration=1.
+# Le moteur (gestion, détail public, produits) sert plus largement
+# TYPES_MOTEUR (apps.restaurants.gabarits : boulangerie, pharmacie, mode,
+# librairie en plus).
+TYPES_RESTAURATION = [t for t in TYPES_MOTEUR if gabarit_de_type(t) == RESTAURANT]
 
 LIBELLES_JOUR_ISO = {1: 'lundi', 2: 'mardi', 3: 'mercredi', 4: 'jeudi',
                      5: 'vendredi', 6: 'samedi', 7: 'dimanche'}
