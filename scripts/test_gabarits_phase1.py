@@ -1,5 +1,5 @@
 """Tests : gabarits — phase 1 : GET /api/v1/restaurants/meta/gabarits/
-(AllowAny), conforme au contrat (libellés, fonctions actives, pagination,
+(AllowAny), conforme au contrat (dont elevage) (libellés, fonctions actives, pagination,
 champs typés avec choix et obligation).
 
 Execution :
@@ -32,6 +32,10 @@ ATTENDU = {
                   [('auteur', 'texte'), ('editeur', 'texte'), ('isbn', 'texte'), ('langue', 'texte'),
                    ('classe', 'texte'), ('annee', 'entier'), ('genre_livre', 'choix'), ('niveau', 'choix'),
                    ('etat', 'choix')]),
+    'elevage': ('Catégorie', 'Animal / Produit', 'Formats', False, False, False,
+                [('espece', 'choix'), ('etat_vente', 'choix'), ('unite_prix', 'choix'),
+                 ('poids_moyen_kg', 'texte'), ('age', 'texte'), ('quantite_disponible', 'entier'),
+                 ('commande_avance_jours', 'entier'), ('livraison_possible', 'booleen')]),
 }
 CHOIX = {
     ('pharmacie', 'forme'): ['comprime', 'gelule', 'sirop', 'pommade', 'injectable', 'sachet', 'collyre', 'autre'],
@@ -39,6 +43,9 @@ CHOIX = {
     ('librairie', 'genre_livre'): ['scolaire', 'roman', 'jeunesse', 'religieux', 'dictionnaire', 'essai', 'bd', 'autre'],
     ('librairie', 'niveau'): ['primaire', 'college', 'lycee', 'superieur', 'aucun'],
     ('librairie', 'etat'): ['neuf', 'occasion'],
+    ('elevage', 'espece'): ['porc', 'poulet', 'pintade', 'boeuf', 'mouton', 'chevre', 'lapin', 'autre'],
+    ('elevage', 'etat_vente'): ['vivant', 'abattu_entier', 'decoupe'],
+    ('elevage', 'unite_prix'): ['piece', 'kg'],
 }
 
 try:
@@ -46,7 +53,7 @@ try:
         r = Client().get('/api/v1/restaurants/meta/gabarits/', secure=True, HTTP_HOST=HOST)
         ok('anonyme -> 200', r.status_code == 200, r.content)
         d = r.json()
-        ok('5 gabarits', set(d) == set(ATTENDU), set(d))
+        ok(f'{len(ATTENDU)} gabarits', set(d) == set(ATTENDU), set(d))
         for g, (sec, prod, var, menus, options, pagination, champs) in ATTENDU.items():
             x = d[g]
             ok(f'{g} : cles', set(x) == {'libelle', 'libelle_section', 'libelle_produit', 'libelle_variantes',
@@ -67,7 +74,9 @@ try:
                 else:
                     ok(f'{g}.{c["cle"]} : pas de choix', c['choix'] == [])
         obligatoires = {(g, c['cle']) for g, x in d.items() for c in x['champs'] if c['obligatoire']}
-        ok('seul librairie.auteur est obligatoire', obligatoires == {('librairie', 'auteur')}, obligatoires)
+        ok('obligatoires : librairie.auteur ; elevage.espece/etat_vente/unite_prix', obligatoires == {
+            ('librairie', 'auteur'), ('elevage', 'espece'), ('elevage', 'etat_vente'), ('elevage', 'unite_prix')},
+           obligatoires)
         print(f'\n=== {NB} verifications reussies ===')
         raise Rollback()
 except Rollback:

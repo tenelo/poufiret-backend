@@ -19,6 +19,8 @@ Cycle de vie d'une commande :
                           │
                         livree
 """
+from decimal import ROUND_HALF_UP, Decimal
+
 from django.db import models # type: ignore
 from django.contrib.gis.db import models as gis_models # type: ignore
 from django.utils.translation import gettext_lazy as _ # type: ignore
@@ -30,6 +32,22 @@ from apps.users.models import AdresseClient, ProfilPartenaire, User
 # ═══════════════════════════════════════════════════════════════════════
 # PANIER (brouillon avant validation)
 # ═══════════════════════════════════════════════════════════════════════
+
+
+def quantite_reelle(ligne):
+    """Quantité réellement commandée : kg (décimal) pour une ligne vendue au
+    kilo, sinon la quantité entière habituelle."""
+    return ligne.quantite_kg if ligne.quantite_kg is not None else ligne.quantite
+
+
+def montant_ligne(ligne):
+    """(prix unitaire + suppléments) × quantité réelle, arrondi au franc
+    (demi-franc vers le haut) — identique à l'ancien calcul pour une
+    quantité entière."""
+    supp = sum(s.get('prix', 0) for s in (ligne.supplements or []))
+    montant = (ligne.prix_unitaire + supp) * quantite_reelle(ligne)
+    return Decimal(montant).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+
 
 class Panier(models.Model):
     """
@@ -116,6 +134,10 @@ class LignePanier(models.Model):
     )
 
     quantite = models.PositiveIntegerField(_('quantité'), default=1)
+    # Vente au kilo (gabarit elevage) : quantité réelle en kg, par pas de
+    # 0,5 ; quantite vaut alors 1. Null pour toutes les autres lignes.
+    quantite_kg = models.DecimalField(
+        _('quantité (kg)'), max_digits=8, decimal_places=1, blank=True, null=True)
     prix_unitaire = models.DecimalField(
         _('prix unitaire (FCFA)'),
         max_digits=12, decimal_places=0,
@@ -135,8 +157,12 @@ class LignePanier(models.Model):
         verbose_name_plural = _('lignes de panier')
         ordering = ['panier', 'created_at']
 
+    @property
+    def quantite_reelle(self):
+        return quantite_reelle(self)
+
     def __str__(self):
-        return f"{self.quantite} × {self.article.nom}"
+        return f"{self.quantite_reelle} × {self.article.nom}"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -318,6 +344,9 @@ class LigneCommande(models.Model):
     )
 
     quantite = models.PositiveIntegerField(_('quantité'))
+    quantite_kg = models.DecimalField(
+        _('quantité (kg)'), max_digits=8, decimal_places=1, blank=True, null=True,
+        help_text=_('Vente au kilo (gabarit elevage) ; quantite vaut alors 1.'))
     prix_unitaire = models.DecimalField(
         _('prix unitaire (FCFA)'),
         max_digits=12, decimal_places=0,
@@ -334,8 +363,12 @@ class LigneCommande(models.Model):
         verbose_name_plural = _('lignes de commande')
         ordering = ['commande', 'id']
 
+    @property
+    def quantite_reelle(self):
+        return quantite_reelle(self)
+
     def __str__(self):
-        return f"{self.quantite} × {self.nom_article}"
+        return f"{self.quantite_reelle} × {self.nom_article}"
 
 
 # ═══════════════════════════════════════════════════════════════════════

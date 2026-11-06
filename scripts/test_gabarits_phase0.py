@@ -65,7 +65,7 @@ try:
         P = {t: partenaire(t, n) for t, n in [
             ('restaurateur', 'Resto'), ('fast_food', 'Fast'), ('boulanger', 'Boulange'),
             ('pharmacien', 'Pharma'), ('boutique_mode', 'Mode'), ('libraire', 'Livres'),
-            ('hotelier', 'Hotel'), ('coiffeur', 'Coiffure')]}
+            ('eleveur', 'Ferme'), ('hotelier', 'Hotel'), ('coiffeur', 'Coiffure')]}
         super_ = utilisateur('t_gab_super', 'admin', staff=True, superuser=True)
         admin_sans = utilisateur('t_gab_sans', 'admin', staff=True)
         PermissionsAdmin.objects.create(admin=admin_sans)
@@ -82,9 +82,9 @@ try:
         ok('types geres a part : valeurs propres', gabarits.gabarit_de_type('hotelier') == 'hotel'
            and gabarits.gabarit_de_type('loueur_maison') == 'location_maison'
            and gabarits.gabarit_de_type('loueur_voiture') == 'location_vehicule')
-        ok('TYPES_MOTEUR = restaurant/fast_food/boulanger/pharmacien/boutique_mode/libraire',
+        ok('TYPES_MOTEUR = restaurant/fast_food/boulanger/pharmacien/boutique_mode/libraire/eleveur',
            set(services.TYPES_MOTEUR) == {'restaurateur', 'fast_food', 'boulanger', 'pharmacien',
-                                          'boutique_mode', 'libraire'})
+                                          'boutique_mode', 'libraire', 'eleveur'})
         ok('TYPES_RESTAURATION = gabarit restaurant seulement',
            set(services.TYPES_RESTAURATION) == {'restaurateur', 'fast_food'})
 

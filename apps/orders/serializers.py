@@ -1,7 +1,7 @@
 """Serializers panier (Module 4 - bloc A1)."""
 from rest_framework import serializers # type: ignore
 from apps.catalog.models import Article, Variante, Supplement
-from .models import Panier, LignePanier
+from .models import LignePanier, Panier, montant_ligne, quantite_reelle
 
 
 def _image_article(article, context):
@@ -14,8 +14,32 @@ def _image_article(article, context):
     return url_image_plat(article, context.get('request'))
 
 
+class QuantiteField(serializers.ReadOnlyField):
+    """Quantité réelle d'une ligne : entier comme avant pour une ligne à la
+    pièce, décimal (ex. 1.5) pour une ligne vendue au kilo (quantite_kg)."""
+
+    def get_attribute(self, instance):
+        return instance
+
+    def to_representation(self, ligne):
+        q = quantite_reelle(ligne)
+        return int(q) if ligne.quantite_kg is None else float(q)
+
+
+class UniteField(serializers.ReadOnlyField):
+    """'kg' pour une ligne vendue au kilo, sinon 'piece'."""
+
+    def get_attribute(self, instance):
+        return instance
+
+    def to_representation(self, ligne):
+        return 'kg' if ligne.quantite_kg is not None else 'piece'
+
+
 class LignePanierSerializer(serializers.ModelSerializer):
     article_nom = serializers.CharField(source='article.nom', read_only=True)
+    quantite = QuantiteField()
+    unite = UniteField()
     image = serializers.SerializerMethodField()
     prix_ligne = serializers.SerializerMethodField()
     variante_nom = serializers.SerializerMethodField()
@@ -24,7 +48,7 @@ class LignePanierSerializer(serializers.ModelSerializer):
     class Meta:
         model = LignePanier
         fields = ['id', 'article', 'article_nom', 'image', 'variante_id', 'variante_nom',
-                  'supplements', 'options', 'ligne_menu', 'quantite', 'prix_unitaire',
+                  'supplements', 'options', 'ligne_menu', 'quantite', 'unite', 'prix_unitaire',
                   'prix_ligne', 'note_speciale', 'created_at']
         read_only_fields = ['prix_unitaire']
 
@@ -32,8 +56,7 @@ class LignePanierSerializer(serializers.ModelSerializer):
         return _image_article(obj.article, self.context)
 
     def get_prix_ligne(self, obj):
-        supp = sum(s.get('prix', 0) for s in (obj.supplements or []))
-        return (obj.prix_unitaire + supp) * obj.quantite
+        return montant_ligne(obj)
 
     def get_variante_nom(self, obj):
         if not obj.variante_id:
@@ -58,11 +81,7 @@ class PanierSerializer(serializers.ModelSerializer):
 
     def get_total(self, obj):
         
-        t = 0
-        for l in obj.lignes.all():
-            supp = sum(s.get('prix', 0) for s in (l.supplements or []))
-            t += (l.prix_unitaire + supp) * l.quantite
-        return t
+        return sum((montant_ligne(l) for l in obj.lignes.all()), 0)
 
 
 from .models import Commande, LigneCommande
@@ -70,11 +89,13 @@ from .models import Commande, LigneCommande
 
 class LigneCommandeSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
+    quantite = QuantiteField()
+    unite = UniteField()
 
     class Meta:
         model = LigneCommande
         fields = ['id', 'article', 'nom_article', 'image', 'variante_nom', 'supplements',
-                  'quantite', 'prix_unitaire', 'prix_ligne', 'note_speciale']
+                  'quantite', 'unite', 'prix_unitaire', 'prix_ligne', 'note_speciale']
 
     def get_image(self, obj):
         """null si l'article a été supprimé depuis la commande (article SET_NULL)."""

@@ -295,6 +295,7 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
         BOUTIQUE_MODE = 'boutique_mode', _('Vendeur de chaussures / Mode')
         HOTELIER = 'hotelier', _('Hôtelier')
         MECANICIEN = 'mecanicien', _('Mécanicien')
+        ELEVEUR = 'eleveur', _('Éleveur / Vente à la ferme')
         LOUEUR_MAISON = 'loueur_maison', _('Loueur de maison')
         LOUEUR_VOITURE = 'loueur_voiture', _('Loueur de voiture')
         AUTRE = 'autre', _('Autre')

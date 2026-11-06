@@ -41,9 +41,16 @@ def _slug_unique(partenaire, nom):
 
 def _categorie_par_defaut(partenaire, type_article=Article.Type.PLAT):
     """Catégorie du type de partenaire acceptant ce type d'article, sinon
-    n'importe quelle catégorie rattachée au type (P1)."""
+    n'importe quelle catégorie rattachée au type (P1), sinon une catégorie
+    cochée à la main pour ce partenaire (principale d'abord) — cas de
+    l'éleveur, sans rattachement automatique."""
     base = Categorie.objects.filter(types_partenaire__contains=[partenaire.type_partenaire])
-    return base.filter(types_articles__contains=[type_article]).first() or base.first()
+    categorie = base.filter(types_articles__contains=[type_article]).first() or base.first()
+    if categorie is None:
+        lien = (partenaire.liens_categories.select_related('categorie')
+                .order_by('-est_principale', 'id').first())
+        categorie = lien.categorie if lien else None
+    return categorie
 
 
 def _fiche_specifique_validee(partenaire, valeur):

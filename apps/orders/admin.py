@@ -14,7 +14,7 @@ from .models import Panier, LignePanier, Commande, LigneCommande
 class LignePanierInline(admin.TabularInline):
     model = LignePanier
     extra = 0
-    fields = ('article', 'quantite', 'prix_unitaire', 'note_speciale')
+    fields = ('article', 'quantite', 'quantite_kg', 'prix_unitaire', 'note_speciale')
     autocomplete_fields = ('article',)
     readonly_fields = ('created_at',)
 
@@ -40,9 +40,9 @@ class PanierAdmin(admin.ModelAdmin):
 class LigneCommandeInline(admin.TabularInline):
     model = LigneCommande
     extra = 0
-    fields = ('nom_article', 'variante_nom', 'quantite',
+    fields = ('nom_article', 'variante_nom', 'quantite', 'quantite_kg',
               'prix_unitaire', 'prix_ligne', 'note_speciale')
-    readonly_fields = ('nom_article', 'variante_nom', 'quantite',
+    readonly_fields = ('nom_article', 'variante_nom', 'quantite', 'quantite_kg',
                        'prix_unitaire', 'prix_ligne', 'note_speciale')
     can_delete = False
 

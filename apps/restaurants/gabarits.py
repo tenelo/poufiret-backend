@@ -11,6 +11,8 @@ pagination publique, champs spécifiques, ordonnance).
 Les types gérés par apps.locations (hôtelier, loueurs) gardent leur
 fonctionnement propre : leur « gabarit » ne sert qu'à orienter l'appli.
 """
+from decimal import Decimal, InvalidOperation
+
 from django.utils import timezone
 
 from apps.users.models import ProfilPartenaire
@@ -22,6 +24,7 @@ BOULANGERIE = 'boulangerie'
 PHARMACIE = 'pharmacie'
 MODE = 'mode'
 LIBRAIRIE = 'librairie'
+ELEVAGE = 'elevage'
 GENERIQUE = 'generique'
 
 # Types pris en charge par le moteur restaurants → gabarit.
@@ -32,6 +35,9 @@ GABARIT_PAR_TYPE = {
     T.PHARMACIEN: PHARMACIE,
     T.BOUTIQUE_MODE: MODE,
     T.LIBRAIRE: LIBRAIRIE,
+    # Pas de rattachement automatique de catégorie pour l'éleveur : l'admin
+    # coche à la main « Porc de ferme », « Poulet de ferme », « Viande de Ferké ».
+    T.ELEVEUR: ELEVAGE,
 }
 
 # Types gérés à part (apps.locations) : fonctionnement inchangé, valeur
@@ -132,6 +138,25 @@ GABARITS = {
                 ('primaire', 'Primaire'), ('college', 'Collège'), ('lycee', 'Lycée'),
                 ('superieur', 'Supérieur'), ('aucun', 'Aucun'))),
             _champ('etat', 'État', CHOIX, choix=_choix(('neuf', 'Neuf'), ('occasion', 'Occasion'))),
+        ],
+    },
+    ELEVAGE: {
+        'libelle': 'Élevage', 'libelle_section': 'Catégorie', 'libelle_produit': 'Animal / Produit',
+        'libelle_variantes': 'Formats', 'menus_actifs': False, 'options_actives': False,
+        'pagination_publique': False,
+        'champs': [
+            _champ('espece', 'Espèce', CHOIX, obligatoire=True, choix=_choix(
+                ('porc', 'Porc'), ('poulet', 'Poulet'), ('pintade', 'Pintade'), ('boeuf', 'Bœuf'),
+                ('mouton', 'Mouton'), ('chevre', 'Chèvre'), ('lapin', 'Lapin'), ('autre', 'Autre'))),
+            _champ('etat_vente', 'État à la vente', CHOIX, obligatoire=True, choix=_choix(
+                ('vivant', 'Vivant'), ('abattu_entier', 'Abattu entier'), ('decoupe', 'Découpé'))),
+            _champ('unite_prix', 'Unité de prix', CHOIX, obligatoire=True, choix=_choix(
+                ('piece', 'À la pièce'), ('kg', 'Au kilo'))),
+            _champ('poids_moyen_kg', 'Poids moyen (kg)', TEXTE),
+            _champ('age', 'Âge', TEXTE),
+            _champ('quantite_disponible', 'Quantité disponible', ENTIER),
+            _champ('commande_avance_jours', "Commande à l'avance (jours)", ENTIER),
+            _champ('livraison_possible', 'Livraison possible', BOOLEEN),
         ],
     },
 }
@@ -242,3 +267,50 @@ def type_article(gabarit):
 def types_articles_moteur():
     from apps.catalog.models import Article
     return [Article.Type.PLAT, Article.Type.PRODUIT]
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Quantité au panier (gabarit elevage : vente au kilo par pas de 0,5)
+# ═══════════════════════════════════════════════════════════════════════
+
+UNITE_PIECE, UNITE_KG = 'piece', 'kg'
+PAS_KG = Decimal('0.5')
+MESSAGE_QUANTITE = 'Quantité invalide.'
+
+
+def unite_vente(article):
+    """'kg' pour un produit d'élevage vendu au kilo (fiche_specifique
+    .unite_prix = kg), 'piece' pour tout le reste."""
+    if (gabarit_de(article.partenaire) == ELEVAGE
+            and (article.fiche_specifique or {}).get('unite_prix') == UNITE_KG):
+        return UNITE_KG
+    return UNITE_PIECE
+
+
+def lire_quantite(brut, unite=UNITE_PIECE):
+    """Quantité demandée (Decimal) ou ValueError(message). Pièce : entier
+    ≥ 1. Kilo : multiple de 0,5, au moins 0,5 (« 1,5 » accepté)."""
+    if isinstance(brut, bool) or brut in (None, ''):
+        raise ValueError(MESSAGE_QUANTITE)
+    try:
+        q = Decimal(str(brut).strip().replace(',', '.'))
+    except InvalidOperation:
+        raise ValueError(MESSAGE_QUANTITE)
+    if not q.is_finite():
+        raise ValueError(MESSAGE_QUANTITE)
+    if unite == UNITE_KG:
+        if q < PAS_KG or q % PAS_KG != 0:
+            raise ValueError('Quantité au kilo : par pas de 0,5 kg (minimum 0,5).')
+        return q.quantize(Decimal('0.1'))
+    if q < 1 or q != q.to_integral_value():
+        raise ValueError(MESSAGE_QUANTITE)
+    return q.to_integral_value()
+
+
+def champs_quantite(q, unite):
+    """(quantite entière, quantite_kg) à enregistrer sur une ligne :
+    au kilo, la quantité réelle va dans quantite_kg et quantite vaut 1
+    (une ligne pesée compte pour un article)."""
+    if unite == UNITE_KG:
+        return 1, q
+    return int(q), None

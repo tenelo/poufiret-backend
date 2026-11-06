@@ -1,5 +1,6 @@
 """Vues panier (Module 4 - bloc A1)."""
 from datetime import datetime
+from decimal import Decimal
 
 from django.contrib.gis.geos import Point # type: ignore
 from django.db.models import Prefetch, Q, Sum
@@ -12,7 +13,7 @@ from apps.catalog.models import Article, OptionGroupe, Supplement, Variante
 from apps.restaurants import gabarits
 from apps.restaurants import services as services_restaurants
 from apps.restaurants.models import LigneMenu
-from .models import Panier, LignePanier
+from .models import LignePanier, Panier, montant_ligne
 from .serializers import PanierSerializer
 from apps.notifications.fcm import notifier_utilisateur
 
@@ -102,7 +103,8 @@ class AjouterLigneView(APIView):
     supplement_ids?[], option_ids?[] (GroupeOption, restaurants : respect
     du min/max de chaque groupe vérifié ici), note_speciale?
     Gabarits : médicament sur ordonnance refusé (pharmacie) ; variante
-    épuisée ou stock insuffisant refusés."""
+    épuisée ou stock insuffisant refusés ; produit d'élevage vendu au kilo :
+    quantite décimale par pas de 0,5 (min 0,5), sinon entier ≥ 1."""
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
@@ -130,9 +132,12 @@ class AjouterLigneView(APIView):
                         return Response({'erreur': True, 'message': f'« {v.nom} » est épuisé.'}, status=400)
                     prix += v.prix_supplement
 
-        quantite = int(request.data.get('quantite', 1))
-        if quantite < 1:
-            return Response({'erreur': True, 'message': 'Quantité invalide.'}, status=400)
+        # Pièce : entier ≥ 1 ; vente au kilo (gabarit elevage) : pas de 0,5.
+        unite = gabarits.UNITE_PIECE if ligne_menu else gabarits.unite_vente(article)
+        try:
+            quantite = gabarits.lire_quantite(request.data.get('quantite', 1), unite)
+        except ValueError as e:
+            return Response({'erreur': True, 'message': str(e)}, status=400)
         if variante_id and v and v.stock is not None and quantite > v.stock:
             return Response({'erreur': True, 'message':
                              f'Stock insuffisant pour « {v.nom} » ({v.stock} restant(s)).'}, status=400)
@@ -155,10 +160,12 @@ class AjouterLigneView(APIView):
         except ValueError as e:
             return Response({'erreur': True, 'message': str(e)}, status=400)
 
+        quantite_entiere, quantite_kg = gabarits.champs_quantite(quantite, unite)
         ligne = LignePanier.objects.create(
             panier=panier, article=article, variante_id=variante_id or None,
             ligne_menu=ligne_menu,
-            supplements=supplements, quantite=quantite, prix_unitaire=prix,
+            supplements=supplements, quantite=quantite_entiere, quantite_kg=quantite_kg,
+            prix_unitaire=prix,
             note_speciale=request.data.get('note_speciale', ''),
         )
         return Response(PanierSerializer(_paniers_qs().get(pk=panier.pk), context={'request': request}).data,
@@ -170,15 +177,18 @@ class LigneDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def _get(self, request, pk):
-        return get_object_or_404(LignePanier, pk=pk, panier__user=request.user)
+        return get_object_or_404(LignePanier.objects.select_related('article__partenaire'),
+                                 pk=pk, panier__user=request.user)
 
     def patch(self, request, pk=None):
         ligne = self._get(request, pk)
         if 'quantite' in request.data:
-            q = int(request.data['quantite'])
-            if q < 1:
-                return Response({'erreur': True, 'message': 'Quantité invalide.'}, status=400)
-            ligne.quantite = q
+            unite = gabarits.UNITE_PIECE if ligne.ligne_menu_id else gabarits.unite_vente(ligne.article)
+            try:
+                q = gabarits.lire_quantite(request.data['quantite'], unite)
+            except ValueError as e:
+                return Response({'erreur': True, 'message': str(e)}, status=400)
+            ligne.quantite, ligne.quantite_kg = gabarits.champs_quantite(q, unite)
         if 'note_speciale' in request.data:
             ligne.note_speciale = request.data['note_speciale']
         ligne.save()
@@ -263,10 +273,7 @@ class ValiderPanierView(APIView):
             transaction.set_rollback(True)
             return Response({'erreur': True, 'message': str(e)}, status=400)
 
-        sous_total = 0
-        for l in lignes:
-            supp = sum(s.get('prix', 0) for s in (l.supplements or []))
-            sous_total += (l.prix_unitaire + supp) * l.quantite
+        sous_total = sum((montant_ligne(l) for l in lignes), Decimal(0))
         frais = int(request.data.get('frais_livraison', 0) or 0)
 
         adresse_id = request.data.get('adresse')
@@ -309,7 +316,6 @@ class ValiderPanierView(APIView):
         # Snapshots des lignes
         from apps.catalog.models import Variante
         for l in lignes:
-            supp = sum(s.get('prix', 0) for s in (l.supplements or []))
             v_nom = ''
             if l.variante_id:
                 v = Variante.objects.filter(pk=l.variante_id).first()
@@ -317,7 +323,7 @@ class ValiderPanierView(APIView):
             LigneCommande.objects.create(
                 commande=commande, article=l.article, nom_article=l.article.nom,
                 variante_nom=v_nom, supplements=l.supplements, quantite=l.quantite,
-                prix_unitaire=l.prix_unitaire, prix_ligne=(l.prix_unitaire + supp) * l.quantite,
+                quantite_kg=l.quantite_kg, prix_unitaire=l.prix_unitaire, prix_ligne=montant_ligne(l),
                 note_speciale=l.note_speciale, ligne_menu=l.ligne_menu,
             )
         panier.delete()  # vide le panier

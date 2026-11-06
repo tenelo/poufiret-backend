@@ -5,6 +5,8 @@ INCHANGÉS). Réservés à ADroitDe('gerer_commandes').
 """
 from rest_framework import serializers
 
+from .serializers import QuantiteField, UniteField
+
 from apps.users.models import ProfilPartenaire
 
 from .models import Commande, HistoriqueCommande, NoteAdminCommande
@@ -125,7 +127,8 @@ class CommandeAdminListSerializer(serializers.ModelSerializer):
 
 class LigneCommandeAdminSerializer(serializers.Serializer):
     article_nom = serializers.CharField(source='nom_article')
-    quantite = serializers.IntegerField()
+    quantite = QuantiteField()
+    unite = UniteField()
     prix_unitaire = serializers.DecimalField(max_digits=12, decimal_places=0)
     sous_total = serializers.DecimalField(source='prix_ligne', max_digits=12, decimal_places=0)
     details = serializers.SerializerMethodField()
