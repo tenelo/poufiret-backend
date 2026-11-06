@@ -64,14 +64,25 @@ class DemandeSerializer(serializers.ModelSerializer):
 
 class DemandeAdminListSerializer(DemandeSerializer):
     groupe = serializers.SerializerMethodField()
+    metier = serializers.SerializerMethodField()
+    metier_libelle = serializers.SerializerMethodField()
 
     class Meta(DemandeSerializer.Meta):
-        fields = DemandeSerializer.Meta.fields + ['groupe']
+        fields = DemandeSerializer.Meta.fields + ['groupe', 'metier', 'metier_libelle']
         read_only_fields = fields
 
     def get_groupe(self, obj):
         from .services import GROUPE_PAR_STATUT
         return GROUPE_PAR_STATUT.get(obj.statut, '')
+
+    def get_metier(self, obj):
+        """Annotation de la liste (metier_annote, 0 requête) ; sinon calcul direct."""
+        from .services import metier_de
+        return metier_de(obj)
+
+    def get_metier_libelle(self, obj):
+        from .services import METIERS_LIBELLES
+        return METIERS_LIBELLES.get(self.get_metier(obj))
 
 
 class DemandeAdminDetailSerializer(DemandeAdminListSerializer):

@@ -328,3 +328,52 @@ def appliquer_transition_demande(demande, cible, acteur, acteur_role, commentair
             f'chez {demande.partenaire.nom_commerce}.')
 
     return True, f'Statut : {demande.get_statut_display()}.'
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# MÉTIER D'UNE DEMANDE (centre de gestion admin : filtre et compteurs)
+# ═══════════════════════════════════════════════════════════════════════
+# vehicule = objet véhicule ; maison = logement ; hébergement → residence_meublee si
+# l'établissement du partenaire est de ce type, sinon hotel (hôtelier sans fiche,
+# hôtel, auberge, motel, autre) — même règle que la liste admin des loueurs.
+
+METIERS_LIBELLES = {
+    'hotel': 'Hôtel',
+    'residence_meublee': 'Résidence meublée',
+    'maison': 'Maison',
+    'vehicule': 'Véhicule',
+}
+
+
+def expression_metier():
+    """Annotation SQL du métier (une seule définition pour le filtre, les
+    compteurs et l'affichage : aucune requête par demande)."""
+    from django.db.models import CharField, Case, Q, Value, When
+    return Case(
+        When(objet__type='vehicule', then=Value('vehicule')),
+        When(objet__type='logement', then=Value('maison')),
+        When(Q(objet__type='hebergement')
+             & Q(partenaire__profil_etablissement__type_etablissement='residence_meublee'),
+             then=Value('residence_meublee')),
+        When(objet__type='hebergement', then=Value('hotel')),
+        default=Value(None), output_field=CharField())
+
+
+def metier_de(demande):
+    """Même règle en Python, pour une demande non annotée (ex. réponse d'une transition)."""
+    annote = getattr(demande, 'metier_annote', None)
+    if annote is not None or hasattr(demande, 'metier_annote'):
+        return annote
+    type_objet = demande.objet.type
+    if type_objet == 'vehicule':
+        return 'vehicule'
+    if type_objet == 'logement':
+        return 'maison'
+    if type_objet == 'hebergement':
+        from django.core.exceptions import ObjectDoesNotExist
+        try:
+            type_etab = demande.partenaire.profil_etablissement.type_etablissement
+        except ObjectDoesNotExist:  # hôtelier sans fiche
+            type_etab = None
+        return 'residence_meublee' if type_etab == 'residence_meublee' else 'hotel'
+    return None

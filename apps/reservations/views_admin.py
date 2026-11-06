@@ -15,7 +15,10 @@ from .models import DemandeReservation, HistoriqueDemande, NoteAdminDemande
 from .serializers import (
     DemandeAdminDetailSerializer, DemandeAdminListSerializer, NoteAdminDemandeSerializer,
 )
-from .services import GROUPE_PAR_STATUT, LIBELLES_GROUPE, STATUTS_PAR_GROUPE, appliquer_transition_demande
+from .services import (
+    GROUPE_PAR_STATUT, LIBELLES_GROUPE, METIERS_LIBELLES, STATUTS_PAR_GROUPE,
+    appliquer_transition_demande, expression_metier,
+)
 
 _PERMISSION = [permissions.IsAuthenticated, ADroitDe('gerer_reservations')]
 
@@ -29,11 +32,20 @@ def _parser_date(valeur):
         return None
 
 
-def _demandes_admin_qs(request, avec_groupe_statut=True):
+def _demandes_admin_qs(request, avec_groupe_statut=True, avec_metier=True):
+    """Filtres communs liste / compteurs / export. Chaque demande est annotée de
+    son métier (metier_annote, services.expression_metier : jointures SQL, pas de
+    requête par ligne). avec_metier=False : ignore ?metier= (compteurs_metier)."""
     qs = (DemandeReservation.objects
           .select_related('client', 'partenaire', 'objet')
-          .prefetch_related('historique', 'historique__acteur'))
+          .prefetch_related('historique', 'historique__acteur')
+          .annotate(metier_annote=expression_metier()))
     p = request.query_params
+    metier = p.get('metier')
+    if avec_metier and metier:
+        if metier not in METIERS_LIBELLES:
+            return qs.none(), f'Métier inconnu : {metier}.'
+        qs = qs.filter(metier_annote=metier)
     if avec_groupe_statut:
         groupe = p.get('groupe')
         if groupe:
@@ -86,6 +98,19 @@ def _compteurs_groupe(request):
     return compteurs
 
 
+def _compteurs_metier(request):
+    """{hotel, residence_meublee, maison, vehicule, total} : tous les autres filtres
+    (groupe, statut, nature, loueur, recherche, dates), SANS ?metier= — chaque
+    pastille garde son total. Une seule requête agrégée."""
+    qs, _ = _demandes_admin_qs(request, avec_metier=False)
+    compteurs = {m: 0 for m in METIERS_LIBELLES}
+    for metier, n in qs.order_by().values_list('metier_annote').annotate(n=Count('id', distinct=True)):
+        if metier in compteurs:
+            compteurs[metier] = n
+    compteurs['total'] = sum(compteurs.values())
+    return compteurs
+
+
 class MetaAdminDemandesView(APIView):
     """GET /reservations/admin/meta/ — statuts, groupes, natures."""
     permission_classes = _PERMISSION
@@ -99,7 +124,7 @@ class MetaAdminDemandesView(APIView):
 
 
 class DemandesAdminListView(generics.ListAPIView):
-    """GET /reservations/admin/demandes/?groupe=&nature=&partenaire=&search=&du=&au="""
+    """GET /reservations/admin/demandes/?groupe=&nature=&partenaire=&search=&du=&au=&metier="""
     serializer_class = DemandeAdminListSerializer
     permission_classes = _PERMISSION
 
@@ -118,6 +143,7 @@ class DemandesAdminListView(generics.ListAPIView):
             return Response({'erreur': True, 'message': self._erreur}, status=400)
         reponse = super().list(request, *args, **kwargs)
         reponse.data['compteurs_groupe'] = _compteurs_groupe(request)
+        reponse.data['compteurs_metier'] = _compteurs_metier(request)
         return reponse
 
 
@@ -182,10 +208,11 @@ class ExportAdminDemandesView(APIView):
         qs, erreur = _demandes_admin_qs(request)
         if erreur:
             return Response({'erreur': True, 'message': erreur}, status=400)
-        entetes = ['Numero', 'Nature', 'Statut', 'Client', 'Telephone', 'Partenaire', 'Objet',
+        entetes = ['Numero', 'Nature', 'Statut', 'Metier', 'Client', 'Telephone', 'Partenaire', 'Objet',
                   'Date souhaitee', 'Date debut', 'Date fin', 'Cree le']
         lignes = [[
             d.numero, d.get_nature_display(), d.get_statut_display(),
+            METIERS_LIBELLES.get(d.metier_annote, ''),
             d.client.get_full_name() or d.client.username, d.client.telephone,
             d.partenaire.nom_commerce, d.objet.nom, d.date_souhaitee, d.date_debut, d.date_fin,
             d.created_at,
