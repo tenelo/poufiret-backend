@@ -4,6 +4,10 @@ duplication, lecture publique (liste/détail, exclusion des plats réservés
 aux menus), liste admin avec indicateurs. Droits restaurateur vs admin
 (capacité gerer_restaurants) et traçabilité modifie_par_role.
 
+Autonome : crée ses restaurants, comptes, département et catégorie (aucune
+dépendance aux restaurants réels). Seule donnée de référence : le plan
+« Basique ». Transaction annulée.
+
 Execution :
     docker exec -i backend-poufiret python manage.py shell < scripts/test_restaurants_gestion.py
 """
@@ -15,7 +19,8 @@ from django.utils.text import slugify
 from rest_framework_simplejwt.tokens import AccessToken
 from apps.administration.models import PermissionsAdmin
 from apps.catalog.models import Categorie, Article, SectionMenu
-from apps.users.models import ProfilPartenaire, User
+from apps.geo.models import Departement, District, Region
+from apps.users.models import HoraireOuverture, PlanAbonnement, ProfilPartenaire, User
 
 HOST = 'poufiret.tenelo.cloud'
 # Limitation de débit DRF désactivée pour ce script : sinon tous les scripts partagent
@@ -40,17 +45,39 @@ def j(url, method, user, corps=None):
         return fn(url, json.dumps(corps), content_type='application/json', **kw)
     return fn(url, **kw)
 
+def telephone_libre():
+    while True:
+        tel = '+2250' + str(uuid.uuid4().int)[:9].rjust(9, '0')
+        if not User.objects.filter(telephone=tel).exists():
+            return tel
+
 try:
     with transaction.atomic():
-        pa = ProfilPartenaire.objects.filter(type_partenaire='restaurateur').first()
-        superadmin = User.objects.filter(is_superuser=True).first()
-        admin_sans = User.objects.create(telephone='+22507000001', username='t_r_sans',
-            role='admin', is_staff=True, is_superuser=False, est_verifie=True)
-        admin_sans.set_password('0000'); admin_sans.save()
+        uid = uuid.uuid4().hex[:6]
+        plan = PlanAbonnement.objects.get(libelle='Basique')
+        district = District.objects.create(nom=f'District QA gestion {uid}')
+        region = Region.objects.create(nom=f'Region QA gestion {uid}', district=district)
+        dep = Departement.objects.create(nom=f'Dep QA gestion {uid}', region=region)
+        cat = Categorie.objects.create(nom=f'Restaurants QA gestion {uid}', slug=f'resto-qa-gestion-{uid}',
+                                       types_partenaire=['restaurateur'], types_articles=['plat'])
+
+        def utilisateur(username, role, staff=False):
+            u = User.objects.create(telephone=telephone_libre(), username=f'{username}_{uid}', role=role,
+                                    is_staff=staff, is_superuser=False, est_verifie=True)
+            u.set_password('0000'); u.save()
+            return u
+
+        def restaurant(nom):
+            return ProfilPartenaire.objects.create(
+                user=utilisateur(f't_r_{slugify(nom)}', 'partenaire'), plan=plan,
+                nom_commerce=f'{nom} {uid}', type_partenaire='restaurateur', statut='actif',
+                est_visible=True, departement=dep)
+
+        pa = restaurant('Resto gestion QA')
+        autre_pa = restaurant('Autre resto QA')
+        admin_sans = utilisateur('t_r_sans', 'admin', staff=True)
         PermissionsAdmin.objects.create(admin=admin_sans)
-        admin_avec = User.objects.create(telephone='+22507000002', username='t_r_avec',
-            role='admin', is_staff=True, is_superuser=False, est_verifie=True)
-        admin_avec.set_password('0000'); admin_avec.save()
+        admin_avec = utilisateur('t_r_avec', 'admin', staff=True)
         PermissionsAdmin.objects.create(admin=admin_avec, gerer_restaurants=True)
 
         print('=== FICHE (restaurateur) ===')
@@ -75,7 +102,9 @@ try:
             {'jour_semaine': 0, 'ouvert': True, 'heure_ouverture': '11:00', 'heure_fermeture': '22:00'},
             {'jour_semaine': 6, 'ouvert': False},
         ]})
-        ok('PUT horaires -> 200, 2 lignes', r.status_code == 200 and len(r.json()) == 2, r.content)
+        ok('PUT horaires -> 200, semaine complete renvoyee (2 jours saisis)',
+           r.status_code == 200 and [h['jour_semaine'] for h in r.json()] == [0, 6], r.content)
+        ok('horaires enregistres', HoraireOuverture.objects.filter(partenaire=pa).count() == 2)
 
         print('=== TELEPHONES ===')
         r = j('/api/v1/restaurants/mon-restaurant/telephones/', 'post', pa.user,
@@ -86,7 +115,6 @@ try:
         ok('GET telephones -> 1', r.status_code == 200 and len(r.json()['results']) == 1, r.content)
 
         print('=== CARTE : section + plat ===')
-        cat = Categorie.objects.filter(est_archivee=False).first()
         section = SectionMenu.objects.create(partenaire=pa, nom='Grillades QA', ordre=1)
         plat = Article.objects.create(partenaire=pa, categorie=cat, nom='Poulet braise QA',
             slug=slugify('poulet-braise-qa-' + str(uuid.uuid4())[:6]), type='plat', prix=3000,
@@ -121,7 +149,6 @@ try:
         ok('POST ligne-menu -> 201', r.status_code == 201, r.content)
         ligne_id = r.json()['id']
         ok('prix_effectif = prix_menu', float(r.json()['prix_effectif']) == 2000.0, r.json())
-        autre_pa = ProfilPartenaire.objects.exclude(id=pa.id).first()
         autre_plat = Article.objects.create(partenaire=autre_pa, categorie=cat, nom='X autre QA',
             slug=slugify('x-autre-qa-' + str(uuid.uuid4())[:6]), type='plat', prix=1000)
         r = j('/api/v1/restaurants/mon-restaurant/lignes-menu/', 'post', pa.user,

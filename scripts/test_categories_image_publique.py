@@ -3,6 +3,10 @@ Clé "image" présente partout : URL absolue si image, null sinon ; image_couver
 conservée ; aucune requête SQL supplémentaire liée à l'image ; upload admin optimisé
 (redimensionné, via ImagesOptimiseesMixin).
 
+Autonome : crée ses propres catégories (avec et sans image, en tête de grille
+via un ordre très bas) — ne suppose pas qu'une catégorie réelle ait une image.
+Transaction annulée.
+
 Execution :
     docker exec -i backend-poufiret python manage.py shell < scripts/test_categories_image_publique.py
 """
@@ -36,20 +40,31 @@ def grille():
 try:
     with transaction.atomic():
         uid = uuid.uuid4().hex[:6]
+        # Nom de fichier seul (aucun fichier écrit) : pas d'optimisation au save.
+        cat_avec = Categorie.objects.create(nom=f'QA Avec img {uid}', slug=f'qa-avec-img-{uid}', ordre=-100000,
+                                            est_active=True, image_couverture=f'categories/qa-{uid}.png')
+        cat_sans = Categorie.objects.create(nom=f'QA Sans img {uid}', slug=f'qa-sans-img-{uid}', ordre=-99999,
+                                            est_active=True)
         print('=== 1. CLE image : grille et sous-categories ===')
         r = grille()
         ok('grille -> 200', r.status_code == 200, r.status_code)
         res = r.json()['results']
+        par_id = {c['id']: c for c in res}
+        ok('nos categories de test sont dans la grille', cat_avec.id in par_id and cat_sans.id in par_id,
+           [c['id'] for c in res][:5])
         ok('chaque categorie a la cle image', all('image' in c for c in res))
         ok('image_couverture conservee (aucun champ retire)', all('image_couverture' in c for c in res))
-        sans = [c for c in res if not c['image_couverture']]
-        ok('sans image -> image null', sans and all(c['image'] is None for c in sans))
-        avec = [c for c in res if c['image_couverture']]
-        ok('avec image -> image = URL absolue', avec and all(c['image'].startswith('http') and c['image'] == c['image_couverture'] for c in avec),
-           avec[:1])
+        ok('sans image -> image null', par_id.get(cat_sans.id, {}).get('image', 'absent') is None, par_id.get(cat_sans.id))
+        ok('toutes celles sans image -> null', all(c['image'] is None for c in res if not c['image_couverture']))
+        img = par_id.get(cat_avec.id, {}).get('image') or ''
+        ok('avec image -> image = URL absolue', img.startswith('http') and img.endswith(f'categories/qa-{uid}.png')
+           and img == par_id[cat_avec.id]['image_couverture'], par_id.get(cat_avec.id))
+        ok('toutes celles avec image -> URL absolue = image_couverture',
+           all(c['image'].startswith('http') and c['image'] == c['image_couverture'] for c in res if c['image_couverture']))
 
         print('=== 2. SOUS-CATEGORIES ===')
-        parent = Categorie.objects.create(nom=f'QA Parent img {uid}', slug=f'qa-parent-img-{uid}', est_active=True)
+        parent = Categorie.objects.create(nom=f'QA Parent img {uid}', slug=f'qa-parent-img-{uid}', est_active=True,
+                                          ordre=-99998)
         Categorie.objects.create(nom=f'QA Enfant img {uid}', slug=f'qa-enfant-img-{uid}', parent=parent, est_active=True)
         r = grille()
         racine = next(c for c in r.json()['results'] if c['id'] == parent.id)
@@ -72,7 +87,7 @@ try:
         buf = io.BytesIO()
         Image.new('RGB', (4000, 3000), (10, 120, 200)).save(buf, format='PNG')
         lourd = buf.getvalue()
-        cat = Categorie(nom=f'QA Upload img {uid}', slug=f'qa-upload-img-{uid}')
+        cat = Categorie(nom=f'QA Upload img {uid}', slug=f'qa-upload-img-{uid}', ordre=-100001)
         cat.image_couverture = SimpleUploadedFile('grand.png', lourd, content_type='image/png')
         cat.save()
         cat.refresh_from_db()
