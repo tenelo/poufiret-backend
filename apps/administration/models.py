@@ -66,6 +66,8 @@ class JournalModeration(ModeleBase):
         PARAM_CATEG_VISIB = 'param_categorie_visib', 'Paramètres : catégorie affichée ou masquée'
         PARAM_RECHERCHE_TRAITE = 'param_recherche_traite', 'Paramètres : terme sans résultat traité'
         PARAM_RECHERCHE_IGNORE = 'param_recherche_ignore', 'Paramètres : terme sans résultat ignoré'
+        AVIS_MASQUE = 'avis_masque', 'Avis client masqué'
+        AVIS_AFFICHE = 'avis_affiche', 'Avis client réaffiché'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.
@@ -261,6 +263,10 @@ class PermissionsAdmin(ModeleBase):
     )
     gerer_interventions = models.BooleanField(
         "gérer les demandes d'intervention (écriture ; implique la lecture)",
+        default=False,
+    )
+    gerer_avis = models.BooleanField(
+        'modérer les avis clients (liste, masquer / réafficher)',
         default=False,
     )
 

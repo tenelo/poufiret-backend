@@ -218,3 +218,117 @@ class VueServiceLivraison(ModeleBase):
 
     def __str__(self):
         return f'{self.utilisateur or "anonyme"} — {self.cree_le:%d/%m/%Y %H:%M}'
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# COLLECTE POUR ANALYSES / IA (journal des recherches, événements applicatifs)
+# Écrits uniquement via apps.analytics.collecte (jamais directement) : respect du
+# consentement (utilisateur anonymisé si consentement_statistiques = False) et
+# best-effort (une écriture en échec ne fait jamais échouer l'action principale).
+# ═══════════════════════════════════════════════════════════════════════
+
+class Plateforme(models.TextChoices):
+    ANDROID = 'android', 'Android'
+    IOS = 'ios', 'iOS'
+    WEB = 'web', 'Web'
+    AUTRE = 'autre', 'Autre'
+
+
+class RechercheLog(models.Model):
+    """Une recherche (terme ≥ 2 caractères) faite sur un endpoint de recherche,
+    avec le résultat éventuellement touché ensuite (clic). Complète
+    catalog.RechercheSansResultat (agrégat des termes sans résultat, inchangé)."""
+
+    class Source(models.TextChoices):
+        ACCUEIL = 'accueil', 'Accueil (recherche unifiée)'
+        CATALOGUE = 'catalogue', 'Catalogue'
+        RESTAURANTS = 'restaurants', 'Restaurants / établissements'
+        LOCATIONS = 'locations', 'Locations'
+        AUTRE = 'autre', 'Autre'
+
+    class TypeResultat(models.TextChoices):
+        ARTICLE = 'article', 'Article'
+        PARTENAIRE = 'partenaire', 'Partenaire'
+
+    terme = models.CharField('terme', max_length=200)
+    terme_normalise = models.CharField(
+        'terme normalisé', max_length=200,
+        help_text='Minuscules, sans accents, espaces réduits.')
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='recherches_log', verbose_name='utilisateur')
+    categorie = models.ForeignKey(
+        'catalog.Categorie', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='recherches_log', verbose_name='catégorie (filtre)')
+    source = models.CharField('source', max_length=20, choices=Source.choices, default=Source.AUTRE)
+    nb_resultats = models.PositiveIntegerField('nombre de résultats', default=0)
+    resultat_type = models.CharField(
+        'type du résultat touché', max_length=20, choices=TypeResultat.choices, null=True, blank=True)
+    resultat_id = models.CharField('id du résultat touché', max_length=64, null=True, blank=True)
+    clique_le = models.DateTimeField('cliqué le', null=True, blank=True)
+    plateforme = models.CharField('plateforme', max_length=10, choices=Plateforme.choices,
+                                  default=Plateforme.AUTRE)
+    cree_le = models.DateTimeField('créée le', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'recherche (journal)'
+        verbose_name_plural = 'recherches (journal)'
+        ordering = ['-cree_le']
+        indexes = [
+            models.Index(fields=['terme_normalise'], name='recherchelog_terme_idx'),
+            models.Index(fields=['cree_le'], name='recherchelog_cree_le_idx'),
+        ]
+
+    def __str__(self):
+        return f'« {self.terme} » ({self.source}, {self.nb_resultats} résultat(s))'
+
+
+class EvenementApp(models.Model):
+    """Événement applicatif (serveur : panier, commande, favori ; client :
+    appel, WhatsApp, partage, itinéraire)."""
+
+    class Type(models.TextChoices):
+        PANIER_AJOUT = 'panier_ajout', 'Ajout au panier'
+        PANIER_RETRAIT = 'panier_retrait', 'Retrait du panier'
+        PANIER_VIDE = 'panier_vide', 'Panier vidé'
+        COMMANDE_CREEE = 'commande_creee', 'Commande créée'
+        COMMANDE_ANNULEE = 'commande_annulee', 'Commande annulée'
+        APPEL_PARTENAIRE = 'appel_partenaire', 'Appel du partenaire'
+        WHATSAPP_PARTENAIRE = 'whatsapp_partenaire', 'WhatsApp du partenaire'
+        PARTAGE_ARTICLE = 'partage_article', "Partage d'un article"
+        PARTAGE_PARTENAIRE = 'partage_partenaire', "Partage d'un partenaire"
+        ITINERAIRE_PARTENAIRE = 'itineraire_partenaire', 'Itinéraire vers le partenaire'
+        FAVORI_AJOUT = 'favori_ajout', 'Ajout aux favoris'
+        FAVORI_RETRAIT = 'favori_retrait', 'Retrait des favoris'
+
+    type = models.CharField('type', max_length=30, choices=Type.choices)
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='evenements_app', verbose_name='utilisateur')
+    partenaire = models.ForeignKey(
+        'users.ProfilPartenaire', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='evenements_app', verbose_name='partenaire')
+    objet_type = models.CharField("type d'objet", max_length=30, blank=True)
+    objet_id = models.CharField("id de l'objet", max_length=64, blank=True)
+    categorie = models.ForeignKey(
+        'catalog.Categorie', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='evenements_app', verbose_name='catégorie')
+    valeur = models.DecimalField('valeur (ex. montant)', max_digits=12, decimal_places=2,
+                                 null=True, blank=True)
+    donnees = models.JSONField('données', default=dict, blank=True)
+    plateforme = models.CharField('plateforme', max_length=10, choices=Plateforme.choices,
+                                  default=Plateforme.AUTRE)
+    version_app = models.CharField("version de l'app", max_length=20, blank=True)
+    cree_le = models.DateTimeField('créé le', auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'événement applicatif'
+        verbose_name_plural = 'événements applicatifs'
+        ordering = ['-cree_le']
+        indexes = [
+            models.Index(fields=['type', 'cree_le'], name='evenementapp_type_idx'),
+            models.Index(fields=['partenaire', 'cree_le'], name='evenementapp_partenaire_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.get_type_display()} — {self.cree_le:%d/%m/%Y %H:%M}'

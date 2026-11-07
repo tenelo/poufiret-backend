@@ -2,6 +2,8 @@ from django.urls import path
 
 from .views import (DemarrerSessionView, EngagementAdminView, LivraisonStatsClientView, LivraisonStatsPartenaireView, LivraisonTableauDeBordExportView, LivraisonTableauDeBordView, OuvertureDemandeInterventionView, PingSessionView, StatsConnexionAdminView, StatsConnexionExportView, VisiteCategorieView, VueServiceLivraisonView, VueVitrineView, DureeSessionsAdminView, DureeSessionsExportView)
 
+from .views_collecte import EvenementsClientView, RechercheClicView
+
 app_name = 'analytics'
 
 urlpatterns = [
@@ -15,6 +17,8 @@ urlpatterns = [
     path('livraison/tableau-de-bord/', LivraisonTableauDeBordView.as_view(), name='livraison-tableau-de-bord'),
     path('livraison/tableau-de-bord/export/', LivraisonTableauDeBordExportView.as_view(), name='livraison-tableau-de-bord-export'),
     path('intervention/ouverture/', OuvertureDemandeInterventionView.as_view(), name='intervention-ouverture'),
+    path('recherches/<int:pk>/clic/', RechercheClicView.as_view(), name='recherche-clic'),
+    path('evenements/', EvenementsClientView.as_view(), name='evenements'),
     path('admin/engagement/', EngagementAdminView.as_view(), name='admin-engagement'),
     path('admin/stats-connexion/', StatsConnexionAdminView.as_view(), name='admin-stats-connexion'),
     path('admin/stats-connexion/export/', StatsConnexionExportView.as_view(), name='admin-stats-connexion-export'),

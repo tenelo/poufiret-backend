@@ -207,6 +207,9 @@ class CourseDetailView(APIView):
         data = _course_dict(c)
         data['je_suis_livreur'] = est_livreur
         data['je_suis_destinataire'] = est_destinataire
+        if est_demandeur:  # avis clients : peut_noter (livrée, pas encore notée) / mon_avis
+            from apps.social.avis import etat_notation
+            data.update(etat_notation(request.user, 'course', c))
         return Response(data, status=200)
 
 

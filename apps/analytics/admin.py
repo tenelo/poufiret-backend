@@ -1,6 +1,8 @@
 from django.contrib import admin
 
-from .models import ParametresAnalytics, ProfilNavigation, TempsSessionUtilisateur
+from .models import (
+    EvenementApp, ParametresAnalytics, ProfilNavigation, RechercheLog, TempsSessionUtilisateur,
+)
 
 
 @admin.register(TempsSessionUtilisateur)
@@ -32,3 +34,35 @@ class ParametresAnalyticsAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+class _LectureSeuleAdmin(admin.ModelAdmin):
+    """Journaux de collecte : consultation seule (écrits par apps.analytics.collecte)."""
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(RechercheLog)
+class RechercheLogAdmin(_LectureSeuleAdmin):
+    list_display = ('terme', 'source', 'nb_resultats', 'resultat_type', 'resultat_id', 'clique_le',
+                    'utilisateur', 'plateforme', 'cree_le')
+    list_filter = ('source', 'resultat_type', 'plateforme')
+    search_fields = ('terme', 'terme_normalise', 'utilisateur__telephone')
+    date_hierarchy = 'cree_le'
+    list_select_related = ('utilisateur',)
+    raw_id_fields = ('utilisateur', 'categorie')
+
+
+@admin.register(EvenementApp)
+class EvenementAppAdmin(_LectureSeuleAdmin):
+    list_display = ('type', 'partenaire', 'objet_type', 'objet_id', 'valeur', 'utilisateur',
+                    'plateforme', 'version_app', 'cree_le')
+    list_filter = ('type', 'plateforme')
+    search_fields = ('partenaire__nom_commerce', 'utilisateur__telephone', 'objet_id')
+    date_hierarchy = 'cree_le'
+    list_select_related = ('utilisateur', 'partenaire')
+    raw_id_fields = ('utilisateur', 'partenaire', 'categorie')

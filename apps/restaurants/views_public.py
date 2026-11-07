@@ -131,8 +131,14 @@ class ProduitsPublicView(APIView):
         pagination = _PaginationProduits()
         page = pagination.paginate_queryset(qs, request, view=self)
         contexte = {'request': request, 'gabarit': gabarits.gabarit_de(partenaire)}
-        return pagination.get_paginated_response(
+        reponse = pagination.get_paginated_response(
             ProduitPubliqueSerializer(page, many=True, context=contexte).data)
+        if terme:
+            # Journal de TOUTES les recherches (analytics) : recherche_id à la racine.
+            from apps.analytics.collecte import ajouter_recherche_id, journaliser_recherche
+            ajouter_recherche_id(reponse, journaliser_recherche(
+                request, terme, 'restaurants', pagination.page.paginator.count if page is not None else 0))
+        return reponse
 
 
 class ProduitDetailPublicView(APIView):

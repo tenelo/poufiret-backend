@@ -104,6 +104,19 @@ class User(AbstractUser):
         max_length=10,
         default='fr',
     )
+
+    # ── Consentements (collecte pour analyses / IA) ──────────────────
+    # Dates mises à jour à chaque changement de valeur (PATCH
+    # /auth/moi/consentements/). Sans consentement aux statistiques, les
+    # journaux analytics (RechercheLog, EvenementApp) sont anonymes.
+    consentement_statistiques = models.BooleanField(_('consentement statistiques'), default=False)
+    consentement_statistiques_le = models.DateTimeField(
+        _('consentement statistiques modifié le'), blank=True, null=True)
+    consentement_ia = models.BooleanField(_('consentement IA'), default=False)
+    consentement_ia_le = models.DateTimeField(_('consentement IA modifié le'), blank=True, null=True)
+    consentement_version = models.CharField(
+        _('version des conditions acceptées'), max_length=20, blank=True,
+        help_text=_('Ex. "2026-11".'))
     # Donnees pour le referencement et l'analyse (facultatives),
     # demandees dans un bloc separe a l'inscription.
     departement = models.ForeignKey(
@@ -386,6 +399,11 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
     nb_vues = models.PositiveIntegerField(
         _('nombre de vues de la vitrine'), default=0,
     )
+    # Avis clients (apps.social.Avis) : recalculés à chaque création,
+    # modification ou masquage d'avis (avis visibles seulement).
+    note_moyenne = models.DecimalField(
+        _('note moyenne des avis'), max_digits=3, decimal_places=2, blank=True, null=True)
+    nb_avis = models.PositiveIntegerField(_("nombre d'avis visibles"), default=0)
     telephone_pro = models.CharField(_('téléphone professionnel'), max_length=20, blank=True)
     whatsapp = models.CharField(_('numéro WhatsApp'), max_length=20, blank=True)
     email_pro = models.EmailField(_('email professionnel'), blank=True)

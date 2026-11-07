@@ -112,6 +112,20 @@ class MonProfilView(generics.RetrieveUpdateAPIView):
         return self.request.user
 
 
+class MesConsentementsView(generics.RetrieveUpdateAPIView):
+    """GET/PATCH /auth/moi/consentements/ — consentements de collecte du compte
+    connecté (statistiques, IA, version). Dates horodatées à chaque changement."""
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ['get', 'patch', 'head', 'options']
+
+    def get_serializer_class(self):
+        from .serializers import ConsentementsSerializer
+        return ConsentementsSerializer
+
+    def get_object(self):
+        return self.request.user
+
+
 class MesAppareilsView(generics.ListAPIView):
     """GET /auth/appareils/ — liste les sessions appareils de l'utilisateur."""
     serializer_class = SessionAppareilSerializer

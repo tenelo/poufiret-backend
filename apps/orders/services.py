@@ -194,6 +194,16 @@ def appliquer_transition_commande(commande, cible, acteur, acteur_role,
         acteur_role=acteur_role, commentaire=commentaire or '',
     )
 
+    if cible == 'annulee':
+        # Collecte (analytics) : best-effort, ne fait jamais échouer la transition.
+        from apps.analytics.collecte import enregistrer_evenement
+        enregistrer_evenement(
+            'commande_annulee', request=request, utilisateur=commande.user,
+            partenaire=commande.partenaire, objet_type='commande', objet_id=commande.id,
+            categorie=commande.categorie, valeur=commande.total,
+            donnees={'numero': commande.numero, 'motif': commentaire or '',
+                     'acteur_role': acteur_role, 'acteur_id': getattr(acteur, 'id', None)})
+
     acteur_est_client = acteur_role == HistoriqueCommande.ActeurRole.CLIENT
     _notifier_transition_commande(commande, cible, acteur_est_client, request)
 

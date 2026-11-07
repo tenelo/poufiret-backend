@@ -451,6 +451,8 @@ class RestaurantListeSerializer(serializers.Serializer):
     services = serializers.ListField(source='fiche.services')
     specialites = serializers.ListField(source='fiche.specialites')
     menu_du_jour = serializers.SerializerMethodField()
+    note_moyenne = serializers.DecimalField(max_digits=3, decimal_places=2, read_only=True)
+    nb_avis = serializers.IntegerField(read_only=True)
 
     def _url(self, champ):
         return _url_absolue(champ, self.context.get('request'))
@@ -498,6 +500,8 @@ class RestaurantDetailPubliqueSerializer(serializers.Serializer):
     longitude = serializers.SerializerMethodField()
     position_modifiee_le = serializers.DateTimeField(read_only=True)
     position_modifiee_par_role = serializers.CharField(read_only=True, default=None)
+    note_moyenne = serializers.DecimalField(max_digits=3, decimal_places=2, read_only=True)
+    nb_avis = serializers.IntegerField(read_only=True)
     est_ouvert = serializers.SerializerMethodField()
     prochaine_ouverture = serializers.SerializerMethodField()
     message_statut = serializers.SerializerMethodField()

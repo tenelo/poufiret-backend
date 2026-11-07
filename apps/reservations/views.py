@@ -55,6 +55,19 @@ class MesDemandesView(generics.ListAPIView):
         statut = self.request.query_params.get('statut')
         return qs.filter(statut=statut) if statut else qs
 
+    def list(self, request, *args, **kwargs):
+        """+ peut_noter / mon_avis par demande (avis clients ; pas d'écran de
+        détail client pour les réservations) — une requête pour toute la page."""
+        reponse = super().list(request, *args, **kwargs)
+        lignes = reponse.data.get('results') if isinstance(reponse.data, dict) else reponse.data
+        if lignes:
+            from apps.social.avis import etats_notation
+            demandes = {d.id: d for d in DemandeReservation.objects.filter(id__in=[l['id'] for l in lignes])}
+            etats = etats_notation(request.user, 'reservation', list(demandes.values()))
+            for ligne in lignes:
+                ligne.update(etats.get(ligne['id'], {'peut_noter': False, 'mon_avis': None}))
+        return reponse
+
 
 class AnnulerDemandeView(APIView):
     """POST /api/v1/reservations/<id>/annuler/ {"commentaire"?} — le client

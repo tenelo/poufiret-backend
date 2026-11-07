@@ -78,7 +78,11 @@ class DemandeDetailView(APIView):
         d = get_object_or_404(DemandeIntervention, pk=pk)
         if not self._acces(request, d):
             return Response({'erreur': True, 'message': 'Accès refusé.'}, status=403)
-        return Response(DemandeInterventionSerializer(d, context={'request': request}).data)
+        data = DemandeInterventionSerializer(d, context={'request': request}).data
+        if d.user_id == request.user.id:  # avis clients : peut_noter / mon_avis
+            from apps.social.avis import etat_notation
+            data.update(etat_notation(request.user, 'intervention', d))
+        return Response(data)
 
 
 class TransitionDemandeView(APIView):

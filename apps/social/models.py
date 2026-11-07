@@ -284,3 +284,55 @@ class LikeCommentaire(models.Model):
     def __str__(self):
         cible = self.commentaire_article or self.commentaire_partenaire
         return f"{self.user.telephone} ❤️ commentaire #{cible.id}"
+
+# ═══════════════════════════════════════════════════════════════════════
+# AVIS ⭐ (note 1-5 + commentaire sur un objet terminé : commande, course,
+# intervention, réservation). Règles métier dans apps.social.avis.
+# ═══════════════════════════════════════════════════════════════════════
+
+class Avis(models.Model):
+    """Avis d'un client sur un objet qu'il a reçu (statut final positif).
+    Un seul avis par (auteur, objet). La note moyenne du partenaire
+    (ProfilPartenaire.note_moyenne / nb_avis) est recalculée à chaque
+    création, modification ou masquage (avis visibles seulement)."""
+
+    class TypeObjet(models.TextChoices):
+        COMMANDE = 'commande', _('Commande')
+        COURSE = 'course', _('Course (livraison)')
+        INTERVENTION = 'intervention', _("Demande d'intervention")
+        RESERVATION = 'reservation', _('Réservation (location)')
+
+    auteur = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='avis_donnes', verbose_name=_('auteur'))
+    objet_type = models.CharField(_("type d'objet"), max_length=20, choices=TypeObjet.choices)
+    objet_id = models.CharField(
+        _("id de l'objet"), max_length=64,
+        help_text=_('Entier (commande, intervention, réservation) ou UUID (course).'))
+    partenaire = models.ForeignKey(
+        ProfilPartenaire, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='avis', verbose_name=_('partenaire noté'))
+    livreur = models.ForeignKey(
+        'livreurs.Livreur', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='avis', verbose_name=_('livreur (courses)'))
+    note = models.PositiveSmallIntegerField(_('note (1 à 5)'))
+    commentaire = models.TextField(_('commentaire'), max_length=1000, blank=True)
+    est_visible = models.BooleanField(_('visible'), default=True)
+    reponse_partenaire = models.TextField(_('réponse du partenaire'), max_length=1000, null=True, blank=True)
+    repondu_le = models.DateTimeField(_('répondu le'), null=True, blank=True)
+    cree_le = models.DateTimeField(_('créé le'), auto_now_add=True)
+    modifie_le = models.DateTimeField(_('modifié le'), auto_now=True)
+
+    class Meta:
+        verbose_name = _('avis')
+        verbose_name_plural = _('avis')
+        ordering = ['-cree_le']
+        constraints = [
+            models.UniqueConstraint(fields=['auteur', 'objet_type', 'objet_id'], name='unique_avis_par_objet'),
+            models.CheckConstraint(check=models.Q(note__gte=1, note__lte=5), name='avis_note_1_a_5'),
+        ]
+        indexes = [
+            models.Index(fields=['partenaire', 'est_visible', '-cree_le'], name='avis_partenaire_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.auteur} → {self.objet_type} {self.objet_id} : {self.note}/5'

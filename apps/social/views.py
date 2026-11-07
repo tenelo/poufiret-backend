@@ -22,6 +22,8 @@ from .serializers import (
 class _ToggleBase(APIView):
     permission_classes = [permissions.IsAuthenticated]
     model = None; cible_model = None; cible_champ = None; compteur = None
+    # Favoris : événement favori_ajout / favori_retrait (analytics, best-effort).
+    evenement_favori = False
 
     def post(self, request, pk=None):
         cible = get_object_or_404(self.cible_model, pk=pk)
@@ -36,6 +38,14 @@ class _ToggleBase(APIView):
             if self.compteur:
                 self.cible_model.objects.filter(pk=cible.pk).update(**{self.compteur: F(self.compteur) + 1})
         total = getattr(self.cible_model.objects.get(pk=cible.pk), self.compteur) if self.compteur else None
+        if self.evenement_favori:
+            from apps.analytics.collecte import enregistrer_evenement
+            est_article = self.cible_champ == 'article'
+            enregistrer_evenement(
+                'favori_ajout' if actif else 'favori_retrait', request=request,
+                partenaire=cible.partenaire if est_article else cible,
+                objet_type=self.cible_champ, objet_id=cible.pk,
+                categorie=cible.categorie if est_article else None)
         return Response({'actif': actif, 'total': total}, status=status.HTTP_200_OK)
 
 
@@ -44,12 +54,14 @@ class ToggleLikeArticle(_ToggleBase):
 
 class ToggleFavoriArticle(_ToggleBase):
     model = FavoriArticle; cible_model = Article; cible_champ = 'article'; compteur = 'nb_favoris'
+    evenement_favori = True
 
 class ToggleLikePartenaire(_ToggleBase):
     model = LikePartenaire; cible_model = ProfilPartenaire; cible_champ = 'partenaire'; compteur = None
 
 class ToggleFavoriPartenaire(_ToggleBase):
     model = FavoriPartenaire; cible_model = ProfilPartenaire; cible_champ = 'partenaire'; compteur = None
+    evenement_favori = True
 
 
 class MesFavorisView(APIView):

@@ -5,6 +5,7 @@ Toutes les routes API sont préfixées /api/v1/ (versioning).
 from django.contrib import admin
 from django.urls import path, include
 from apps.administration.dashboard_admin import vue_tableau_de_bord
+from apps.social.views_avis import AvisPartenaireView
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -28,6 +29,9 @@ urlpatterns = [
     path('api/v1/restaurants/', include('apps.restaurants.urls')),
     path('api/v1/locations/', include('apps.locations.urls')),
     path('api/v1/reservations/', include('apps.reservations.urls')),
+    # Avis clients (apps.social.views_avis) : /avis/… et liste publique d'un partenaire.
+    path('api/v1/avis/', include('apps.social.urls_avis')),
+    path('api/v1/partenaires/<int:pk>/avis/', AvisPartenaireView.as_view(), name='partenaire-avis'),
 ]
 
 # Service des fichiers médias en développement uniquement

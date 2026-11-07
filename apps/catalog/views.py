@@ -107,6 +107,24 @@ class ArticleViewSet(viewsets.ModelViewSet):
 
         return qs.order_by('-created_at')
 
+    def list(self, request, *args, **kwargs):
+        """Liste inchangée ; avec ?recherche= (≥ 2 caractères), la recherche est
+        journalisée (analytics, source catalogue) et recherche_id ajouté."""
+        reponse = super().list(request, *args, **kwargs)
+        terme = (request.query_params.get('recherche') or '').strip()
+        if terme and reponse.status_code == 200:
+            from apps.analytics.collecte import ajouter_recherche_id, journaliser_recherche
+            donnees = reponse.data
+            nb = donnees.get('count', len(donnees.get('results', []))) if isinstance(donnees, dict) \
+                else len(donnees)
+            try:
+                categorie_id = int(request.query_params.get('categorie') or 0) or None
+            except ValueError:
+                categorie_id = None
+            ajouter_recherche_id(
+                reponse, journaliser_recherche(request, terme, 'catalogue', nb, categorie_id=categorie_id))
+        return reponse
+
     def perform_create(self, serializer):
         profil = self.request.user.profil_partenaire
         # Quota d'articles selon le plan (-1 = illimité)
@@ -442,6 +460,8 @@ class PartenairesParCategorieView(_APIView):
                 'quartier_nom': p.quartier_geo.nom if p.quartier_geo_id else None,
                 'secteur': p.secteur,
                 'gabarit': gabarit_de_type(p.type_partenaire),
+                'note_moyenne': p.note_moyenne,
+                'nb_avis': p.nb_avis,
             })
         return _Response(donnees)
 
@@ -510,9 +530,13 @@ class RechercheUnifieeView(_APIView):
         localites = request.query_params.get('localites', '')
         localites = [x for x in localites.split(',') if x] or None
         donnees = rechercher(request, terme, localites)
-        if not (donnees['categories'] or donnees['partenaires'] or donnees['articles']):
+        nb = len(donnees['categories']) + len(donnees['partenaires']) + len(donnees['articles'])
+        if not nb:
             journaliser_sans_resultat(request, terme)
-        return _Response(donnees)
+        # Journal de TOUTES les recherches (analytics) : recherche_id ajouté à la racine.
+        from apps.analytics.collecte import ajouter_recherche_id, journaliser_recherche
+        recherche_id = journaliser_recherche(request, terme, 'accueil', nb)
+        return ajouter_recherche_id(_Response(donnees), recherche_id)
 
 
 class CorrespondancesTypesView(_APIView):

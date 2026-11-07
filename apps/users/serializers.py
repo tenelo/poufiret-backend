@@ -50,11 +50,15 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             'tranche_age', 'sexe', 'espace',
             'livraison_departement_id', 'livraison_departement_nom',
             'livraison_nom_bureau',
+            'consentement_statistiques', 'consentement_ia',
         ]
+        # Consentements : lecture seule ici ; modification via
+        # /auth/moi/consentements/ (qui horodate chaque changement).
         read_only_fields = ['id', 'telephone', 'role', 'est_verifie', 'pin_par_defaut',
                             'departement_nom', 'region_nom', 'espace',
                             'livraison_departement_id', 'livraison_departement_nom',
-                            'livraison_nom_bureau']
+                            'livraison_nom_bureau',
+                            'consentement_statistiques', 'consentement_ia']
 
     def get_espace(self, obj):
         """Espace Angular vers lequel router l'utilisateur après connexion."""
@@ -261,6 +265,7 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
             'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom',
             'telephone_pro', 'whatsapp', 'email_pro',
             'nombre_likes', 'nb_vues', 'est_like_par_moi', 'est_favori_par_moi',
+            'note_moyenne', 'nb_avis',
         ]
         read_only_fields = fields
 
@@ -884,3 +889,22 @@ class CreerPartenaireParAdminSerializer(serializers.Serializer):
                         f"connexion."),
             'avertissement_position': getattr(self, '_avertissement_position', None),
         }
+
+
+class ConsentementsSerializer(serializers.ModelSerializer):
+    """GET/PATCH /auth/moi/consentements/ : les dates *_le sont mises à jour
+    automatiquement quand la valeur du booléen change (jamais saisies)."""
+
+    class Meta:
+        model = User
+        fields = ['consentement_statistiques', 'consentement_statistiques_le',
+                  'consentement_ia', 'consentement_ia_le', 'consentement_version']
+        read_only_fields = ['consentement_statistiques_le', 'consentement_ia_le']
+
+    def update(self, instance, validated_data):
+        from django.utils import timezone
+        maintenant = timezone.now()
+        for champ in ('consentement_statistiques', 'consentement_ia'):
+            if champ in validated_data and validated_data[champ] != getattr(instance, champ):
+                validated_data[f'{champ}_le'] = maintenant
+        return super().update(instance, validated_data)

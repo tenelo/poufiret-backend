@@ -2,7 +2,7 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
-    ConnexionView, DeconnexionView, MonProfilView, InscriptionView,
+    ConnexionView, DeconnexionView, MonProfilView, MesConsentementsView, InscriptionView,
     MesAppareilsView, RevoquerAppareilView, DevenirPartenaireView, MonProfilPartenaireView, MesCategoriesView, MaCategorieDetailView,
     VitrinePartenaireView,
     DemanderOTPView, VerifierOTPView, DefinirPINView, ChangerPINView,
@@ -22,6 +22,7 @@ urlpatterns = [
     path('rafraichir/', TokenRefreshView.as_view(), name='rafraichir'),
     path('deconnexion/', DeconnexionView.as_view(), name='deconnexion'),
     path('moi/', MonProfilView.as_view(), name='moi'),
+    path('moi/consentements/', MesConsentementsView.as_view(), name='moi-consentements'),
     path('devenir-partenaire/', DevenirPartenaireView.as_view(), name='devenir-partenaire'),
     path('partenaires/creer/', CreerPartenaireParAdminView.as_view(), name='partenaire-creer'),
     path('mon-profil-partenaire/', MonProfilPartenaireView.as_view(), name='mon-profil-partenaire'),

@@ -16,6 +16,7 @@ from apps.restaurants.models import LigneMenu
 from .models import LignePanier, Panier, montant_ligne
 from .serializers import PanierSerializer
 from apps.notifications.fcm import notifier_utilisateur
+from apps.analytics.collecte import enregistrer_evenement
 
 
 def _groupe_options_non_respecte(article, supplements):
@@ -168,6 +169,12 @@ class AjouterLigneView(APIView):
             prix_unitaire=prix,
             note_speciale=request.data.get('note_speciale', ''),
         )
+        enregistrer_evenement(
+            'panier_ajout', request=request, partenaire=panier.partenaire,
+            objet_type='article', objet_id=article.id, categorie=panier.categorie,
+            valeur=montant_ligne(ligne),
+            donnees={'quantite': str(quantite), 'ligne_menu_id': ligne.ligne_menu_id,
+                     'variante_id': ligne.variante_id})
         return Response(PanierSerializer(_paniers_qs().get(pk=panier.pk), context={'request': request}).data,
                         status=status.HTTP_201_CREATED)
 
@@ -198,6 +205,10 @@ class LigneDetailView(APIView):
     def delete(self, request, pk=None):
         ligne = self._get(request, pk)
         panier = ligne.panier
+        enregistrer_evenement(
+            'panier_retrait', request=request, partenaire=ligne.article.partenaire,
+            objet_type='article', objet_id=ligne.article_id, categorie=panier.categorie,
+            valeur=montant_ligne(ligne))
         ligne.delete()
         if not panier.lignes.exists():
             panier.delete()
@@ -210,6 +221,10 @@ class ViderPanierView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def delete(self, request, pk=None):
         panier = get_object_or_404(Panier, pk=pk, user=request.user)
+        enregistrer_evenement(
+            'panier_vide', request=request, partenaire=panier.partenaire,
+            objet_type='panier', objet_id=panier.id, categorie=panier.categorie,
+            donnees={'nb_lignes': panier.lignes.count()})
         panier.delete()
         return Response({'message': 'Panier vidé.'}, status=status.HTTP_200_OK)
 
@@ -327,6 +342,12 @@ class ValiderPanierView(APIView):
                 note_speciale=l.note_speciale, ligne_menu=l.ligne_menu,
             )
         panier.delete()  # vide le panier
+        enregistrer_evenement(
+            'commande_creee', request=request, partenaire=commande.partenaire,
+            objet_type='commande', objet_id=commande.id, categorie=commande.categorie,
+            valeur=commande.total,
+            donnees={'numero': commande.numero, 'mode_livraison': commande.mode_livraison,
+                     'nb_lignes': len(lignes), 'mode_paiement': commande.mode_paiement})
 
         # Notifie le partenaire une fois la commande réellement persistée
         # (après commit, pour ne jamais notifier une commande qui serait
@@ -470,7 +491,11 @@ class CommandeDetailView(APIView):
         est_part = hasattr(u, 'profil_partenaire') and c.partenaire_id == u.profil_partenaire.id
         if not (est_client or est_part):
             return Response({'erreur': True, 'message': 'Accès refusé.'}, status=403)
-        return Response(CommandeSerializer(c, context={'request': request}).data)
+        data = CommandeSerializer(c, context={'request': request}).data
+        if est_client:  # avis clients : peut_noter (livrée, pas encore notée) / mon_avis (id ou null)
+            from apps.social.avis import etat_notation
+            data.update(etat_notation(u, 'commande', c))
+        return Response(data)
 
 
 _LIBELLES_COMMANDE = {
