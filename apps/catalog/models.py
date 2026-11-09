@@ -419,6 +419,15 @@ class Article(models.Model):
 # EXTENSIONS SPÉCIALISÉES (1-1 avec Article)
 # ═══════════════════════════════════════════════════════════════════════
 
+class ModeAnnonce(models.TextChoices):
+    """Mode de transaction d'une annonce de bien (logement, véhicule) :
+    location seule (défaut, tout l'existant), vente seule, ou les deux.
+    Indépendant de Vehicule.mode (champ historique du catalogue, inchangé)."""
+    LOCATION = 'location', _('Location')
+    VENTE = 'vente', _('Vente')
+    LOCATION_VENTE = 'location_vente', _('Location ou vente')
+
+
 class Logement(models.Model):
     """Détails d'un article de type 'logement' (location maison, résidence).
 
@@ -442,6 +451,13 @@ class Logement(models.Model):
         DISPONIBLE = 'disponible', _('Disponible')
         RESERVE = 'reserve', _('Réservé')
         LOUE = 'loue', _('Loué')
+
+    class TypeDocument(models.TextChoices):
+        ACD = 'acd', _('ACD (arrêté de concession définitive)')
+        CERTIFICAT_FONCIER = 'certificat_foncier', _('Certificat foncier')
+        LETTRE_ATTRIBUTION = 'lettre_attribution', _("Lettre d'attribution")
+        ATTESTATION_VILLAGEOISE = 'attestation_villageoise', _('Attestation villageoise')
+        AUTRE = 'autre', _('Autre')
 
     article = models.OneToOneField(
         Article,
@@ -485,6 +501,23 @@ class Logement(models.Model):
         _('disponibilité'), max_length=10, choices=Disponibilite.choices,
         default=Disponibilite.DISPONIBLE)
     disponible_a_partir_du = models.DateField(_('disponible à partir du'), blank=True, null=True)
+
+    # ── Vente (location | vente | location_vente) — additif ───────────
+    # Prix de location = Article.prix (obligatoire si location ou
+    # location_vente) ; prix_vente obligatoire si vente ou location_vente.
+    # Annonce vendue : retirée des listes publiques (visible loueur/admin).
+    mode_transaction = models.CharField(
+        _('mode de transaction'), max_length=15, choices=ModeAnnonce.choices,
+        default=ModeAnnonce.LOCATION)
+    prix_vente = models.DecimalField(
+        _('prix de vente (FCFA)'), max_digits=14, decimal_places=0, blank=True, null=True)
+    prix_negociable = models.BooleanField(_('prix négociable'), default=True)
+    vendu = models.BooleanField(_('vendu'), default=False)
+    vendu_le = models.DateTimeField(_('vendu le'), blank=True, null=True)
+    type_document = models.CharField(
+        _('document de propriété'), max_length=30, choices=TypeDocument.choices, blank=True)
+    surface_terrain_m2 = models.PositiveIntegerField(_('surface du terrain (m²)'), blank=True, null=True)
+    est_lotie = models.BooleanField(_('parcelle lotie'), blank=True, null=True)
 
     # Localisation PROPRE au logement (distincte du bureau du loueur).
     localite = models.ForeignKey(
@@ -550,6 +583,11 @@ class Vehicule(models.Model):
         LOCATION = 'location', _('Location')
         LES_DEUX = 'les_deux', _('Vente ou location')
 
+    class EtatVehicule(models.TextChoices):
+        NEUF = 'neuf', _('Neuf')
+        OCCASION_LOCALE = 'occasion_locale', _('Occasion locale')
+        FRANCE_AU_REVOIR = 'france_au_revoir', _('France au revoir (occasion importée)')
+
     article = models.OneToOneField(
         Article,
         on_delete=models.CASCADE,
@@ -600,6 +638,26 @@ class Vehicule(models.Model):
     disponibilite = models.CharField(
         _('disponibilité'), max_length=12, choices=Disponibilite.choices,
         default=Disponibilite.DISPONIBLE)
+
+    # ── Vente (location | vente | location_vente) — additif ───────────
+    # Prix de location = Article.prix (obligatoire si location ou
+    # location_vente) ; prix_vente obligatoire si vente ou location_vente.
+    # Annonce vendue : retirée des listes publiques (visible loueur/admin).
+    mode_transaction = models.CharField(
+        _('mode de transaction'), max_length=15, choices=ModeAnnonce.choices,
+        default=ModeAnnonce.LOCATION)
+    prix_vente = models.DecimalField(
+        _('prix de vente (FCFA)'), max_digits=14, decimal_places=0, blank=True, null=True)
+    prix_negociable = models.BooleanField(_('prix négociable'), default=True)
+    vendu = models.BooleanField(_('vendu'), default=False)
+    vendu_le = models.DateTimeField(_('vendu le'), blank=True, null=True)
+    etat = models.CharField(_('état'), max_length=20, choices=EtatVehicule.choices, blank=True)
+    dedouane = models.BooleanField(_('dédouané'), blank=True, null=True)
+    carte_grise = models.BooleanField(_('carte grise'), blank=True, null=True)
+    visite_technique_valide_jusqu_au = models.DateField(
+        _("visite technique valide jusqu'au"), blank=True, null=True)
+    assurance_valide_jusqu_au = models.DateField(_("assurance valide jusqu'au"), blank=True, null=True)
+    nb_proprietaires = models.PositiveSmallIntegerField(_('nombre de propriétaires'), blank=True, null=True)
 
     # Point de prise en charge (distinct du bureau du loueur) — même
     # structure que Logement (cohérence apps.geo).

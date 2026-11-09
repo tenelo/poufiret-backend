@@ -82,6 +82,12 @@ def valider_equipements(valeur, referentiel=None):
     return list(dict.fromkeys(valeur))
 
 
+def _vente():
+    # apps.locations.vente importe apps.catalog.models : import à l'appel.
+    from . import vente
+    return vente
+
+
 def logement_dict(obj, request):
     """Représentation complète d'un logement pour l'espace loueur/admin
     (gestion) — Article + Logement, une seule ressource en sortie."""
@@ -109,6 +115,7 @@ def logement_dict(obj, request):
         'disponibilite': obj.disponibilite,
         'disponibilite_libelle': obj.get_disponibilite_display(),
         'disponible_a_partir_du': obj.disponible_a_partir_du,
+        **_vente().champs_vente_logement(obj),
         'departement_id': obj.localite.departement_id if obj.localite_id else None,
         'departement_nom': obj.localite.departement.nom if obj.localite_id else None,
         'localite_id': obj.localite_id,
@@ -196,6 +203,7 @@ def vehicule_dict(obj, request):
         'zone_circulation': obj.zone_circulation,
         'disponibilite': obj.disponibilite,
         'disponibilite_libelle': obj.get_disponibilite_display(),
+        **_vente().champs_vente_vehicule(obj),
         'departement_id': obj.localite.departement_id if obj.localite_id else None,
         'departement_nom': obj.localite.departement.nom if obj.localite_id else None,
         'localite_id': obj.localite_id,

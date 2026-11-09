@@ -41,7 +41,8 @@ try:
             'types_logement', 'equipements', 'disponibilites',
             'categories_vehicule', 'boites', 'carburants', 'equipements_vehicule',
             'types_etablissement', 'types_hebergement', 'equipements_etablissement',
-            'equipements_hebergement', 'petit_dejeuner'}, set(d))
+            'equipements_hebergement', 'petit_dejeuner',
+            'modes', 'etats_vehicule', 'types_document', 'champs_vente'}, set(d))  # + vente
 
         ok('types_logement : valeur+libelle, egal aux choix reels',
            d['types_logement'] == [{'valeur': v, 'libelle': l} for v, l in Logement.TypeLogement.choices],

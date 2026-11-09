@@ -7,10 +7,11 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from apps.catalog.models import Article, Hebergement, Logement, Vehicule
+from apps.catalog.models import Article, Hebergement, Logement, ModeAnnonce, Vehicule
 from apps.geo.coherence import verifier_coherence
 from apps.geo.models import Localite, Quartier
 
+from . import vente
 from .models import ProfilEtablissement
 from .services import (
     EQUIPEMENTS_ETABLISSEMENT_LIBELLES, EQUIPEMENTS_HEBERGEMENT_LIBELLES, EQUIPEMENTS_REFERENTIEL,
@@ -44,7 +45,7 @@ class _ArticleFicheSerializer(serializers.Serializer):
 
         partenaire = self.context['partenaire']
         nom = validated_data.pop('nom')
-        prix = validated_data.pop('prix')
+        prix = validated_data.pop('prix', None)
         description = validated_data.pop('description', '')
         est_actif = validated_data.pop('est_actif', True)
         localisation = self._localisation(validated_data)
@@ -100,6 +101,30 @@ class _BienGestionSerializer(_ArticleFicheSerializer):
     longitude = serializers.FloatField(
         required=False, allow_null=True, min_value=-180, max_value=180)
 
+    # ── Vente (apps.locations.vente) : prix de location facultatif ici, la
+    # règle « obligatoire selon le mode » est appliquée dans validate().
+    prix = serializers.DecimalField(max_digits=12, decimal_places=0, required=False, allow_null=True,
+                                    min_value=Decimal(0))
+    mode = serializers.ChoiceField(source='mode_transaction', choices=ModeAnnonce.choices, required=False)
+    prix_vente = serializers.DecimalField(max_digits=14, decimal_places=0, required=False, allow_null=True,
+                                          min_value=Decimal(0))
+    prix_negociable = serializers.BooleanField(required=False)
+
+    def _valider_vente(self, attrs):
+        """Prix de location obligatoire si location / location_vente, prix de
+        vente obligatoire si vente / location_vente (valeurs envoyées, sinon
+        celles de l'annonce ; création : mode « location » par défaut)."""
+        inst = self.instance
+        mode = attrs.get('mode_transaction', inst.mode_transaction if inst else ModeAnnonce.LOCATION)
+        prix = attrs['prix'] if 'prix' in attrs else (inst.article.prix if inst else None)
+        prix_vente = attrs['prix_vente'] if 'prix_vente' in attrs else (inst.prix_vente if inst else None)
+        erreurs = vente.erreurs_prix(mode, prix, prix_vente)
+        if erreurs:
+            raise serializers.ValidationError(erreurs)
+        if inst is None:
+            attrs.setdefault('mode_transaction', mode)
+        return attrs
+
     def _localisation(self, validated_data):
         from django.contrib.gis.geos import Point
         lat = validated_data.pop('latitude', None)
@@ -120,7 +145,7 @@ class _BienGestionSerializer(_ArticleFicheSerializer):
         erreurs = verifier_coherence(partenaire.departement, localite, quartier)
         if erreurs:
             raise serializers.ValidationError(erreurs)
-        return attrs
+        return self._valider_vente(attrs)
 
 
 class LogementGestionSerializer(_BienGestionSerializer):
@@ -142,6 +167,14 @@ class LogementGestionSerializer(_BienGestionSerializer):
     compteur_electricite_individuel = serializers.BooleanField(required=False)
     equipements = serializers.ListField(required=False)
     disponible_a_partir_du = serializers.DateField(required=False, allow_null=True)
+    # Maison vendue
+    type_document = serializers.ChoiceField(
+        choices=Logement.TypeDocument.choices, required=False, allow_blank=True, allow_null=True)
+    surface_terrain_m2 = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    est_lotie = serializers.BooleanField(required=False, allow_null=True)
+
+    def validate_type_document(self, valeur):
+        return valeur or ''
 
     def validate_equipements(self, valeur):
         normalises = valider_equipements(valeur)
@@ -158,7 +191,7 @@ class VehiculeGestionSerializer(_BienGestionSerializer):
     modele_fiche = Vehicule
     article_type = Article.Type.VEHICULE
     slug_defaut = 'vehicule'
-    champs_creation = {'mode': Vehicule.Mode.LOCATION}
+    # Vehicule.mode (historique) : synchronisé depuis mode_transaction dans validate().
 
     categorie_vehicule = serializers.ChoiceField(choices=Vehicule.CategorieVehicule.choices)
     marque = serializers.CharField(max_length=50)
@@ -184,6 +217,18 @@ class VehiculeGestionSerializer(_BienGestionSerializer):
     carburant_inclus = serializers.BooleanField(required=False)
     duree_min_jours = serializers.IntegerField(required=False, min_value=1)
     zone_circulation = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    # Véhicule vendu (kilometrage : champ existant du catalogue)
+    kilometrage = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    etat = serializers.ChoiceField(
+        choices=Vehicule.EtatVehicule.choices, required=False, allow_blank=True, allow_null=True)
+    dedouane = serializers.BooleanField(required=False, allow_null=True)
+    carte_grise = serializers.BooleanField(required=False, allow_null=True)
+    visite_technique_valide_jusqu_au = serializers.DateField(required=False, allow_null=True)
+    assurance_valide_jusqu_au = serializers.DateField(required=False, allow_null=True)
+    nb_proprietaires = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+
+    def validate_etat(self, valeur):
+        return valeur or ''
 
     def validate_equipements(self, valeur):
         normalises = valider_equipements(valeur, list(EQUIPEMENTS_VEHICULE_LIBELLES))
@@ -206,6 +251,8 @@ class VehiculeGestionSerializer(_BienGestionSerializer):
         if disponible and valeur('prix_jour_avec_chauffeur', None) is None:
             raise serializers.ValidationError({'prix_jour_avec_chauffeur': [
                 'Requis lorsque le chauffeur est disponible.']})
+        if 'mode_transaction' in attrs:  # Vehicule.mode (catalogue) tenu en cohérence
+            attrs['mode'] = vente.MODE_HISTORIQUE_VEHICULE[attrs['mode_transaction']]
         return attrs
 
 

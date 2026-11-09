@@ -97,7 +97,11 @@ try:
         attendus = {'id', 'titre', 'photo', 'categorie_vehicule', 'categorie_libelle', 'marque', 'modele', 'annee',
                     'nb_places', 'boite_libelle', 'carburant_libelle', 'climatisation', 'prix_jour',
                     'prix_jour_avec_chauffeur', 'chauffeur_disponible', 'chauffeur_obligatoire',
-                    'localisation_texte', 'disponibilite'}
+                    'localisation_texte', 'disponibilite',
+                    # Vente (additif) : mode, prix et champs du véhicule vendu.
+                    'mode', 'mode_libelle', 'prix_vente', 'prix_negociable', 'vendu', 'vendu_le',
+                    'etat', 'etat_libelle', 'dedouane', 'carte_grise', 'visite_technique_valide_jusqu_au',
+                    'assurance_valide_jusqu_au', 'nb_proprietaires', 'kilometrage'}
         ok('carte : champs du contrat', set(carte) == attendus, set(carte) ^ attendus)
         ok('carte : libelles + photo + localisation', carte['categorie_libelle'] == 'SUV / 4x4'
            and carte['boite_libelle'] == 'Automatique' and carte['carburant_libelle'] == 'Diesel'

@@ -10,7 +10,7 @@ from apps.catalog.models import Article, ArticleImage, Hebergement, Logement, Pa
 from apps.catalog.serializers import PanoramaSerializer
 from apps.users.models import ProfilPartenaire
 
-from . import services
+from . import services, vente
 from .models import ProfilEtablissement
 
 
@@ -47,19 +47,23 @@ def _carte(logement, request):
         'nb_salles_de_bain': logement.nb_sdb,
         'meuble': logement.meuble,
         'disponibilite': logement.disponibilite,
+        **vente.champs_vente_logement(logement),
     }
 
 
 def _logements_qs_partenaire(partenaire):
+    # Annonces vendues : retirées des listes publiques (visibles loueur/admin).
     return (Logement.objects.filter(
-                article__partenaire=partenaire, article__type=Article.Type.LOGEMENT, article__est_actif=True)
+                article__partenaire=partenaire, article__type=Article.Type.LOGEMENT, article__est_actif=True,
+                vendu=False)
             .select_related('localite', 'quartier_geo')
             .prefetch_related(Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True))))
 
 
 class LogementsParPartenaireView(APIView):
     """GET /api/v1/locations/partenaires/<id>/logements/
-    ?type=&quartier=&loyer_max=&chambres_min=&meuble=&disponible=1"""
+    ?type=&quartier=&loyer_max=&chambres_min=&meuble=&disponible=1&mode=location|vente
+    (mode : une annonce location_vente apparaît dans les deux ; vendues exclues)."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, partenaire_id):
@@ -90,6 +94,7 @@ class LogementsParPartenaireView(APIView):
             qs = qs.filter(meuble=p['meuble'] in ('1', 'true', 'True'))
         if p.get('disponible') == '1':
             qs = qs.filter(disponibilite=Logement.Disponibilite.DISPONIBLE)
+        qs = vente.filtrer_mode(qs, p.get('mode'))
 
         return Response({
             'loueur': {
@@ -125,7 +130,7 @@ class LogementDetailPublicView(APIView):
         partenaire = a.partenaire
         autres = (Logement.objects.filter(
                       article__partenaire=partenaire, article__type=Article.Type.LOGEMENT,
-                      article__est_actif=True, disponibilite=Logement.Disponibilite.DISPONIBLE)
+                      article__est_actif=True, disponibilite=Logement.Disponibilite.DISPONIBLE, vendu=False)
                   .exclude(article_id=a.id)
                   .select_related('localite', 'quartier_geo')
                   .prefetch_related(Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True)))
@@ -153,6 +158,7 @@ class LogementDetailPublicView(APIView):
             'equipements': logement.equipements,
             'disponibilite': logement.disponibilite,
             'disponible_a_partir_du': logement.disponible_a_partir_du,
+            **vente.champs_vente_logement(logement),
             'localite_nom': logement.localite.nom if logement.localite_id else None,
             'quartier_nom': logement.quartier_geo.nom if logement.quartier_geo_id else None,
             'secteur': logement.secteur,
@@ -181,7 +187,8 @@ def _loueur_public(partenaire_id, types):
 
 
 def _vehicules_qs():
-    return (Vehicule.objects.filter(article__type=Article.Type.VEHICULE, article__est_actif=True)
+    # Annonces vendues : retirées des listes publiques (visibles loueur/admin).
+    return (Vehicule.objects.filter(article__type=Article.Type.VEHICULE, article__est_actif=True, vendu=False)
             .select_related('article', 'localite', 'quartier_geo')
             .prefetch_related(Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True))))
 
@@ -207,6 +214,7 @@ def _carte_vehicule(v, request):
         'chauffeur_obligatoire': v.chauffeur_obligatoire,
         'localisation_texte': _localisation_texte(v),
         'disponibilite': v.disponibilite,
+        **vente.champs_vente_vehicule(v),
     }
 
 
@@ -219,9 +227,10 @@ def _entier(valeur):
 
 class VehiculesParPartenaireView(APIView):
     """GET /api/v1/locations/partenaires/<id>/vehicules/
-    ?categorie=&prix_max=&places_min=&boite=&avec_chauffeur=&disponible=1
+    ?categorie=&prix_max=&places_min=&boite=&avec_chauffeur=&disponible=1&mode=location|vente
     avec_chauffeur=1 : chauffeur disponible ; avec_chauffeur=0 : location
-    sans chauffeur possible (chauffeur non obligatoire)."""
+    sans chauffeur possible (chauffeur non obligatoire). mode : une annonce
+    location_vente apparaît dans les deux ; annonces vendues exclues."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, partenaire_id):
@@ -245,6 +254,7 @@ class VehiculesParPartenaireView(APIView):
             qs = qs.filter(chauffeur_obligatoire=False)
         if p.get('disponible') == '1':
             qs = qs.filter(disponibilite=Vehicule.Disponibilite.DISPONIBLE)
+        qs = vente.filtrer_mode(qs, p.get('mode'))
 
         return Response({
             'loueur': {
@@ -315,6 +325,7 @@ class VehiculeDetailPublicView(APIView):
             'zone_circulation': v.zone_circulation,
             'disponibilite': v.disponibilite,
             'disponibilite_libelle': v.get_disponibilite_display(),
+            **vente.champs_vente_vehicule(v),
             'localisation_texte': _localisation_texte(v),
             'localite_nom': v.localite.nom if v.localite_id else None,
             'quartier_nom': v.quartier_geo.nom if v.quartier_geo_id else None,
@@ -546,4 +557,7 @@ class MetaLocationsView(APIView):
                                         for v, l in services.EQUIPEMENTS_HEBERGEMENT_LIBELLES.items()],
             'petit_dejeuner': [{'valeur': v, 'libelle': l}
                                for v, l in ProfilEtablissement.PetitDejeuner.choices],
+            # Vente (logements, véhicules) : modes, états, documents, et description
+            # des champs de formulaire avec affichage conditionnel (visible_si).
+            **vente.meta_vente(),
         })

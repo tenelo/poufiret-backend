@@ -108,7 +108,25 @@ def _compteurs_metier(request):
         if metier in compteurs:
             compteurs[metier] = n
     compteurs['total'] = sum(compteurs.values())
+    # Vente (additif, hors total) : demandes en vue d'achat, mêmes filtres.
+    compteurs['achat'] = qs.filter(nature=DemandeReservation.Nature.ACHAT).order_by().values('id').distinct().count()
     return compteurs
+
+
+def _annonces_a_vendre(request):
+    """Annonces actives à vendre et non vendues, par métier (maison, véhicule)
+    — ?partenaire= respecté."""
+    from apps.catalog.models import Logement, Vehicule
+    from apps.locations.vente import MODES_VENTE
+    resultat = {}
+    for metier, modele in (('maison', Logement), ('vehicule', Vehicule)):
+        qs = modele.objects.filter(mode_transaction__in=MODES_VENTE, vendu=False, article__est_actif=True)
+        partenaire = request.query_params.get('partenaire')
+        if partenaire and partenaire.isdigit():
+            qs = qs.filter(article__partenaire_id=int(partenaire))
+        resultat[metier] = qs.count()
+    resultat['total'] = resultat['maison'] + resultat['vehicule']
+    return resultat
 
 
 class MetaAdminDemandesView(APIView):
@@ -144,6 +162,7 @@ class DemandesAdminListView(generics.ListAPIView):
         reponse = super().list(request, *args, **kwargs)
         reponse.data['compteurs_groupe'] = _compteurs_groupe(request)
         reponse.data['compteurs_metier'] = _compteurs_metier(request)
+        reponse.data['annonces_a_vendre'] = _annonces_a_vendre(request)
         return reponse
 
 

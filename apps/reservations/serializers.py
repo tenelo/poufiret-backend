@@ -129,7 +129,38 @@ class CreerDemandeSerializer(serializers.Serializer):
     nb_enfants = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     nb_unites = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 
+    def _valider_vente(self, attrs):
+        """Logement / véhicule (mode_transaction) : « achat » seulement sur une
+        annonce à vendre non vendue ; visite / réservation seulement si l'annonce
+        est (aussi) à louer. Achat : aucune date, montant estimé = prix de vente."""
+        from apps.locations import vente
+        objet = attrs['objet']
+        if objet.type == objet.Type.VEHICULE:
+            fiche = vehicule_de(objet)
+        elif objet.type == objet.Type.LOGEMENT:
+            fiche = getattr(objet, 'logement', None)
+        else:
+            fiche = None  # hébergement et autres : pas de vente
+        if attrs['nature'] == DemandeReservation.Nature.ACHAT:
+            if fiche is None or not vente.est_a_vendre(fiche):
+                raise serializers.ValidationError(
+                    {'nature': ["Cette annonce n'est pas à vendre : faites une demande de visite ou de réservation."]})
+            if fiche.vendu:
+                raise serializers.ValidationError({'objet_id': ['Cette annonce est déjà vendue.']})
+            for champ in ('date_souhaitee', 'date_debut', 'date_fin', 'nb_adultes', 'nb_enfants', 'nb_unites',
+                          'avec_chauffeur'):
+                attrs.pop(champ, None)
+            attrs['montant_estime'] = fiche.prix_vente
+            return True
+        if fiche is not None and not vente.est_a_louer(fiche):
+            raise serializers.ValidationError(
+                {'nature': ['Annonce à vendre uniquement : utilisez la nature « achat » '
+                            '(demande d\'information ou de visite en vue d\'achat).']})
+        return False
+
     def validate(self, attrs):
+        if self._valider_vente(attrs):
+            return attrs  # achat : pas de validation de dates (sans objet)
         vehicule = vehicule_de(attrs['objet'])
         hebergement = hebergement_de(attrs['objet'])
         if vehicule is not None and attrs['nature'] == DemandeReservation.Nature.VISITE:

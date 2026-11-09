@@ -115,7 +115,7 @@ try:
            and par_id[d_auto.id]['metier_libelle'] == 'Véhicule' and par_id[d_maison.id]['metier_libelle'] == 'Maison'
            and par_id[d_hotel.id]['metier_libelle'] == 'Hôtel')
         ok('compteurs_metier (tous les metiers + total)', r.json()['compteurs_metier']
-           == {'hotel': 4, 'residence_meublee': 1, 'maison': 1, 'vehicule': 1, 'total': 7}, r.json()['compteurs_metier'])
+           == {'hotel': 4, 'residence_meublee': 1, 'maison': 1, 'vehicule': 1, 'total': 7, 'achat': 0}, r.json()['compteurs_metier'])
         ok('compteurs_groupe toujours presents', 'compteurs_groupe' in r.json())
 
         print('=== 2. FILTRE ?metier= ===')
@@ -132,10 +132,10 @@ try:
         r = get(f'?metier=hotel&groupe=a_traiter{q}')
         ok('metier + groupe', ids(r) == {d_hotel.id, d_aub.id, d_sf.id}, ids(r))
         ok('compteurs_metier respectent groupe', r.json()['compteurs_metier']
-           == {'hotel': 3, 'residence_meublee': 1, 'maison': 1, 'vehicule': 1, 'total': 6}, r.json()['compteurs_metier'])
+           == {'hotel': 3, 'residence_meublee': 1, 'maison': 1, 'vehicule': 1, 'total': 6, 'achat': 0}, r.json()['compteurs_metier'])
         r = get(f'?nature=visite{q}')
         ok('compteurs_metier respectent nature', r.json()['compteurs_metier']
-           == {'hotel': 0, 'residence_meublee': 0, 'maison': 1, 'vehicule': 0, 'total': 1}, r.json()['compteurs_metier'])
+           == {'hotel': 0, 'residence_meublee': 0, 'maison': 1, 'vehicule': 0, 'total': 1, 'achat': 0}, r.json()['compteurs_metier'])
         r = get(f'?partenaire={hotel.id}&metier=hotel{q}')
         ok('metier + loueur', ids(r) == {d_hotel.id, d_hotel2.id}, ids(r))
         ok('compteurs_metier respectent loueur', r.json()['compteurs_metier']['total'] == 2)
@@ -144,7 +144,7 @@ try:
         r = get(f'?au={avant}{q}')
         ok('compteurs_metier respectent dates', ids(r) == {d_auto.id}
            and r.json()['compteurs_metier'] == {'hotel': 0, 'residence_meublee': 0, 'maison': 0, 'vehicule': 1,
-                                                'total': 1}, r.json()['compteurs_metier'])
+                                                'total': 1, 'achat': 0}, r.json()['compteurs_metier'])
         ok('compteurs_groupe respectent metier', get(f'?metier=residence_meublee{q}').json()['compteurs_groupe']['total'] == 1)
 
         print('=== 4. DETAIL ET TRANSITION ===')

@@ -68,6 +68,21 @@ class LoueursAdminListeView(APIView):
                 d = compteurs.setdefault(ligne['article__partenaire_id'], {})
                 d[ligne['disponibilite']] = d.get(ligne['disponibilite'], 0) + ligne['n']
 
+        # Vente (logements, véhicules) : annonces à vendre (vente / location_vente,
+        # non vendues) et annonces vendues, par loueur — 2 requêtes agrégées.
+        from django.db.models import Q
+        from . import vente
+        ventes = {}
+        for modele in (Logement, Vehicule):
+            for ligne in (modele.objects.filter(article__partenaire_id__in=ids)
+                          .values('article__partenaire_id')
+                          .annotate(a_vendre=Count('article_id', filter=Q(
+                                        mode_transaction__in=vente.MODES_VENTE, vendu=False)),
+                                    vendus=Count('article_id', filter=Q(vendu=True)))):
+                d = ventes.setdefault(ligne['article__partenaire_id'], {'a_vendre': 0, 'vendus': 0})
+                d['a_vendre'] += ligne['a_vendre']
+                d['vendus'] += ligne['vendus']
+
         attentes = {}
         try:
             from apps.reservations.models import DemandeReservation
@@ -95,5 +110,7 @@ class LoueursAdminListeView(APIView):
                 'nb_reserves': d.get('reserve', 0),
                 'nb_loues': d.get('loue', 0),
                 'demandes_en_attente': attentes.get(p.id, 0),
+                'nb_a_vendre': ventes.get(p.id, {}).get('a_vendre', 0),
+                'nb_vendus': ventes.get(p.id, {}).get('vendus', 0),
             })
         return Response({'resultats': resultats})

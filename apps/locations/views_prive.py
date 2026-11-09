@@ -17,7 +17,7 @@ from apps.catalog.serializers import ArticleImageImbriqueeSerializer, PanoramaIm
 from apps.core.permissions import ADroitDe
 from apps.users.models import ProfilPartenaire
 
-from . import services
+from . import services, vente
 from .serializers import (
     EtablissementGestionSerializer, HebergementGestionSerializer, LogementGestionSerializer,
     VehiculeGestionSerializer,
@@ -143,16 +143,27 @@ class _BienQuerysetMixin:
         return {'partenaire': partenaire, 'acteur_role': self.acteur_role, 'acteur_nom': self.acteur_nom()}
 
 
+def _gere_la_vente(modele_fiche):
+    """Logement et véhicule (mode_transaction) ; pas l'hébergement."""
+    return any(f.name == 'mode_transaction' for f in modele_fiche._meta.fields)
+
+
 class _BiensListCreateBase(_BienQuerysetMixin, APIView):
-    """GET ?disponibilite= — tous les biens du loueur (gestion, y compris
-    indisponibles). POST crée un bien (Article + fiche)."""
+    """GET ?disponibilite=&mode=location|vente&vendu=1|0 — tous les biens du
+    loueur (gestion, y compris indisponibles et vendus). mode : une annonce
+    location_vente apparaît dans les deux. POST crée un bien (Article + fiche)."""
 
     def get(self, request, *args, **kwargs):
         partenaire = self.get_partenaire()
         qs = self._fiches(partenaire).order_by('-article__created_at')
-        dispo = request.query_params.get('disponibilite')
+        p = request.query_params
+        dispo = p.get('disponibilite')
         if dispo:
             qs = qs.filter(disponibilite=dispo)
+        if _gere_la_vente(self.modele_fiche):
+            qs = vente.filtrer_mode(qs, p.get('mode'))
+            if p.get('vendu') in ('1', '0'):
+                qs = qs.filter(vendu=p['vendu'] == '1')
         return Response({'resultats': [self.representer(o, request) for o in qs]})
 
     def post(self, request, *args, **kwargs):
@@ -201,6 +212,29 @@ class _BienDetailBase(_BienQuerysetMixin, APIView):
             _journaliser_admin(request.user, partenaire, self.action_modif,
                                f'{self.libelle} « {nom} » supprimé par l\'admin.')
         return Response(status=204)
+
+
+class _VenduBase(_BienQuerysetMixin, APIView):
+    """POST <id>/vendu/ {"vendu": true|false} — marque l'annonce vendue
+    (vendu_le = maintenant ; retirée des listes publiques) ou la remet en
+    vente. 400 si l'annonce n'est pas à vendre (mode location)."""
+
+    def post(self, request, pk=None, **kwargs):
+        partenaire = self.get_partenaire()
+        obj = get_object_or_404(self._fiches(partenaire), article_id=pk)
+        valeur = request.data.get('vendu')
+        if not isinstance(valeur, bool):
+            return Response({'erreur': True, 'details': {'vendu': ['Booléen attendu (true / false).']}},
+                            status=400)
+        try:
+            vente.marquer_vendu(obj, valeur, self.acteur_role, self.acteur_nom())
+        except ValueError as erreur:
+            return Response({'erreur': True, 'message': str(erreur)}, status=400)
+        if self.acteur_role == 'admin':
+            _journaliser_admin(request.user, partenaire, self.action_modif,
+                               f'{self.libelle} « {obj.article.nom} » '
+                               f'{"marqué vendu" if valeur else "remis en vente"} (admin).')
+        return Response(self.representer(obj, request))
 
 
 class _DisponibiliteBase(_BienQuerysetMixin, APIView):
@@ -347,6 +381,14 @@ class AdminLogementDisponibiliteView(_BienLogement, _PerimetreAdminMixin, _Dispo
     """POST /locations/admin/<partenaire_id>/logements/<id>/disponibilite/"""
 
 
+class MonLogementVenduView(_BienLogement, _PerimetreLoueurMixin, _VenduBase):
+    """POST /locations/mon-espace/logements/<id>/vendu/"""
+
+
+class AdminLogementVenduView(_BienLogement, _PerimetreAdminMixin, _VenduBase):
+    """POST /locations/admin/<partenaire_id>/logements/<id>/vendu/"""
+
+
 class MonLogementImagesView(_BienLogement, _PerimetreLoueurMixin, _ImagesListCreateBase):
     """GET/POST /locations/mon-espace/logements/<logement_id>/images/"""
 
@@ -405,6 +447,14 @@ class AdminVehiculeDetailView(_BienVehicule, _PerimetreAdminMixin, _BienDetailBa
 
 class AdminVehiculeDisponibiliteView(_BienVehicule, _PerimetreAdminMixin, _DisponibiliteBase):
     """POST /locations/admin/<partenaire_id>/vehicules/<id>/disponibilite/"""
+
+
+class MonVehiculeVenduView(_BienVehicule, _PerimetreLoueurMixin, _VenduBase):
+    """POST /locations/mon-espace/vehicules/<id>/vendu/"""
+
+
+class AdminVehiculeVenduView(_BienVehicule, _PerimetreAdminMixin, _VenduBase):
+    """POST /locations/admin/<partenaire_id>/vehicules/<id>/vendu/"""
 
 
 class MonVehiculeImagesView(_BienVehicule, _PerimetreLoueurMixin, _ImagesListCreateBase):

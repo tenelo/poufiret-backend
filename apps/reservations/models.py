@@ -18,6 +18,9 @@ class DemandeReservation(models.Model):
     class Nature(models.TextChoices):
         VISITE = 'visite', _('Visite')
         RESERVATION = 'reservation', _('Réservation')
+        # Annonce à vendre (logement, véhicule) : demande d'information ou de
+        # visite en vue d'achat, sans dates de location.
+        ACHAT = 'achat', _('Achat (information ou visite)')
 
     class Statut(models.TextChoices):
         NOUVELLE = 'nouvelle', _('Nouvelle')
