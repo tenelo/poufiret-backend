@@ -182,6 +182,7 @@ class VueVitrine(ModeleBase):
         ordering = ['-cree_le']
         indexes = [
             models.Index(fields=['partenaire', 'cree_le']),
+            models.Index(fields=['cree_le'], name='vuevitrine_cree_le_idx'),  # stats par période
         ]
 
     def __str__(self):

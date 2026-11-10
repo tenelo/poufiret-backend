@@ -300,6 +300,7 @@ class Commande(models.Model):
             models.Index(fields=['partenaire', 'statut', '-created_at']),
             models.Index(fields=['user', '-created_at']),
             models.Index(fields=['statut']),
+            models.Index(fields=['created_at'], name='commande_created_at_idx'),  # stats par période
         ]
 
     def __str__(self):

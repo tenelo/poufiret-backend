@@ -1084,6 +1084,7 @@ class VueArticle(models.Model):
         indexes = [
             models.Index(fields=['article', '-date_vue']),
             models.Index(fields=['user', '-date_vue']),
+            models.Index(fields=['date_vue'], name='vuearticle_date_vue_idx'),  # stats par période
         ]
 
     def __str__(self):

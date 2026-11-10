@@ -10,6 +10,9 @@ from .views_categories import (
     TypesPartenaireCategoriesView,
 )
 from .views_edition import PartenaireEditionView
+from .views_statistiques_usage import (
+    ActiviteUsageView, ContactsPartenairesUsageView, EntonnoirUsageView, RecherchesUsageView, ResumeUsageView,
+)
 from .views_visibilite import PartenaireRestaurerView, PartenaireSupprimerView, PartenaireVisibiliteView
 from .views_interventions import (
     InterventionAdminArtisansCompatiblesView, InterventionAdminAssignerView,
@@ -34,6 +37,12 @@ from .views import (DashboardG5View, AppareilsExportView, ModerationView,
 app_name = 'administration'
 
 urlpatterns = [
+    path('statistiques-usage/recherches/', RecherchesUsageView.as_view(), name='stats-usage-recherches'),
+    path('statistiques-usage/entonnoir/', EntonnoirUsageView.as_view(), name='stats-usage-entonnoir'),
+    path('statistiques-usage/contacts-partenaires/', ContactsPartenairesUsageView.as_view(),
+         name='stats-usage-contacts-partenaires'),
+    path('statistiques-usage/activite/', ActiviteUsageView.as_view(), name='stats-usage-activite'),
+    path('statistiques-usage/resume/', ResumeUsageView.as_view(), name='stats-usage-resume'),
     path('categories/', CategoriesAdminListCreateView.as_view(), name='categories'),
     path('categories/ordre/', OrdreCategoriesView.as_view(), name='categories-ordre'),
     path('categories/types-partenaire/', TypesPartenaireCategoriesView.as_view(), name='categories-types'),
