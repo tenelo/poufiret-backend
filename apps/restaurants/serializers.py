@@ -262,14 +262,20 @@ class MenuProgrammeSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════════════════════════════
 
 class VariantePubliqueSerializer(serializers.ModelSerializer):
+    """prix : prix propre (null = prix de l'article + prix_supplement) ;
+    prix_effectif : prix unitaire réellement facturé au panier."""
     est_epuise = serializers.SerializerMethodField()
+    prix_effectif = serializers.SerializerMethodField()
 
     class Meta:
         model = Variante
-        fields = ['id', 'nom', 'prix_supplement', 'est_par_defaut', 'stock', 'est_epuise']
+        fields = ['id', 'nom', 'prix_supplement', 'prix', 'prix_effectif', 'est_par_defaut', 'stock', 'est_epuise']
 
     def get_est_epuise(self, obj):
         return gabarits.variante_epuisee(obj)
+
+    def get_prix_effectif(self, obj):
+        return obj.prix_effectif(self.context.get('prix_article'))
 
 
 class OptionGroupePubliqueSerializer(serializers.ModelSerializer):
@@ -327,8 +333,23 @@ class PlatCartePubliqueSerializer(serializers.ModelSerializer):
         return urls_images_plat(obj, self.context.get('request'))
 
     def get_variantes(self, obj):
+        # Même prix de base que le panier (promotion en cours, sinon prix).
+        base = obj.prix_promotion if (obj.est_en_promotion and obj.prix_promotion) else obj.prix
         return VariantePubliqueSerializer(
-            _actifs_tries(obj.variantes.all(), 'est_active'), many=True).data
+            _actifs_tries(obj.variantes.all(), 'est_active'), many=True,
+            context={'prix_article': base or 0}).data
+
+    def to_representation(self, obj):
+        """+ unite_vente ('kg' : quantité décimale au panier ; 'piece' sinon)
+        et, en élevage, unite_prix / unite_prix_libelle / suffixe_prix
+        (ex. « kg » / « f/kg », « tête » / « f/tête »)."""
+        donnees = super().to_representation(obj)
+        gabarit = _gabarit_contexte(self, obj)
+        donnees['unite_vente'] = gabarits.UNITE_KG if (
+            gabarit == gabarits.ELEVAGE and (obj.fiche_specifique or {}).get('unite_prix') == gabarits.UNITE_KG
+        ) else gabarits.UNITE_PIECE
+        donnees.update(gabarits.unite_prix(obj, gabarit))
+        return donnees
 
     def get_groupes_options(self, obj):
         return GroupeOptionPubliqueSerializer(

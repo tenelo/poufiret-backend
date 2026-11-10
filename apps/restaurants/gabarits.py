@@ -147,11 +147,16 @@ GABARITS = {
         'champs': [
             _champ('espece', 'Espèce', CHOIX, obligatoire=True, choix=_choix(
                 ('porc', 'Porc'), ('poulet', 'Poulet'), ('pintade', 'Pintade'), ('boeuf', 'Bœuf'),
-                ('mouton', 'Mouton'), ('chevre', 'Chèvre'), ('lapin', 'Lapin'), ('autre', 'Autre'))),
+                ('mouton', 'Mouton'), ('chevre', 'Chèvre'), ('lapin', 'Lapin'),
+                ('cabri', 'Cabri'), ('oeuf', 'Œufs'), ('autre', 'Autre'))),
             _champ('etat_vente', 'État à la vente', CHOIX, obligatoire=True, choix=_choix(
-                ('vivant', 'Vivant'), ('abattu_entier', 'Abattu entier'), ('decoupe', 'Découpé'))),
-            _champ('unite_prix', 'Unité de prix', CHOIX, obligatoire=True, choix=_choix(
-                ('piece', 'À la pièce'), ('kg', 'Au kilo'))),
+                ('vivant', 'Vivant'), ('abattu_entier', 'Abattu entier'), ('decoupe', 'Découpé'),
+                ('produit', 'Produit (œufs…)'))),
+            # Chaque choix porte aussi « unite » (libellé court) et « affichage » (suffixe du prix).
+            _champ('unite_prix', 'Unité de prix', CHOIX, obligatoire=True, choix=[
+                {'valeur': v, 'libelle': l, 'unite': u, 'affichage': f'f/{u}'}
+                for v, l, u in (('piece', 'À la pièce', 'pièce'), ('kg', 'Au kilo', 'kg'),
+                                ('tete', 'Par tête', 'tête'), ('plaquette', 'Par plaquette', 'plaquette'))]),
             _champ('poids_moyen_kg', 'Poids moyen (kg)', TEXTE),
             _champ('age', 'Âge', TEXTE),
             _champ('quantite_disponible', 'Quantité disponible', ENTIER),
@@ -285,6 +290,22 @@ def unite_vente(article):
             and (article.fiche_specifique or {}).get('unite_prix') == UNITE_KG):
         return UNITE_KG
     return UNITE_PIECE
+
+
+def unite_prix(article, gabarit=None):
+    """Élevage : {unite_prix, unite_prix_libelle, suffixe_prix} de l'article
+    (ex. kg / « kg » / « f/kg », tete / « tête » / « f/tête ») ; valeurs
+    nulles hors élevage ou sans unité renseignée. Seul « kg » se commande en
+    quantité décimale (unite_vente) ; tête, plaquette, pièce : entier."""
+    vide = {'unite_prix': None, 'unite_prix_libelle': None, 'suffixe_prix': None}
+    if (gabarit or gabarit_de(article.partenaire)) != ELEVAGE:
+        return vide
+    valeur = (article.fiche_specifique or {}).get('unite_prix')
+    champ = next(c for c in GABARITS[ELEVAGE]['champs'] if c['cle'] == 'unite_prix')
+    choix = next((c for c in champ['choix'] if c['valeur'] == valeur), None)
+    if choix is None:
+        return vide
+    return {'unite_prix': valeur, 'unite_prix_libelle': choix['unite'], 'suffixe_prix': choix['affichage']}
 
 
 def lire_quantite(brut, unite=UNITE_PIECE):

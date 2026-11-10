@@ -43,9 +43,10 @@ CHOIX = {
     ('librairie', 'genre_livre'): ['scolaire', 'roman', 'jeunesse', 'religieux', 'dictionnaire', 'essai', 'bd', 'autre'],
     ('librairie', 'niveau'): ['primaire', 'college', 'lycee', 'superieur', 'aucun'],
     ('librairie', 'etat'): ['neuf', 'occasion'],
-    ('elevage', 'espece'): ['porc', 'poulet', 'pintade', 'boeuf', 'mouton', 'chevre', 'lapin', 'autre'],
-    ('elevage', 'etat_vente'): ['vivant', 'abattu_entier', 'decoupe'],
-    ('elevage', 'unite_prix'): ['piece', 'kg'],
+    ('elevage', 'espece'): ['porc', 'poulet', 'pintade', 'boeuf', 'mouton', 'chevre', 'lapin', 'cabri', 'oeuf',
+                            'autre'],
+    ('elevage', 'etat_vente'): ['vivant', 'abattu_entier', 'decoupe', 'produit'],
+    ('elevage', 'unite_prix'): ['piece', 'kg', 'tete', 'plaquette'],
 }
 
 try:

@@ -5,6 +5,7 @@ Module 2 du modèle Poufiret. Couvre catégories, articles, photos, panoramas,
 sections de menu, variantes, suppléments et tracking de vues.
 """
 from django.contrib.gis.db import models as gis_models
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -885,12 +886,26 @@ class Variante(models.Model):
         default=0,
         help_text=_('S\'ajoute au prix de base de l\'article.'),
     )
+    # Prix propre (ex. « Plaquette de 30 », « Poulet pondeuse ») : s'il est
+    # renseigné, il REMPLACE le prix de l'article (prix_supplement ignoré).
+    prix = models.DecimalField(
+        _('prix propre (FCFA)'), max_digits=12, decimal_places=0, blank=True, null=True,
+        validators=[MinValueValidator(0)],
+        help_text=_('Facultatif : remplace le prix de l\'article pour cette variante.'),
+    )
     est_par_defaut = models.BooleanField(_('variante par défaut'), default=False)
     ordre = models.IntegerField(_('ordre'), default=0)
     est_active = models.BooleanField(_('variante active'), default=True)
     # Stock par format/pointure (gabarits boutique) : null = illimité.
     stock = models.PositiveIntegerField(_('stock'), blank=True, null=True)
     est_epuise = models.BooleanField(_('épuisée'), default=False)
+
+    def prix_effectif(self, prix_article):
+        """Prix unitaire de la variante : son prix propre, sinon prix de
+        l'article + supplément."""
+        if self.prix is not None:
+            return self.prix
+        return (prix_article or 0) + self.prix_supplement
 
     class Meta:
         verbose_name = _('variante')

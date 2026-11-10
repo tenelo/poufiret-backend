@@ -122,7 +122,7 @@ class PanoramaInline(admin.TabularInline):
 class VarianteInline(admin.TabularInline):
     model = Variante
     extra = 0
-    fields = ('nom', 'prix_supplement', 'est_par_defaut', 'ordre', 'est_active')
+    fields = ('nom', 'prix_supplement', 'prix', 'est_par_defaut', 'ordre', 'est_active')
 
 
 class SupplementInline(admin.TabularInline):

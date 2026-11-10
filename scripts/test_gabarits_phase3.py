@@ -158,9 +158,11 @@ try:
         plat = d['carte'][0]['plats'][0]
         ok('plat : cles historiques conservees + fiche_specifique/commandable + images', {
             'id', 'nom', 'slug', 'description', 'prix', 'prix_promotion', 'image', 'images', 'est_disponible',
-            'est_epuise', 'variantes', 'groupes_options', 'fiche_specifique', 'commandable'} == set(plat), set(plat))
+            'est_epuise', 'variantes', 'groupes_options', 'fiche_specifique', 'commandable',
+            'unite_vente', 'unite_prix', 'unite_prix_libelle', 'suffixe_prix'} == set(plat), set(plat))
         ok('variantes : stock / est_epuise', set(plat['variantes'][0]) == {
-            'id', 'nom', 'prix_supplement', 'est_par_defaut', 'stock', 'est_epuise'}, plat['variantes'])
+            'id', 'nom', 'prix_supplement', 'prix', 'prix_effectif', 'est_par_defaut', 'stock', 'est_epuise'},
+           plat['variantes'])
         ok('options toujours servies', plat['groupes_options'][0]['options'][0]['nom'] == 'Fort')
         for i in range(5):
             produit(resto, f'Plat {i}', entrees, type_='plat', images=2, variantes=2)

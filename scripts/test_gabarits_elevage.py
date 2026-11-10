@@ -111,8 +111,9 @@ try:
             ('commande_avance_jours', 'entier', False), ('livraison_possible', 'booleen', False)], d['champs'])
         choix = {c['cle']: [x['valeur'] for x in c['choix']] for c in d['champs']}
         ok('choix espece / etat_vente / unite_prix', choix['espece'] == [
-            'porc', 'poulet', 'pintade', 'boeuf', 'mouton', 'chevre', 'lapin', 'autre']
-           and choix['etat_vente'] == ['vivant', 'abattu_entier', 'decoupe'] and choix['unite_prix'] == ['piece', 'kg'])
+            'porc', 'poulet', 'pintade', 'boeuf', 'mouton', 'chevre', 'lapin', 'cabri', 'oeuf', 'autre']
+           and choix['etat_vente'] == ['vivant', 'abattu_entier', 'decoupe', 'produit']
+           and choix['unite_prix'] == ['piece', 'kg', 'tete', 'plaquette'])
 
         print('=== 3. MOTEUR : GESTION ===')
         MON = '/api/v1/restaurants/mon-restaurant'

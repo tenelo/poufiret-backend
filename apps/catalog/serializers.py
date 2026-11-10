@@ -123,7 +123,7 @@ class ArticleImageImbriqueeSerializer(_ArticleDeLUrlMixin, ArticleImageSerialize
 class VarianteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Variante
-        fields = ['id', 'article', 'nom', 'prix_supplement', 'est_par_defaut', 'ordre', 'est_active',
+        fields = ['id', 'article', 'nom', 'prix_supplement', 'prix', 'est_par_defaut', 'ordre', 'est_active',
                   'stock', 'est_epuise']
 
 

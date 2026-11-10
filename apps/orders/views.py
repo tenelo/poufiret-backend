@@ -135,7 +135,7 @@ class AjouterLigneView(APIView):
                 if v:
                     if gabarits.variante_epuisee(v):
                         return Response({'erreur': True, 'message': f'« {v.nom} » est épuisé.'}, status=400)
-                    prix += v.prix_supplement
+                    prix = v.prix_effectif(prix)  # prix propre, sinon base + supplément
 
         # Pièce : entier ≥ 1 ; vente au kilo (gabarit elevage) : pas de 0,5.
         unite = gabarits.UNITE_PIECE if ligne_menu else gabarits.unite_vente(article)
