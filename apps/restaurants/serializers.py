@@ -370,7 +370,9 @@ class ProduitDetailPubliqueSerializer(ProduitPubliqueSerializer):
 
     def get_partenaire(self, obj):
         p = obj.partenaire
-        return {'id': p.id, 'nom': p.nom_commerce, 'gabarit': gabarits.gabarit_de(p)}
+        from apps.users.whatsapp import whatsapp_externe
+        return {'id': p.id, 'nom': p.nom_commerce, 'gabarit': gabarits.gabarit_de(p),
+                'whatsapp_externe': whatsapp_externe(p)}
 
 
 class SectionCartePubliqueSerializer(serializers.ModelSerializer):
@@ -453,6 +455,11 @@ class RestaurantListeSerializer(serializers.Serializer):
     menu_du_jour = serializers.SerializerMethodField()
     note_moyenne = serializers.DecimalField(max_digits=3, decimal_places=2, read_only=True)
     nb_avis = serializers.IntegerField(read_only=True)
+    whatsapp_externe = serializers.SerializerMethodField()
+
+    def get_whatsapp_externe(self, obj):
+        from apps.users.whatsapp import whatsapp_externe
+        return whatsapp_externe(obj)
 
     def _url(self, champ):
         return _url_absolue(champ, self.context.get('request'))
@@ -502,6 +509,11 @@ class RestaurantDetailPubliqueSerializer(serializers.Serializer):
     position_modifiee_par_role = serializers.CharField(read_only=True, default=None)
     note_moyenne = serializers.DecimalField(max_digits=3, decimal_places=2, read_only=True)
     nb_avis = serializers.IntegerField(read_only=True)
+    whatsapp_externe = serializers.SerializerMethodField()
+
+    def get_whatsapp_externe(self, obj):
+        from apps.users.whatsapp import whatsapp_externe
+        return whatsapp_externe(obj)
     est_ouvert = serializers.SerializerMethodField()
     prochaine_ouverture = serializers.SerializerMethodField()
     message_statut = serializers.SerializerMethodField()

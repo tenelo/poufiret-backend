@@ -12,6 +12,7 @@ from apps.core.permissions import ADroitDe
 from apps.geo.coherence import verifier_coherence
 from apps.geo.models import Departement, Localite, Quartier
 from apps.users.models import ProfilPartenaire
+from apps.users.whatsapp import whatsapp_externe
 
 from .moderation import _journaliser
 from .models import JournalModeration
@@ -19,7 +20,7 @@ from .models import JournalModeration
 _PERMISSION = [IsAuthenticated, ADroitDe('creer_partenaire')]
 TYPES = ProfilPartenaire.TypePartenaire
 CHAMPS_TEXTE_COURTS = ('nom_commerce', 'type_partenaire', 'secteur', 'adresse',
-                       'telephone_pro', 'whatsapp', 'email_pro')
+                       'telephone_pro', 'whatsapp', 'whatsapp_externe_actif', 'email_pro')
 CHAMPS_TEXTE_USER = ('prenom', 'nom')
 
 
@@ -42,6 +43,7 @@ class EditionSerializer(serializers.Serializer):
     adresse = serializers.CharField(max_length=255, required=False, allow_blank=True)
     telephone_pro = serializers.CharField(max_length=20, required=False, allow_blank=True)
     whatsapp = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    whatsapp_externe_actif = serializers.BooleanField(required=False)
     email_pro = serializers.EmailField(required=False, allow_blank=True)
     logo = serializers.ImageField(required=False, allow_null=True)
     photo_couverture = serializers.ImageField(required=False, allow_null=True)
@@ -66,6 +68,10 @@ class EditionSerializer(serializers.Serializer):
             dep = loc.departement
             attrs['departement'] = dep
         erreurs = verifier_coherence(dep, loc, quart)
+        if erreurs:
+            raise serializers.ValidationError(erreurs)
+        from apps.users.whatsapp import erreurs_activation
+        erreurs = erreurs_activation(attrs, profil)
         if erreurs:
             raise serializers.ValidationError(erreurs)
         return attrs
@@ -101,6 +107,8 @@ def _fiche(profil, request):
         'adresse': profil.adresse,
         'telephone_pro': profil.telephone_pro,
         'whatsapp': profil.whatsapp,
+        'whatsapp_externe_actif': profil.whatsapp_externe_actif,
+        'whatsapp_externe': whatsapp_externe(profil),
         'email_pro': profil.email_pro,
         'logo': _url(request, profil.logo),
         'photo_couverture': _url(request, profil.photo_couverture),
@@ -162,7 +170,7 @@ class PartenaireEditionView(APIView):
                     changements.append('categories')
 
             for champ in ('nom_commerce', 'description', 'type_partenaire', 'secteur', 'adresse',
-                          'telephone_pro', 'whatsapp', 'email_pro'):
+                          'telephone_pro', 'whatsapp', 'whatsapp_externe_actif', 'email_pro'):
                 if champ in v and v[champ] != getattr(profil, champ):
                     ancien = getattr(profil, champ)
                     setattr(profil, champ, v[champ])

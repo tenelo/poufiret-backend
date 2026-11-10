@@ -233,6 +233,8 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
     logement = LogementSerializer(read_only=True)
     vehicule = VehiculeSerializer(read_only=True)
     partenaire_nom = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
+    # WhatsApp externe du partenaire (null s'il ne l'a pas activé).
+    whatsapp_externe = serializers.SerializerMethodField()
     est_like_par_moi = serializers.SerializerMethodField()
     est_favori_par_moi = serializers.SerializerMethodField()
     pourcentage_reduction = serializers.ReadOnlyField()
@@ -247,10 +249,14 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
                   'temps_preparation_min', 'nb_vues', 'nb_likes', 'nb_commentaires',
                   'nb_favoris', 'partenaire', 'partenaire_nom', 'categorie', 'section_menu',
                   'images', 'videos', 'variantes', 'supplements', 'panoramas', 'logement', 'vehicule',
-                  'est_like_par_moi', 'est_favori_par_moi',
+                  'est_like_par_moi', 'est_favori_par_moi', 'whatsapp_externe',
                   'created_at', 'updated_at']
         read_only_fields = ['slug', 'nb_vues', 'nb_likes', 'nb_commentaires',
                             'nb_favoris', 'partenaire']
+
+    def get_whatsapp_externe(self, obj):
+        from apps.users.whatsapp import whatsapp_externe
+        return whatsapp_externe(obj.partenaire)
 
     def _user(self):
         req = self.context.get('request')

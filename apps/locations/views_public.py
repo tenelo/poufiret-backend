@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from apps.catalog.models import Article, ArticleImage, Hebergement, Logement, Panorama, Vehicule
 from apps.catalog.serializers import PanoramaSerializer
 from apps.users.models import ProfilPartenaire
+from apps.users.whatsapp import whatsapp_externe
 
 from . import services, vente
 from .models import ProfilEtablissement
@@ -104,6 +105,7 @@ class LogementsParPartenaireView(APIView):
                 'couverture': _url(request, partenaire.photo_couverture),
                 'telephone_pro': partenaire.telephone_pro,
                 'whatsapp': partenaire.whatsapp,
+                'whatsapp_externe': whatsapp_externe(partenaire),
             },
             'resultats': [_carte(l, request) for l in qs],
         })
@@ -170,6 +172,7 @@ class LogementDetailPublicView(APIView):
                 'nom': partenaire.nom_commerce,
                 'telephone_pro': partenaire.telephone_pro,
                 'whatsapp': partenaire.whatsapp,
+                'whatsapp_externe': whatsapp_externe(partenaire),
             },
             'autres_logements': [_carte(l, request) for l in autres],
         })
@@ -264,6 +267,7 @@ class VehiculesParPartenaireView(APIView):
                 'couverture': _url(request, partenaire.photo_couverture),
                 'telephone_pro': partenaire.telephone_pro,
                 'whatsapp': partenaire.whatsapp,
+                'whatsapp_externe': whatsapp_externe(partenaire),
             },
             'resultats': [_carte_vehicule(v, request) for v in qs],
         })
@@ -338,6 +342,7 @@ class VehiculeDetailPublicView(APIView):
                 'nom': partenaire.nom_commerce,
                 'telephone_pro': partenaire.telephone_pro,
                 'whatsapp': partenaire.whatsapp,
+                'whatsapp_externe': whatsapp_externe(partenaire),
             },
             'autres_vehicules': [_carte_vehicule(x, request) for x in autres],
             'periodes_indisponibles': [
@@ -432,6 +437,7 @@ class EtablissementPublicView(APIView):
                 'longitude': partenaire.localisation.x if partenaire.localisation else None,
                 'telephone_pro': partenaire.telephone_pro,
                 'whatsapp': partenaire.whatsapp,
+                'whatsapp_externe': whatsapp_externe(partenaire),
                 'heure_arrivee': fiche.heure_arrivee,
                 'heure_depart': fiche.heure_depart,
                 'equipements_etablissement': fiche.equipements,

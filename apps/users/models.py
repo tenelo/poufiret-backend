@@ -406,6 +406,10 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
     nb_avis = models.PositiveIntegerField(_("nombre d'avis visibles"), default=0)
     telephone_pro = models.CharField(_('téléphone professionnel'), max_length=20, blank=True)
     whatsapp = models.CharField(_('numéro WhatsApp'), max_length=20, blank=True)
+    whatsapp_externe_actif = models.BooleanField(
+        _('bouton WhatsApp externe actif'), default=False,
+        help_text=_('Affiche publiquement un bouton vers le vrai WhatsApp (champ whatsapp), '
+                    'en plus de la messagerie interne.'))
     email_pro = models.EmailField(_('email professionnel'), blank=True)
 
     # ── Plan & abonnement ────────────────────────────────────────────

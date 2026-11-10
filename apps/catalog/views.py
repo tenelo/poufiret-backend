@@ -315,6 +315,7 @@ class EnregistrerVueView(generics.GenericAPIView):
 from rest_framework.views import APIView as _APIView
 from rest_framework.response import Response as _Response
 from apps.users.models import ProfilPartenaire as _ProfilPartenaire
+from apps.users.whatsapp import whatsapp_externe
 
 
 class CartePartenairesView(_APIView):
@@ -462,6 +463,7 @@ class PartenairesParCategorieView(_APIView):
                 'gabarit': gabarit_de_type(p.type_partenaire),
                 'note_moyenne': p.note_moyenne,
                 'nb_avis': p.nb_avis,
+                'whatsapp_externe': whatsapp_externe(p),
             })
         return _Response(donnees)
 

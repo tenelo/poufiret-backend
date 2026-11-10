@@ -138,7 +138,7 @@ try:
         ok('autres_produits : 6 au plus, meme section, sans lui-meme', len(d['autres_produits']) == 6
            and all(p['section_id'] == scol.id and p['id'] != cible.id for p in d['autres_produits']), d['autres_produits'])
         ok('partenaire resume + fiche_specifique', d['partenaire'] == {'id': libr.id, 'nom': libr.nom_commerce,
-           'gabarit': 'librairie'} and d['fiche_specifique']['auteur'] == 'Auteur 3', d)
+           'gabarit': 'librairie', 'whatsapp_externe': None} and d['fiche_specifique']['auteur'] == 'Auteur 3', d)
         ok(f'requetes constantes ({nq} <= 10)', nq <= 10, nq)
         print(f'   (requetes fiche produit : {nq})')
         d = get(f'/api/v1/restaurants/produits/{l_roman.id}/').json()

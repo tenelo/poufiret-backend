@@ -90,7 +90,7 @@ try:
         ok('liste : nombre de requetes constant (<= 5)', len(ctx.captured_queries) <= 5, len(ctx.captured_queries))
         d = r.json()
         ok('loueur : id/nom/logo/couverture/contacts',
-           set(d['loueur']) == {'id', 'nom', 'logo', 'couverture', 'telephone_pro', 'whatsapp'}, d['loueur'])
+           set(d['loueur']) == {'id', 'nom', 'logo', 'couverture', 'telephone_pro', 'whatsapp', 'whatsapp_externe'}, d['loueur'])
         ok('inactif exclu', f'Inactif {uid}' not in titres(r))
         ok('7 vehicules actifs', len(d['resultats']) == 7, titres(r))
         carte = next(x for x in d['resultats'] if x['titre'] == f'Prado {uid}')
@@ -145,7 +145,7 @@ try:
         ok('panorama interieur 360', d2['panoramas'][0]['titre'] == 'Intérieur'
            and d2['panoramas'][0]['type_vue'] == 'photo_360', d2['panoramas'])
         ok('equipements_libelles', d2['equipements_libelles'] == ['GPS', 'Prise USB'], d2['equipements_libelles'])
-        ok('loueur', set(d2['loueur']) == {'id', 'nom', 'telephone_pro', 'whatsapp'}, d2['loueur'])
+        ok('loueur', set(d2['loueur']) == {'id', 'nom', 'telephone_pro', 'whatsapp', 'whatsapp_externe'}, d2['loueur'])
         ok('autres_vehicules : 4 max, disponibles, hors lui-meme',
            len(d2['autres_vehicules']) == 4 and all(x['disponibilite'] == 'disponible' and x['id'] != v2.article_id
                                                     for x in d2['autres_vehicules']), d2['autres_vehicules'])

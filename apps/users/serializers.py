@@ -255,6 +255,7 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
     quartier_id = serializers.IntegerField(source='quartier_geo.id', read_only=True, default=None)
     quartier_nom = serializers.CharField(source='quartier_geo.nom', read_only=True, default=None)
     gabarit = serializers.SerializerMethodField()
+    whatsapp_externe = serializers.SerializerMethodField()
 
     class Meta:
         model = ProfilPartenaire
@@ -265,9 +266,13 @@ class VitrinePartenaireSerializer(serializers.ModelSerializer):
             'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom',
             'telephone_pro', 'whatsapp', 'email_pro',
             'nombre_likes', 'nb_vues', 'est_like_par_moi', 'est_favori_par_moi',
-            'note_moyenne', 'nb_avis',
+            'note_moyenne', 'nb_avis', 'whatsapp_externe',
         ]
         read_only_fields = fields
+
+    def get_whatsapp_externe(self, obj):
+        from .whatsapp import whatsapp_externe
+        return whatsapp_externe(obj)
 
     def get_gabarit(self, obj):
         """Gabarit d'affichage (apps.restaurants.gabarits, source unique)."""
@@ -346,6 +351,8 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
             'adresse', 'quartier', 'secteur', 'ville', 'description_acces',
             'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom',
             'telephone_pro', 'whatsapp', 'email_pro',
+            # Bouton WhatsApp externe (écriture) + numéro public qui en résulte (lecture)
+            'whatsapp_externe_actif', 'whatsapp_externe',
             # Lecture seule : pilotes par l'administration
             'statut', 'statut_libelle', 'est_visible', 'badge_certifie',
             'est_faveur', 'plan_libelle', 'abonnement_fin', 'nb_vues',
@@ -365,11 +372,20 @@ class MonProfilPartenaireSerializer(serializers.ModelSerializer):
         ]
 
     avertissement_position = serializers.SerializerMethodField()
+    whatsapp_externe = serializers.SerializerMethodField()
 
     def get_avertissement_position(self, obj):
         return getattr(obj, '_avertissement_position', None)
 
+    def get_whatsapp_externe(self, obj):
+        from .whatsapp import whatsapp_externe
+        return whatsapp_externe(obj)
+
     def validate(self, attrs):
+        from .whatsapp import erreurs_activation
+        erreurs = erreurs_activation(attrs, self.instance)
+        if erreurs:
+            raise serializers.ValidationError(erreurs)
         return _verifier_geo(attrs, self.instance.departement,
                              self.instance.localite, self.instance.quartier_geo)
 

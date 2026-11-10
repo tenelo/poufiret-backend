@@ -106,7 +106,8 @@ try:
            cartes.get(P['pharmacien'].id))
         cles_annuaire = {'id', 'nom_commerce', 'description', 'logo', 'photo_couverture', 'departement', 'region',
                          'latitude', 'longitude', 'adresse', 'quartier', 'localite_nom', 'quartier_nom', 'secteur',
-                         'gabarit', 'note_moyenne', 'nb_avis'}  # + avis clients (collecte)
+                         'gabarit', 'note_moyenne', 'nb_avis',  # + avis clients (collecte)
+                         'whatsapp_externe'}  # + bouton WhatsApp externe
         ok('annuaire : seuls gabarit et avis ajoutes', set(cartes[P['pharmacien'].id]) == cles_annuaire,
            set(cartes[P['pharmacien'].id]) ^ cles_annuaire)
         r = req('get', f'/api/v1/auth/partenaires/{P["boutique_mode"].id}/')

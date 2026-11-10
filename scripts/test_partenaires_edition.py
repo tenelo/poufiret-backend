@@ -107,7 +107,8 @@ try:
         f = r.json()
         attendus = {'id', 'prenom', 'nom', 'nom_commerce', 'description', 'type_partenaire', 'type_partenaire_libelle',
                     'categories', 'departement', 'departement_nom', 'localite_id', 'localite_nom', 'quartier_id',
-                    'quartier_nom', 'secteur', 'adresse', 'telephone_pro', 'whatsapp', 'email_pro', 'logo', 'photo_couverture'}
+                    'quartier_nom', 'secteur', 'adresse', 'telephone_pro', 'whatsapp', 'email_pro', 'logo', 'photo_couverture',
+                    'whatsapp_externe_actif', 'whatsapp_externe'}  # + bouton WhatsApp externe
         ok('champs attendus', set(f) == attendus, set(f) ^ attendus)
         ok('categories : [{id, nom}]', f['categories'] == [{'id': cat_bout.id, 'nom': cat_bout.nom}], f['categories'])
         ok('departement_nom et logo null', f['departement_nom'] == 'Ferké' and f['logo'] is None)
