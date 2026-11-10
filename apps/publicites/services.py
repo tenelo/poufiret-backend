@@ -103,6 +103,11 @@ def minute_cible_interstitiel(utilisateur, params=None):
     return max(1, int(minutes * ratio))
 
 
+def _q_partenaire_public(prefixe):
+    from apps.users.visibilite import q_partenaire_public
+    return q_partenaire_public(prefixe)
+
+
 def _pubs_diffusables():
     """Pubs actives : dans la periode, ou hors periode mais cible non atteinte.
 
@@ -116,6 +121,7 @@ def _pubs_diffusables():
     candidates = (
         Publicite.objects
         .filter(statut=Publicite.Statut.ACTIVE, debut_diffusion__lte=maintenant)
+        .filter(_q_partenaire_public('partenaire__'))  # partenaire inactif / suspendu / supprimé : pas diffusé
         .exclude(masquee_par_partenaire=True)
         .select_related('formule', 'partenaire', 'partenaire__departement__region')
     )

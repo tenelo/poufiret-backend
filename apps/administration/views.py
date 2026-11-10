@@ -971,7 +971,9 @@ def _partenaires_liste_qs(request):
             qs = qs.filter(departement_id=int(departement))
         except (ValueError, TypeError):
             qs = qs.filter(departement__nom__icontains=departement)
-    return qs
+    # ?visible=1|0 ; supprimés exclus par défaut, ?supprimes=1 → corbeille.
+    from apps.users.visibilite import filtrer_liste_admin
+    return filtrer_liste_admin(qs, request.query_params)
 
 
 class PartenairesListeAdminView(APIView):

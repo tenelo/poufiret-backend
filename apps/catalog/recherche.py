@@ -74,8 +74,9 @@ def rechercher(request, terme, localites=None):
         'affiche_catalogue': c.affiche_catalogue,
     } for c in categories]
 
+    from apps.users.visibilite import q_partenaire_public
     partenaires = (ProfilPartenaire.objects
-                   .filter(est_visible=True)
+                   .filter(q_partenaire_public())
                    .filter(visibilite)
                    .filter(Q(nom_commerce__unaccent__icontains=terme)
                            | Q(description__unaccent__icontains=terme))
@@ -94,8 +95,8 @@ def rechercher(request, terme, localites=None):
     # sont des prestations, pas des produits achetables.
     visibilite_art = filtre_visibilite(dep_user, localites)
     articles = (Article.objects
-                .filter(est_actif=True, partenaire__est_visible=True,
-                        categorie__affiche_catalogue=True)
+                .filter(est_actif=True, categorie__affiche_catalogue=True)
+                .filter(q_partenaire_public('partenaire__'))
                 .filter(_prefixer(visibilite_art, 'partenaire__'))
                 .filter(Q(nom__unaccent__icontains=terme)
                         | Q(description__unaccent__icontains=terme))

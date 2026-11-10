@@ -56,6 +56,7 @@ class PartenaireListeAdminSerializer(serializers.ModelSerializer):
     departement_nom = serializers.CharField(
         source='departement.nom', read_only=True, default='')
     telephone_compte = serializers.CharField(source='user.telephone', read_only=True)
+    est_supprime = serializers.BooleanField(source='user.est_supprime', read_only=True)
     plan_libelle = serializers.CharField(source='plan.libelle', read_only=True, default='')
     localite_id = serializers.IntegerField(source='localite.id', read_only=True, default=None)
     localite_nom = serializers.CharField(source='localite.nom', read_only=True, default=None)
@@ -80,7 +81,7 @@ class PartenaireListeAdminSerializer(serializers.ModelSerializer):
             'ville', 'quartier', 'localite_id', 'localite_nom', 'quartier_id', 'quartier_nom',
             'departement_nom',
             'telephone_compte', 'telephone_pro', 'whatsapp',
-            'statut', 'statut_libelle', 'est_visible', 'badge_certifie', 'est_faveur',
+            'statut', 'statut_libelle', 'est_visible', 'est_supprime', 'badge_certifie', 'est_faveur',
             'plan_libelle', 'abonnement_fin', 'nb_vues', 'created_at',
         ]
         read_only_fields = fields

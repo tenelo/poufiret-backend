@@ -12,6 +12,7 @@ from apps.catalog.models import Article, SectionMenu
 from apps.geo.models import Departement
 from apps.geo.portee import filtre_visibilite
 from apps.users.models import ProfilPartenaire
+from apps.users.visibilite import q_partenaire_public
 
 from . import gabarits, services
 from .serializers import (
@@ -33,8 +34,7 @@ def _departement_demande(request):
 
 def _partenaires_restaurants(request):
     qs = (ProfilPartenaire.objects
-          .filter(type_partenaire__in=services.TYPES_RESTAURATION,
-                  statut=ProfilPartenaire.Statut.ACTIF, est_visible=True)
+          .filter(q_partenaire_public(), type_partenaire__in=services.TYPES_RESTAURATION)
           .select_related('departement__region', 'localite', 'quartier_geo')
           .filter(filtre_visibilite(_departement_demande(request))))
     partenaires = list(qs)
@@ -69,7 +69,7 @@ class RestaurantDetailPublicView(APIView):
 
     def get(self, request, pk=None):
         partenaire = (ProfilPartenaire.objects
-                      .filter(pk=pk, type_partenaire__in=services.TYPES_MOTEUR)
+                      .filter(q_partenaire_public(), pk=pk, type_partenaire__in=services.TYPES_MOTEUR)
                       .select_related('departement', 'localite', 'quartier_geo').first())
         if partenaire is None:
             return Response({'erreur': True, 'message': 'Restaurant introuvable.'}, status=404)
@@ -97,7 +97,7 @@ def _produits_publics():
     """Produits publics des partenaires du moteur : actifs, hors « réservés
     aux menus », sans section ou dans une section active ; relations
     préchargées (requêtes constantes)."""
-    return (Article.objects.filter(_FILTRE_PRODUIT_PUBLIC,
+    return (Article.objects.filter(_FILTRE_PRODUIT_PUBLIC, q_partenaire_public('partenaire__'),
                                    partenaire__type_partenaire__in=services.TYPES_MOTEUR)
             .filter(Q(section_menu__isnull=True) | Q(section_menu__est_active=True))
             .select_related('partenaire', 'section_menu')
@@ -113,7 +113,8 @@ class ProduitsPublicView(APIView):
 
     def get(self, request, pk=None):
         partenaire = get_object_or_404(
-            ProfilPartenaire, pk=pk, type_partenaire__in=services.TYPES_MOTEUR)
+            ProfilPartenaire.objects.filter(q_partenaire_public()), pk=pk,
+            type_partenaire__in=services.TYPES_MOTEUR)
         qs = _produits_publics().filter(partenaire=partenaire)
         p = request.query_params
         if p.get('section'):

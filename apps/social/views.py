@@ -91,7 +91,9 @@ class CommentaireArticleViewSet(generics.ListCreateAPIView):
     permission_classes = [EstAuteurOuModerateurOuLectureSeule]
 
     def get_queryset(self):
-        qs = CommentaireArticle.objects.filter(est_visible=True, parent__isnull=True).select_related('user')
+        from apps.users.visibilite import q_partenaire_public
+        qs = (CommentaireArticle.objects.filter(est_visible=True, parent__isnull=True)
+              .filter(q_partenaire_public('article__partenaire__')).select_related('user'))
         art = self.request.query_params.get('article')
         return qs.filter(article_id=art) if art else qs
 
@@ -113,7 +115,9 @@ class CommentairePartenaireViewSet(generics.ListCreateAPIView):
     permission_classes = [EstAuteurOuModerateurOuLectureSeule]
 
     def get_queryset(self):
-        qs = CommentairePartenaire.objects.filter(est_visible=True, parent__isnull=True).select_related('user')
+        from apps.users.visibilite import q_partenaire_public
+        qs = (CommentairePartenaire.objects.filter(est_visible=True, parent__isnull=True)
+              .filter(q_partenaire_public('partenaire__')).select_related('user'))
         part = self.request.query_params.get('partenaire')
         return qs.filter(partenaire_id=part) if part else qs
 

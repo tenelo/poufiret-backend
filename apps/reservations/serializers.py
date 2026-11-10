@@ -2,6 +2,7 @@
 from rest_framework import serializers
 
 from apps.catalog.models import Article
+from apps.users.visibilite import q_partenaire_public
 
 from .models import DemandeReservation, HistoriqueDemande, NoteAdminDemande
 from .services import (
@@ -114,8 +115,10 @@ class DemandeLoueurSerializer(DemandeSerializer):
 
 class CreerDemandeSerializer(serializers.Serializer):
     """Entrée de POST /reservations/ (client)."""
+    # Annonce active d'un partenaire public (actif, visible, compte utilisable).
     objet_id = serializers.PrimaryKeyRelatedField(
-        source='objet', queryset=Article.objects.filter(est_actif=True))
+        source='objet', queryset=Article.objects.filter(est_actif=True).filter(
+            q_partenaire_public('partenaire__')))
     nature = serializers.ChoiceField(choices=DemandeReservation.Nature.choices)
     date_souhaitee = serializers.DateTimeField(required=False, allow_null=True)
     date_debut = serializers.DateField(required=False, allow_null=True)

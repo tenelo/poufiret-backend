@@ -121,8 +121,12 @@ class PubliciteDetailView(generics.RetrieveAPIView):
     """
     serializer_class = PubliciteDetailSerializer
     permission_classes = [permissions.AllowAny]
-    queryset = Publicite.objects.filter(
-        statut=Publicite.Statut.ACTIVE).exclude(masquee_par_partenaire=True)
+
+    def get_queryset(self):
+        from apps.users.visibilite import q_partenaire_public
+        return (Publicite.objects.filter(statut=Publicite.Statut.ACTIVE)
+                .filter(q_partenaire_public('partenaire__'))
+                .exclude(masquee_par_partenaire=True))
 
 
 class EnregistrerImpressionView(APIView):

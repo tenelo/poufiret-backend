@@ -134,7 +134,9 @@ class AvisPartenaireView(generics.ListAPIView):
     serializer_class = AvisPublicSerializer
 
     def get_queryset(self):
-        self.partenaire = get_object_or_404(ProfilPartenaire, pk=self.kwargs['pk'])
+        from apps.users.visibilite import q_partenaire_public
+        self.partenaire = get_object_or_404(ProfilPartenaire.objects.filter(q_partenaire_public()),
+                                            pk=self.kwargs['pk'])
         return (Avis.objects.filter(partenaire=self.partenaire, est_visible=True)
                 .select_related('auteur').order_by('-cree_le'))
 

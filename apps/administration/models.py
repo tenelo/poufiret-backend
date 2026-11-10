@@ -68,6 +68,8 @@ class JournalModeration(ModeleBase):
         PARAM_RECHERCHE_IGNORE = 'param_recherche_ignore', 'Paramètres : terme sans résultat ignoré'
         AVIS_MASQUE = 'avis_masque', 'Avis client masqué'
         AVIS_AFFICHE = 'avis_affiche', 'Avis client réaffiché'
+        PARTENAIRE_MASQUE = 'partenaire_masque', 'Partenaire masqué (inactif)'
+        PARTENAIRE_AFFICHE = 'partenaire_affiche', 'Partenaire réaffiché (actif)'
 
     # Qui a agi (le super-admin). SET_NULL pour garder la trace même si
     # l'acteur est supprimé plus tard.

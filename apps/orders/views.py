@@ -112,15 +112,19 @@ class AjouterLigneView(APIView):
         ligne_menu = v = None
         ligne_menu_id = request.data.get('ligne_menu')
         if ligne_menu_id:
+            from apps.users.visibilite import q_partenaire_public
             ligne_menu = get_object_or_404(
-                LigneMenu.objects.select_related('menu__restaurant__partenaire', 'plat'),
+                LigneMenu.objects.select_related('menu__restaurant__partenaire', 'plat')
+                .filter(q_partenaire_public('menu__restaurant__partenaire__')),
                 pk=ligne_menu_id)
             article = ligne_menu.plat
             prix = ligne_menu.prix_effectif
             variante_id = None
         else:
-            article = get_object_or_404(
-                Article.objects.select_related('partenaire'), pk=request.data.get('article'), est_actif=True)
+            from apps.users.visibilite import q_partenaire_public
+            article = get_object_or_404(  # partenaire inactif / suspendu / supprimé : 404
+                Article.objects.select_related('partenaire').filter(q_partenaire_public('partenaire__')),
+                pk=request.data.get('article'), est_actif=True)
             if gabarits.sur_ordonnance(article):
                 return Response({'erreur': True, 'message': gabarits.MESSAGE_ORDONNANCE}, status=400)
             prix = article.prix_promotion if (article.est_en_promotion and article.prix_promotion) else article.prix

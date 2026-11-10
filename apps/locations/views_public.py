@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from apps.catalog.models import Article, ArticleImage, Hebergement, Logement, Panorama, Vehicule
 from apps.catalog.serializers import PanoramaSerializer
 from apps.users.models import ProfilPartenaire
+from apps.users.visibilite import q_partenaire_public
 from apps.users.whatsapp import whatsapp_externe
 
 from . import services, vente
@@ -55,6 +56,7 @@ def _carte(logement, request):
 def _logements_qs_partenaire(partenaire):
     # Annonces vendues : retirées des listes publiques (visibles loueur/admin).
     return (Logement.objects.filter(
+                q_partenaire_public('article__partenaire__'),
                 article__partenaire=partenaire, article__type=Article.Type.LOGEMENT, article__est_actif=True,
                 vendu=False)
             .select_related('localite', 'quartier_geo')
@@ -69,8 +71,7 @@ class LogementsParPartenaireView(APIView):
 
     def get(self, request, partenaire_id):
         partenaire = (ProfilPartenaire.objects
-                      .filter(pk=partenaire_id, type_partenaire__in=services.TYPES_LOCATION,
-                              statut=ProfilPartenaire.Statut.ACTIF, est_visible=True)
+                      .filter(q_partenaire_public(), pk=partenaire_id, type_partenaire__in=services.TYPES_LOCATION)
                       .select_related('departement').first())
         if partenaire is None:
             return Response({'erreur': True, 'message': 'Loueur introuvable.'}, status=404)
@@ -119,7 +120,8 @@ class LogementDetailPublicView(APIView):
 
     def get(self, request, pk):
         logement = (Logement.objects
-                    .filter(article_id=pk, article__type=Article.Type.LOGEMENT, article__est_actif=True)
+                    .filter(q_partenaire_public('article__partenaire__'),
+                            article_id=pk, article__type=Article.Type.LOGEMENT, article__est_actif=True)
                     .select_related('article__partenaire', 'localite', 'quartier_geo')
                     .prefetch_related(
                         Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True).order_by('ordre')),
@@ -184,14 +186,14 @@ class LogementDetailPublicView(APIView):
 
 def _loueur_public(partenaire_id, types):
     return (ProfilPartenaire.objects
-            .filter(pk=partenaire_id, type_partenaire__in=types,
-                    statut=ProfilPartenaire.Statut.ACTIF, est_visible=True)
+            .filter(q_partenaire_public(), pk=partenaire_id, type_partenaire__in=types)
             .first())
 
 
 def _vehicules_qs():
     # Annonces vendues : retirées des listes publiques (visibles loueur/admin).
-    return (Vehicule.objects.filter(article__type=Article.Type.VEHICULE, article__est_actif=True, vendu=False)
+    return (Vehicule.objects.filter(q_partenaire_public('article__partenaire__'),
+                                    article__type=Article.Type.VEHICULE, article__est_actif=True, vendu=False)
             .select_related('article', 'localite', 'quartier_geo')
             .prefetch_related(Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True))))
 
@@ -282,7 +284,8 @@ class VehiculeDetailPublicView(APIView):
 
     def get(self, request, pk):
         v = (Vehicule.objects
-             .filter(article_id=pk, article__type=Article.Type.VEHICULE, article__est_actif=True)
+             .filter(q_partenaire_public('article__partenaire__'),
+                     article_id=pk, article__type=Article.Type.VEHICULE, article__est_actif=True)
              .select_related('article__partenaire', 'localite', 'quartier_geo')
              .prefetch_related(
                  Prefetch('article__images', queryset=ArticleImage.objects.filter(est_active=True).order_by('ordre')),
@@ -357,7 +360,8 @@ class VehiculeDetailPublicView(APIView):
 
 def _hebergements_qs():
     return (Hebergement.objects
-            .filter(article__type=Article.Type.HEBERGEMENT, article__est_actif=True)
+            .filter(q_partenaire_public('article__partenaire__'),
+                    article__type=Article.Type.HEBERGEMENT, article__est_actif=True)
             .select_related('article'))
 
 
@@ -406,8 +410,7 @@ class EtablissementPublicView(APIView):
 
     def get(self, request, partenaire_id):
         partenaire = (ProfilPartenaire.objects
-                      .filter(pk=partenaire_id, type_partenaire=ProfilPartenaire.TypePartenaire.HOTELIER,
-                              statut=ProfilPartenaire.Statut.ACTIF, est_visible=True)
+                      .filter(q_partenaire_public(), pk=partenaire_id, type_partenaire=ProfilPartenaire.TypePartenaire.HOTELIER)
                       .select_related('profil_etablissement', 'localite', 'quartier_geo').first())
         if partenaire is None:
             return Response({'erreur': True, 'message': 'Établissement introuvable.'}, status=404)
@@ -621,7 +624,8 @@ class VehiculeDisponibilitesView(_DisponibilitesBase):
     libelle = 'Véhicule'
 
     def fiche(self, pk):
-        return Vehicule.objects.filter(article_id=pk, article__type=Article.Type.VEHICULE,
+        return Vehicule.objects.filter(q_partenaire_public('article__partenaire__'),
+                                       article_id=pk, article__type=Article.Type.VEHICULE,
                                        article__est_actif=True).first()
 
 
@@ -631,3 +635,63 @@ class HebergementDisponibilitesView(_DisponibilitesBase):
 
     def fiche(self, pk):
         return _hebergement_public(pk)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# LISTE PUBLIQUE DES ÉTABLISSEMENTS (hôtels, résidences meublées…)
+# ═══════════════════════════════════════════════════════════════════════
+
+class EtablissementsPublicView(APIView):
+    """GET /api/v1/locations/etablissements/?type_etablissement=hotel|residence_meublee|…
+    &localites= — établissements publics (hôteliers actifs, visibles), dans la
+    portée de l'utilisateur (même règle que l'annuaire). Chaque ligne expose
+    type_etablissement et son libellé (hôtelier sans fiche → hotel), étoiles,
+    prix par nuit minimum et nombre d'hébergements actifs (une requête agrégée).
+    type_etablissement inconnu → 400."""
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from django.db.models import Count, Min
+
+        from apps.geo.portee import filtre_visibilite
+
+        from . import etablissements
+        p = request.query_params
+        qs = (ProfilPartenaire.objects
+              .filter(q_partenaire_public(), type_partenaire=ProfilPartenaire.TypePartenaire.HOTELIER)
+              .select_related('profil_etablissement', 'localite', 'quartier_geo')
+              .order_by('-est_faveur', 'nom_commerce'))
+        type_etab = p.get('type_etablissement')
+        if type_etab:
+            if type_etab not in etablissements.LIBELLES:
+                return Response({'erreur': True, 'message': f"Type d'établissement inconnu : {type_etab}.",
+                                 'details': {'type_etablissement': list(etablissements.LIBELLES)}}, status=400)
+            qs = qs.filter(etablissements.q_type_etablissement(type_etab))
+        dep_user = getattr(request.user, 'departement', None) if request.user.is_authenticated else None
+        localites = [x for x in p.get('localites', '').split(',') if x] or None
+        partenaires = list(qs.filter(filtre_visibilite(dep_user, localites)))
+
+        stats = {l['article__partenaire_id']: l for l in (
+            Hebergement.objects.filter(article__partenaire_id__in=[x.id for x in partenaires],
+                                       article__est_actif=True)
+            .values('article__partenaire_id')
+            .annotate(nb=Count('article_id'), prix_min=Min('article__prix')))}
+        resultats = []
+        for x in partenaires:
+            fiche = getattr(x, 'profil_etablissement', None) if hasattr(x, 'profil_etablissement') else None
+            st = stats.get(x.id, {})
+            resultats.append({
+                'id': x.id,
+                'nom': x.nom_commerce,
+                'logo': _url(request, x.logo),
+                'couverture': _url(request, x.photo_couverture),
+                **etablissements.champs_type_etablissement(x),
+                'etoiles': fiche.etoiles if fiche else None,
+                'localisation_texte': _localisation_texte(x),
+                'prix_nuit_min': st.get('prix_min'),
+                'nb_hebergements': st.get('nb', 0),
+                'note_moyenne': x.note_moyenne,
+                'nb_avis': x.nb_avis,
+                'whatsapp_externe': whatsapp_externe(x),
+            })
+        return Response({'resultats': resultats})

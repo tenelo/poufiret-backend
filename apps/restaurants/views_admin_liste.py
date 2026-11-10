@@ -28,9 +28,10 @@ class RestaurantsAdminListeView(APIView):
         gabarit = request.query_params.get('gabarit')
         if gabarit:
             types = [t for t in types if gabarits.gabarit_de_type(t) == gabarit]
+        from apps.users.visibilite import etat_admin, filtrer_liste_admin
         partenaires = list(
-            ProfilPartenaire.objects.filter(type_partenaire__in=types)
-            .select_related('profil_restaurant', 'departement').order_by('nom_commerce'))
+            filtrer_liste_admin(ProfilPartenaire.objects.filter(type_partenaire__in=types), request.query_params)
+            .select_related('profil_restaurant', 'departement', 'user').order_by('nom_commerce'))
         aujourdhui = timezone.localdate()
         commandes_jour = dict(
             Commande.objects.filter(
@@ -49,6 +50,7 @@ class RestaurantsAdminListeView(APIView):
             resultats.append({
                 'id': p.id,
                 'nom': p.nom_commerce,
+                **etat_admin(p),
                 'type_partenaire': p.type_partenaire,
                 'gabarit': gabarits.gabarit_de(p),
                 'departement_nom': getattr(p.departement, 'nom', ''),

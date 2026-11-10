@@ -10,22 +10,9 @@ from apps.core.permissions import ADroitDe
 from apps.users.models import ProfilPartenaire
 
 from . import services
-from .models import ProfilEtablissement
 
-_TYPE_ETABLISSEMENT_DEFAUT = ProfilEtablissement._meta.get_field('type_etablissement').default
-_LIBELLES_TYPE_ETABLISSEMENT = dict(ProfilEtablissement.TypeEtablissement.choices)
-
-
-def _type_etablissement(partenaire):
-    """Type d'établissement d'un hôtelier (fiche préchargée), None sinon. Hôtelier sans
-    fiche (créée à la 1re ouverture de la gestion) : la valeur par défaut que cette fiche
-    prendra, pour que liste et gestion concordent."""
-    if partenaire.type_partenaire != ProfilPartenaire.TypePartenaire.HOTELIER:
-        return None
-    try:
-        return partenaire.profil_etablissement.type_etablissement
-    except ProfilEtablissement.DoesNotExist:
-        return _TYPE_ETABLISSEMENT_DEFAUT
+from .etablissements import LIBELLES as _LIBELLES_TYPE_ETABLISSEMENT
+from .etablissements import type_etablissement as _type_etablissement
 
 
 class LoueursAdminListeView(APIView):
@@ -41,7 +28,9 @@ class LoueursAdminListeView(APIView):
 
     def get(self, request):
         p_ = request.query_params
-        qs = ProfilPartenaire.objects.filter(type_partenaire__in=services.TYPES_LOCATION)
+        from apps.users.visibilite import etat_admin, filtrer_liste_admin
+        qs = filtrer_liste_admin(ProfilPartenaire.objects.filter(type_partenaire__in=services.TYPES_LOCATION),
+                                 request.query_params)
         type_partenaire = p_.get('type_partenaire')
         if type_partenaire:
             if type_partenaire not in services.TYPES_LOCATION:
@@ -53,7 +42,7 @@ class LoueursAdminListeView(APIView):
             return Response({'erreur': True, 'message':
                              f"Type d'établissement inconnu : {type_etablissement}."}, status=400)
         # profil_etablissement (1-1 inverse) dans la même requête : pas de N+1.
-        partenaires = list(qs.select_related('departement', 'profil_etablissement').order_by('nom_commerce'))
+        partenaires = list(qs.select_related('departement', 'profil_etablissement', 'user').order_by('nom_commerce'))
         if type_etablissement:
             partenaires = [p for p in partenaires if _type_etablissement(p) == type_etablissement]
         ids = [p.id for p in partenaires]
@@ -101,6 +90,7 @@ class LoueursAdminListeView(APIView):
                 'nom': p.nom_commerce,
                 'type_partenaire': p.type_partenaire,
                 'type_partenaire_libelle': p.get_type_partenaire_display(),
+                **etat_admin(p),
                 'type_etablissement': type_etab,
                 'type_etablissement_libelle': _LIBELLES_TYPE_ETABLISSEMENT.get(type_etab) if type_etab else None,
                 'departement_nom': getattr(p.departement, 'nom', ''),

@@ -134,12 +134,14 @@ def annoter_nb_partenaires(queryset):
     hierarchie, sans requete N+1 par categorie.
     """
     from django.db.models import Count, Q
+
+    from apps.users.visibilite import q_partenaire_public
+    # Partenaires publics seulement (actifs, visibles, compte utilisable).
     return queryset.annotate(
         nb_via_liaison=Count('liens_partenaires__partenaire', distinct=True,
-            filter=Q(liens_partenaires__partenaire__statut='actif')),
+            filter=q_partenaire_public('liens_partenaires__partenaire__')),
         nb_via_articles=Count('articles__partenaire', distinct=True,
-            filter=Q(articles__est_actif=True,
-                     articles__partenaire__statut='actif')),
+            filter=Q(articles__est_actif=True) & q_partenaire_public('articles__partenaire__')),
     )
 
 

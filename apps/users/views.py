@@ -174,10 +174,10 @@ class VitrinePartenaireView(generics.RetrieveAPIView):
     lookup_field = 'pk'
 
     def get_queryset(self):
-        return ProfilPartenaire.objects.filter(
-            statut=ProfilPartenaire.Statut.ACTIF,
-            est_visible=True,
-        ).select_related('departement__region', 'localite', 'quartier_geo')
+        # Règle unique (apps.users.visibilite) : actif, visible, compte utilisable → sinon 404.
+        from .visibilite import q_partenaire_public
+        return ProfilPartenaire.objects.filter(q_partenaire_public()).select_related(
+            'departement__region', 'localite', 'quartier_geo')
 
 
 class MonProfilPartenaireView(generics.RetrieveUpdateAPIView):

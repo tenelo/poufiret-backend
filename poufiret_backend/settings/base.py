@@ -184,6 +184,11 @@ REST_FRAMEWORK = {
         'user': config('THROTTLE_USER', default='1000/min'),
     },
     'EXCEPTION_HANDLER': 'apps.core.exceptions.custom_exception_handler',
+    # JSON standard + masquage du marqueur des données de démo (apps.core.demo).
+    'DEFAULT_RENDERER_CLASSES': (
+        'apps.core.renderers.JSONRendererSansDemo',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ),
 }
 
 # ------------------------------------------------------------------------------

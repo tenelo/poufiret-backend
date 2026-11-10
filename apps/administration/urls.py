@@ -10,6 +10,7 @@ from .views_categories import (
     TypesPartenaireCategoriesView,
 )
 from .views_edition import PartenaireEditionView
+from .views_visibilite import PartenaireRestaurerView, PartenaireSupprimerView, PartenaireVisibiliteView
 from .views_interventions import (
     InterventionAdminArtisansCompatiblesView, InterventionAdminAssignerView,
     InterventionAdminDetailView, InterventionAdminNotesView, InterventionAdminTransitionView,
@@ -65,6 +66,9 @@ urlpatterns = [
     path('partenaires/<int:pk>/changer-telephone/', ChangerTelephonePartenaireView.as_view(),
          name='partenaire-changer-telephone'),
     path('partenaires/<int:pk>/edition/', PartenaireEditionView.as_view(), name='partenaire-edition'),
+    path('partenaires/<int:pk>/visibilite/', PartenaireVisibiliteView.as_view(), name='partenaire-visibilite'),
+    path('partenaires/<int:pk>/supprimer/', PartenaireSupprimerView.as_view(), name='partenaire-supprimer'),
+    path('partenaires/<int:pk>/restaurer/', PartenaireRestaurerView.as_view(), name='partenaire-restaurer'),
     path('partenaires/<int:pk>/position/', PositionPartenaireView.as_view(), name='partenaire-position'),
     path('partenaires/<int:pk>/historique-telephone/', HistoriqueTelephonePartenaireView.as_view(),
          name='partenaire-historique-telephone'),

@@ -60,10 +60,16 @@ class ArticleViewSet(viewsets.ModelViewSet):
         qs = (Article.objects.select_related('partenaire', 'categorie')
               .prefetch_related('images', 'variantes', 'supplements', 'panoramas'))
         u = self.request.user
+        # Public : articles actifs de partenaires publics (actifs, visibles,
+        # compte utilisable) ; le partenaire voit en plus tous les siens.
+        from django.db.models import Q as _Q
+
+        from apps.users.visibilite import q_partenaire_public
+        publics = _Q(est_actif=True) & q_partenaire_public('partenaire__')
         if u.is_authenticated and u.role == u.Role.PARTENAIRE:
-            qs = (qs.filter(est_actif=True) | qs.filter(partenaire__user=u)).distinct()
+            qs = qs.filter(publics | _Q(partenaire__user=u)).distinct()
         else:
-            qs = qs.filter(est_actif=True)
+            qs = qs.filter(publics)
         p = self.request.query_params
         if p.get('categorie'):
             qs = qs.filter(categorie_id=p['categorie'])
@@ -143,13 +149,27 @@ class ArticleViewSet(viewsets.ModelViewSet):
         serializer.save(partenaire=profil, slug=slug)
 
 
+def _visibles(qs, user, prefixe):
+    """Sous-ressources d'articles : celles des partenaires publics, plus les
+    siennes pour le partenaire propriétaire ; tout pour le personnel admin."""
+    from django.db.models import Q as _Q
+
+    from apps.users.visibilite import q_partenaire_public
+    if user.is_authenticated and user.is_staff:
+        return qs
+    filtre = q_partenaire_public(f'{prefixe}partenaire__')
+    if user.is_authenticated:
+        filtre |= _Q(**{f'{prefixe}partenaire__user': user})
+    return qs.filter(filtre).distinct()
+
+
 class _SousRessourceViewSet(viewsets.ModelViewSet):
     """Base pour images/variantes/suppléments/panoramas : filtre par ?article=<id>,
     écriture réservée au partenaire propriétaire de l'article parent."""
     permission_classes = [EstPartenaireProprietaireOuLectureSeule]
 
     def get_queryset(self):
-        qs = self.model.objects.all()
+        qs = _visibles(self.model.objects.all(), self.request.user, 'article__')
         art = self.request.query_params.get('article')
         return qs.filter(article_id=art) if art else qs
 
@@ -192,10 +212,12 @@ class VideosPartenaireView(generics.ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
+        from apps.users.visibilite import q_partenaire_public
         return (ArticleVideo.objects
                 .filter(article__partenaire_id=self.kwargs['partenaire_id'],
                         est_active=True,
                         article__est_actif=True)
+                .filter(q_partenaire_public('article__partenaire__'))
                 .select_related('article')
                 .order_by('article', 'ordre'))
 
@@ -250,7 +272,7 @@ class OptionViewSet(viewsets.ModelViewSet):
     permission_classes = [EstPartenaireProprietaireOuLectureSeule]
 
     def get_queryset(self):
-        qs = OptionGroupe.objects.all()
+        qs = _visibles(OptionGroupe.objects.all(), self.request.user, 'groupe__article__')
         groupe = self.request.query_params.get('groupe')
         return qs.filter(groupe_id=groupe) if groupe else qs
 
@@ -347,8 +369,9 @@ class CartePartenairesView(_APIView):
         localites = request.query_params.get('localites', '')
         localites = [x for x in localites.split(',') if x] or None
 
+        from apps.users.visibilite import q_partenaire_public
         qs = (_ProfilPartenaire.objects
-              .filter(est_visible=True, localisation__isnull=False)
+              .filter(q_partenaire_public(), localisation__isnull=False)
               .filter(filtre_visibilite(dep_user, localites))
               .select_related('departement__region')
               .order_by('-est_faveur', 'nom_commerce'))
@@ -414,11 +437,20 @@ class PartenairesParCategorieView(_APIView):
         # Localites explicitement cochees pour elargir la vue (?localites=1,2,all).
         localites = request.query_params.get('localites', '')
         localites = [x for x in localites.split(',') if x] or None
+        from apps.users.visibilite import q_partenaire_public
+        from apps.locations import etablissements
         partenaires = (_ProfilPartenaire.objects
-                       .filter(id__in=list(ids), est_visible=True)
+                       .filter(q_partenaire_public(), id__in=list(ids))
                        .filter(filtre_visibilite(dep_user, localites))
-                       .select_related('departement__region', 'localite', 'quartier_geo')
+                       .select_related('departement__region', 'localite', 'quartier_geo', 'profil_etablissement')
                        .order_by('-est_faveur', 'nom_commerce'))
+        # ?type_etablissement=hotel|residence_meublee|… (hôteliers ; inconnu → 400).
+        type_etab = request.query_params.get('type_etablissement')
+        if type_etab:
+            if type_etab not in etablissements.LIBELLES:
+                return _Response({'erreur': True, 'message': f"Type d'établissement inconnu : {type_etab}."},
+                                 status=400)
+            partenaires = partenaires.filter(etablissements.q_type_etablissement(type_etab))
         def _url(champ):
             if not champ:
                 return ''
@@ -464,6 +496,7 @@ class PartenairesParCategorieView(_APIView):
                 'note_moyenne': p.note_moyenne,
                 'nb_avis': p.nb_avis,
                 'whatsapp_externe': whatsapp_externe(p),
+                **etablissements.champs_type_etablissement(p),
             })
         return _Response(donnees)
 
