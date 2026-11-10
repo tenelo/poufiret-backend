@@ -99,7 +99,8 @@ try:
             p = ProfilPartenaire.objects.create(
                 user=utilisateur('partenaire'), plan=plan, nom_commerce=f'{nom} {mot}',
                 type_partenaire=type_partenaire, statut='actif', est_visible=True, **kw)
-            PartenaireCategorie.objects.create(partenaire=p, categorie=cat, est_principale=True)
+            # Le signal (catalog.signals) peut déjà avoir créé le lien selon le type.
+            PartenaireCategorie.objects.get_or_create(partenaire=p, categorie=cat, defaults={'est_principale': True})
             return p
 
         def article(p, type_article, prix=1000, **kw):
