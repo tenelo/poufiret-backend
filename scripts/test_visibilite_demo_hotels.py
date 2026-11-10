@@ -118,7 +118,9 @@ try:
         hotel_sans_fiche = partenaire('Hotel sans fiche', 'hotelier')
         ProfilEtablissement.objects.create(partenaire=hotel, type_etablissement='hotel', etoiles=3)
         ProfilEtablissement.objects.create(partenaire=residence, type_etablissement='residence_meublee')
-        tous = [boutique, resto, garage, agence, hotel]
+        # Tous les partenaires du test (même catégorie, même mot) : sinon ceux non masqués
+        # restent légitimement dans le compteur de la catégorie et la recherche.
+        tous = [boutique, resto, garage, agence, hotel, residence, hotel_sans_fiche]
 
         produit = article(boutique, 'produit', description='Savon artisanal.\n[DEMO]')
         ArticleImage.objects.create(article=produit, image='articles/vis.png', est_principale=True)
