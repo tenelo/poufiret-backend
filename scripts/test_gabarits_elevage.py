@@ -63,6 +63,13 @@ try:
         plan = PlanAbonnement.objects.get(libelle='Basique')
         dep = Departement.objects.order_by('id').first()
         T = ProfilPartenaire.TypePartenaire
+        # Indépendant des données réelles : les catégories qui déclarent « eleveur »
+        # (ex. « Élevage & Ferme ») deviendraient la catégorie par défaut des produits
+        # (views_carte._categorie_par_defaut) ; on retire ce type d'elles, dans la
+        # transaction annulée. Ensuite aucune catégorie ne déclare eleveur.
+        for c in categories_correspondantes('eleveur'):
+            c.types_partenaire = [t for t in c.types_partenaire if t != 'eleveur']
+            c.save(update_fields=['types_partenaire'])
         declarees = set(categories_correspondantes('eleveur').values_list('id', flat=True))
 
         def partenaire(type_, nom):
