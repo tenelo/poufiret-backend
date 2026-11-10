@@ -3,7 +3,10 @@
 Utilisé par la recherche publique (qui journalise les termes sans résultat)
 et par le testeur du dictionnaire admin (qui ne journalise jamais).
 """
-from django.db.models import F, Q
+import re
+
+from django.db.models import F, Q, TextField
+from django.db.models.functions import Cast
 
 from apps.geo.portee import filtre_visibilite
 from apps.users.models import ProfilPartenaire
@@ -34,6 +37,22 @@ def normaliser_mots_cles(valeur):
     return mots
 
 
+def motif_debut_de_mot(terme):
+    """Regex PostgreSQL : le terme en DÉBUT DE MOT (\\m), pas au milieu
+    (« oeuf » ne trouve plus « boeuf », « pou » trouve « poulet »).
+    Utilisé avec __unaccent__iregex : minuscules / accents ignorés des deux côtés."""
+    return r'\m' + re.escape(terme)
+
+
+def q_debut_de_mot(terme, *champs):
+    """Q() : le terme commence un mot dans l'un des champs."""
+    motif = motif_debut_de_mot(terme)
+    q = Q()
+    for champ in champs:
+        q |= Q(**{f'{champ}__unaccent__iregex': motif})
+    return q
+
+
 def _url(request, champ):
     if not champ:
         return ''
@@ -62,11 +81,11 @@ def rechercher(request, terme, localites=None):
     dep_user = getattr(request.user, 'departement', None) if request.user.is_authenticated else None
     visibilite = filtre_visibilite(dep_user, localites)
 
+    # Mots-clés (liste JSON) lus comme texte : « ["boeufs", "oeufs frais"] ».
     categories = (Categorie.objects
                   .filter(est_active=True, est_archivee=False)
-                  .filter(Q(nom__unaccent__icontains=terme)
-                          | Q(description__unaccent__icontains=terme)
-                          | Q(mots_cles__icontains=terme))
+                  .annotate(mots_cles_texte=Cast('mots_cles', TextField()))
+                  .filter(q_debut_de_mot(terme, 'nom', 'description', 'mots_cles_texte'))
                   .order_by('ordre', 'nom')[:10])
     donnees_cat = [{
         'id': c.id, 'nom': c.nom, 'slug': c.slug, 'icone': c.icone,
@@ -78,8 +97,7 @@ def rechercher(request, terme, localites=None):
     partenaires = (ProfilPartenaire.objects
                    .filter(q_partenaire_public())
                    .filter(visibilite)
-                   .filter(Q(nom_commerce__unaccent__icontains=terme)
-                           | Q(description__unaccent__icontains=terme))
+                   .filter(q_debut_de_mot(terme, 'nom_commerce', 'description'))
                    .select_related('departement__region')
                    .order_by('-est_faveur', 'nom_commerce')[:15])
     donnees_part = [{
@@ -98,8 +116,7 @@ def rechercher(request, terme, localites=None):
                 .filter(est_actif=True, categorie__affiche_catalogue=True)
                 .filter(q_partenaire_public('partenaire__'))
                 .filter(_prefixer(visibilite_art, 'partenaire__'))
-                .filter(Q(nom__unaccent__icontains=terme)
-                        | Q(description__unaccent__icontains=terme))
+                .filter(q_debut_de_mot(terme, 'nom', 'description'))
                 .select_related('partenaire__departement__region')
                 .order_by('-nb_vues')[:20])
     donnees_art = [{
