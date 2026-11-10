@@ -147,9 +147,14 @@ def regles_reservation_hebergement(hebergement, attrs):
                                f'maximum par unité ({nb_unites} unité(s)).']}
 
     services = _locations_services()
-    restantes = services.unites_disponibles(hebergement, debut, fin)
-    if nb_unites > restantes:
-        return {'nb_unites': [message_unites(restantes, nb_unites)]}
+    from .disponibilite import jours_insuffisants
+    if nb_unites > hebergement.nb_unites:  # demande impossible en soi (pas un conflit de dates)
+        return {'nb_unites': [message_unites(services.unites_disponibles(hebergement, debut, fin), nb_unites)]}
+    complets = jours_insuffisants(hebergement, debut, fin, nb_unites)
+    if complets:
+        restantes = services.unites_disponibles(hebergement, debut, fin)
+        return {'jours_complets': [str(j) for j in complets],
+                'nb_unites': [message_unites(restantes, nb_unites)]}
 
     attrs.update(nb_unites=nb_unites, nb_adultes=nb_adultes, nb_enfants=nb_enfants,
                  montant_estime=services.tarif_sejour(hebergement, attrs['objet'].prix, nuits, nb_unites))
@@ -197,9 +202,12 @@ def regles_reservation_vehicule(vehicule, attrs):
         return {'avec_chauffeur': ["Ce véhicule n'est pas proposé avec chauffeur."]}
     avec_chauffeur = bool(avec_chauffeur)
 
-    occupee = chevauchement_confirme(attrs['objet'].id, debut, fin)
-    if occupee is not None:
-        return {'date_debut': [message_chevauchement(occupee)]}
+    from .disponibilite import MESSAGE_INDISPONIBLE, jours_insuffisants
+    complets = jours_insuffisants(vehicule, debut, fin)
+    if complets:
+        occupee = chevauchement_confirme(attrs['objet'].id, debut, fin)
+        return {'jours_complets': [str(j) for j in complets],
+                'date_debut': [message_chevauchement(occupee) if occupee else MESSAGE_INDISPONIBLE]}
 
     prix_jour = vehicule.prix_jour_avec_chauffeur if avec_chauffeur else attrs['objet'].prix
     attrs['avec_chauffeur'] = avec_chauffeur
@@ -265,30 +273,81 @@ def _notifier_admins_demande(demande, type_notif, titre, message):
                          demande.pk, type_notif)
 
 
+class RefusOccupation(str):
+    """Message de refus d'une confirmation faute d'unités disponibles : les
+    vues le renvoient en 409 (conflit), les autres refus restant en 400."""
+    statut_http = 409
+
+
+def statut_http_refus(message):
+    return getattr(message, 'statut_http', 400)
+
+
+def _refuser_automatiquement(confirmee, request=None):
+    """Refuse (acteur système) les AUTRES demandes en attente du même objet
+    qui n'ont plus assez d'unités après la confirmation de `confirmee` :
+    raison « Dates déjà réservées », historique, notification au client."""
+    from .disponibilite import RAISON_REFUS_AUTOMATIQUE, demandes_a_refuser
+    for autre in demandes_a_refuser(confirmee):
+        autre.statut = DemandeReservation.Statut.REFUSEE
+        autre.raison_refus = RAISON_REFUS_AUTOMATIQUE
+        autre.save(update_fields=['statut', 'raison_refus', 'updated_at'])
+        HistoriqueDemande.objects.create(
+            demande=autre, statut=autre.statut, acteur=None,
+            acteur_role=HistoriqueDemande.ActeurRole.SYSTEME,
+            commentaire=f'{RAISON_REFUS_AUTOMATIQUE} (demande {confirmee.numero} confirmée).')
+        _notifier_transition_demande(autre, DemandeReservation.Statut.REFUSEE,
+                                     HistoriqueDemande.ActeurRole.SYSTEME, request)
+
+
 def appliquer_transition_demande(demande, cible, acteur, acteur_role, commentaire='', request=None):
     """Point CENTRAL de toute transition de demande (client, loueur, admin)
     — ne vérifie PAS les droits d'accès par rôle (l'appelant s'en charge).
-    Retourne (ok: bool, message: str)."""
-    if cible not in TRANSITIONS.get(demande.statut, []):
-        return False, f'Transition {demande.statut} → {cible} non autorisée.'
+    Retourne (ok: bool, message: str) ; un refus faute d'unités est un
+    RefusOccupation (409, voir statut_http_refus).
 
-    # Véhicule (V1) : jamais deux réservations confirmées qui se chevauchent
-    # (deux demandes « nouvelles » sur les mêmes dates peuvent coexister).
-    if cible == 'confirmee' and demande.nature == DemandeReservation.Nature.RESERVATION \
-            and vehicule_de(demande.objet) is not None:
-        occupee = chevauchement_confirme(demande.objet_id, demande.date_debut, demande.date_fin,
-                                         exclure_id=demande.pk)
-        if occupee is not None:
-            return False, message_chevauchement(occupee)
-    # Hébergement (V2) : jamais plus d'unités confirmées que nb_unites, nuit par nuit.
-    hebergement = hebergement_de(demande.objet) \
-        if demande.nature == DemandeReservation.Nature.RESERVATION else None
-    if cible == 'confirmee' and hebergement is not None:
-        restantes = _locations_services().unites_disponibles(
-            hebergement, demande.date_debut, demande.date_fin, exclure_id=demande.pk)
-        if demande.nb_unites > restantes:
-            return False, message_unites(restantes, demande.nb_unites)
+    Confirmation d'une réservation de véhicule / hébergement : dans une
+    transaction, verrou (select_for_update) sur l'objet, puis revérification
+    de l'occupation (apps.reservations.disponibilite) — deux confirmations
+    simultanées sur le même objet sont donc sérialisées. Si elle passe, les
+    autres demandes en attente devenues impossibles sont refusées."""
+    from django.db import transaction
 
+    from apps.catalog.models import Article
+
+    from .disponibilite import fiche_occupable, jours_insuffisants
+
+    occupable = (cible == DemandeReservation.Statut.CONFIRMEE
+                 and demande.nature == DemandeReservation.Nature.RESERVATION
+                 and fiche_occupable(demande.objet) is not None)
+    with transaction.atomic():
+        if occupable:
+            Article.objects.select_for_update().filter(pk=demande.objet_id).first()
+            demande.refresh_from_db(fields=['statut'])  # état réel, après le verrou
+        if cible not in TRANSITIONS.get(demande.statut, []):
+            return False, f'Transition {demande.statut} → {cible} non autorisée.'
+        if occupable:
+            fiche = fiche_occupable(demande.objet)
+            if jours_insuffisants(fiche, demande.date_debut, demande.date_fin,
+                                  demande.nb_unites or 1, exclure_id=demande.pk):
+                if vehicule_de(demande.objet) is not None:
+                    occupee = chevauchement_confirme(demande.objet_id, demande.date_debut, demande.date_fin,
+                                                     exclure_id=demande.pk)
+                    message = message_chevauchement(occupee) if occupee else 'Ces dates ne sont plus disponibles.'
+                else:
+                    restantes = _locations_services().unites_disponibles(
+                        fiche, demande.date_debut, demande.date_fin, exclure_id=demande.pk)
+                    message = message_unites(restantes, demande.nb_unites)
+                return False, RefusOccupation(message)
+        resultat = _appliquer_transition(demande, cible, acteur, acteur_role, commentaire, request)
+        if occupable:
+            _refuser_automatiquement(demande, request)
+        return resultat
+
+
+def _appliquer_transition(demande, cible, acteur, acteur_role, commentaire='', request=None):
+    """Changement de statut, effets sur le logement, historique, notifications
+    (transition déjà validée par appliquer_transition_demande)."""
     ancien_statut = demande.statut
     demande.statut = cible
     maintenant = timezone.now()

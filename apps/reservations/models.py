@@ -100,6 +100,8 @@ class HistoriqueDemande(models.Model):
         CLIENT = 'client', _('Client')
         LOUEUR = 'loueur', _('Loueur')
         ADMIN = 'admin', _('Admin')
+        # Refus automatique (dates déjà réservées par une demande confirmée).
+        SYSTEME = 'systeme', _('Système')
 
     demande = models.ForeignKey(
         DemandeReservation, on_delete=models.CASCADE,

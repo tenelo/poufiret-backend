@@ -22,6 +22,10 @@ class CreerDemandeView(APIView):
     def post(self, request):
         ser = CreerDemandeSerializer(data=request.data)
         if not ser.is_valid():
+            if 'jours_complets' in ser.errors:  # période occupée (véhicule / hébergement)
+                from .disponibilite import MESSAGE_INDISPONIBLE
+                return Response({'erreur': True, 'message': MESSAGE_INDISPONIBLE, 'details': ser.errors},
+                                status=400)
             return Response({'erreur': True, 'details': ser.errors}, status=400)
         v = ser.validated_data
         objet = v['objet']
@@ -83,7 +87,7 @@ class AnnulerDemandeView(APIView):
             demande, DemandeReservation.Statut.ANNULEE, request.user,
             HistoriqueDemande.ActeurRole.CLIENT, commentaire=commentaire, request=request)
         if not ok:
-            return Response({'erreur': True, 'message': message}, status=400)
+            return Response({'erreur': True, 'message': message}, status=services.statut_http_refus(message))
         return Response(DemandeSerializer(demande, context={'request': request}).data)
 
 
@@ -122,6 +126,6 @@ class TransitionLoueurView(APIView):
         ok, message = services.appliquer_transition_demande(
             demande, action, request.user, HistoriqueDemande.ActeurRole.LOUEUR,
             commentaire=commentaire, request=request)
-        if not ok:
-            return Response({'erreur': True, 'message': message}, status=400)
+        if not ok:  # 409 si plus assez d'unités (conflit), 400 sinon
+            return Response({'erreur': True, 'message': message}, status=services.statut_http_refus(message))
         return Response(DemandeSerializer(demande, context={'request': request}).data)

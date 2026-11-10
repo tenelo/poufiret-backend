@@ -150,10 +150,13 @@ try:
         d1, d2 = DemandeReservation.objects.filter(objet=option.article).order_by('id')[:2]
         r = req('post', f'/api/v1/reservations/admin/demandes/{d1.id}/transition/', super_, {'action': 'confirmee'})
         ok('1re confirmation -> 200', r.status_code == 200, r.content)
-        r = req('post', f'/api/v1/reservations/admin/demandes/{d2.id}/transition/', super_, {'action': 'confirmee'})
-        ok('2e confirmation qui chevauche -> 400', r.status_code == 400 and 'déjà réservé' in r.json()['message'], r.content)
+        # Disponibilités : la 1re confirmation refuse automatiquement l'autre demande
+        # en attente sur les mêmes dates ; la confirmer ensuite est impossible.
         d2.refresh_from_db()
-        ok('2e demande reste nouvelle', d2.statut == 'nouvelle', d2.statut)
+        ok('2e demande refusee automatiquement (Dates deja reservees)',
+           d2.statut == 'refusee' and d2.raison_refus == 'Dates déjà réservées', (d2.statut, d2.raison_refus))
+        r = req('post', f'/api/v1/reservations/admin/demandes/{d2.id}/transition/', super_, {'action': 'confirmee'})
+        ok('confirmer la 2e ensuite -> 400', r.status_code == 400, r.content)
 
         print('=== 6. NON-REGRESSION LOGEMENT (regle M1) ===')
         maison = ProfilPartenaire.objects.create(user=utilisateur('t_vrsv_maison', 'partenaire'), plan=plan,

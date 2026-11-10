@@ -33,6 +33,7 @@ from .views_public import (
     LogementDetailPublicView, LogementsParPartenaireView, MetaLocationsView,
     VehiculeDetailPublicView, VehiculesParPartenaireView,
     EtablissementPublicView, HebergementDetailPublicView, HebergementDisponibilitePublicView,
+    HebergementDisponibilitesView, VehiculeDisponibilitesView,
 )
 
 app_name = 'locations'
@@ -49,6 +50,10 @@ urlpatterns = [
     path('partenaires/<int:partenaire_id>/etablissement/', EtablissementPublicView.as_view(),
          name='partenaire-etablissement'),
     path('hebergements/<int:pk>/', HebergementDetailPublicView.as_view(), name='hebergement-detail'),
+    path('vehicules/<int:pk>/disponibilites/', VehiculeDisponibilitesView.as_view(),
+         name='vehicule-disponibilites'),
+    path('hebergements/<int:pk>/disponibilites/', HebergementDisponibilitesView.as_view(),
+         name='hebergement-disponibilites'),
     path('hebergements/<int:pk>/disponibilite/', HebergementDisponibilitePublicView.as_view(),
          name='hebergement-disponibilite'),
 

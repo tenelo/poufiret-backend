@@ -193,8 +193,9 @@ class TransitionAdminView(APIView):
         ok, message = appliquer_transition_demande(
             demande, action, request.user, HistoriqueDemande.ActeurRole.ADMIN,
             commentaire=commentaire, request=request)
-        if not ok:
-            return Response({'erreur': True, 'message': message}, status=400)
+        if not ok:  # 409 si plus assez d'unités (conflit), 400 sinon
+            from .services import statut_http_refus
+            return Response({'erreur': True, 'message': message}, status=statut_http_refus(message))
 
         demande = (DemandeReservation.objects
                    .select_related('client', 'partenaire', 'objet')

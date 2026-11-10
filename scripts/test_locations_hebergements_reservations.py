@@ -137,8 +137,8 @@ try:
         ok('objet demande (client) : champs V2', {'nb_adultes', 'nb_enfants', 'nb_unites'} <= set(r.json()['results'][0]))
 
         print('=== 4. UNITES ET CHEVAUCHEMENTS (2 unites confirmees sur [j0,j3[) ===')
-        ok('2 unites sur [j1,j3[ -> 400 (1 seule restante)',
-           erreur(creer(chambre, date_debut=j(1), date_fin=j(3), nb_unites=2)) == {'nb_unites'})
+        ok('2 unites sur [j1,j3[ -> 400 (1 seule restante) + jours_complets',
+           erreur(creer(chambre, date_debut=j(1), date_fin=j(3), nb_unites=2)) == {'jours_complets', 'nb_unites'})
         r = creer(chambre, date_debut=j(1), date_fin=j(3), nb_unites=1)
         ok('1 unite sur [j1,j3[ -> 201', r.status_code == 201, r.content)
         d_a = r.json()['id']
@@ -151,12 +151,17 @@ try:
         d_c = r.json()['id']
         r = req('post', f'/api/v1/reservations/admin/demandes/{d_a}/transition/', super_, {'action': 'confirmee'})
         ok('confirmation de la 1re (derniere unite) -> 200', r.status_code == 200, r.content)
+        # Disponibilités : la demande en attente sur [j2,j5[ n'a plus d'unité la nuit j2
+        # → refusée automatiquement ; celle sur [j3,j5[ (3 unités) tient toujours.
+        auto = DemandeReservation.objects.get(pk=d_b)
+        ok('autre demande devenue impossible : refusee automatiquement',
+           auto.statut == 'refusee' and auto.raison_refus == 'Dates déjà réservées', (auto.statut, auto.raison_refus))
+        ok('demande encore possible : toujours nouvelle', DemandeReservation.objects.get(pk=d_c).statut == 'nouvelle')
         ok('complet sur [j1,j3[ -> 400 message clair',
            'Complet' in creer(chambre, date_debut=j(1), date_fin=j(3)).json()['details']['nb_unites'][0])
         r = req('post', f'/api/v1/reservations/admin/demandes/{d_b}/transition/', super_, {'action': 'confirmee'})
-        ok('confirmation qui depasse les unites -> 400', r.status_code == 400
-           and 'unité' in r.json()['message'], r.content)
-        ok('demande restee nouvelle', DemandeReservation.objects.get(pk=d_b).statut == 'nouvelle')
+        ok('confirmer la demande refusee automatiquement -> 400 (transition non autorisee)',
+           r.status_code == 400, r.content)
         r = req('post', f'/api/v1/reservations/admin/demandes/{d_c}/transition/', super_, {'action': 'confirmee'})
         ok('3 unites a partir du depart des autres -> confirmable', r.status_code == 200, r.content)
         dispo = req('get', f'/api/v1/locations/hebergements/{chambre.article_id}/disponibilite/'

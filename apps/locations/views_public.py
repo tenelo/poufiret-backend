@@ -561,3 +561,67 @@ class MetaLocationsView(APIView):
             # des champs de formulaire avec affichage conditionnel (visible_si).
             **vente.meta_vente(),
         })
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# DISPONIBILITÉS (calendrier) — véhicules et hébergements
+# Calcul : apps.reservations.disponibilite (demandes confirmées seulement).
+# ═══════════════════════════════════════════════════════════════════════
+
+def _bornes_calendrier(request):
+    """(du, au, erreur) : ?du=&au= (AAAA-MM-JJ, bornes incluses) ; défaut
+    aujourd'hui → +180 jours ; au plus 366 jours."""
+    from datetime import date, timedelta
+
+    from django.utils import timezone
+
+    from apps.reservations.disponibilite import DUREE_DEFAUT_JOURS, DUREE_MAX_JOURS
+    p = request.query_params
+    try:
+        du = date.fromisoformat(p['du']) if p.get('du') else timezone.localdate()
+        au = date.fromisoformat(p['au']) if p.get('au') else du + timedelta(days=DUREE_DEFAUT_JOURS)
+    except ValueError:
+        return None, None, 'Dates invalides (format AAAA-MM-JJ).'
+    if au < du:
+        return None, None, 'au doit être postérieure ou égale à du.'
+    if (au - du).days + 1 > DUREE_MAX_JOURS:
+        return None, None, f'Période trop longue ({DUREE_MAX_JOURS} jours au plus).'
+    return du, au, None
+
+
+class _DisponibilitesBase(APIView):
+    """GET …/<id>/disponibilites/?du=&au= →
+    {"du", "au", "unites_total", "jours_complets": [...], "unites_restantes": {jour: n}}
+    (unites_restantes : jours partiellement occupés seulement). Cache court."""
+    permission_classes = [permissions.AllowAny]
+    libelle = 'Bien'
+
+    def fiche(self, pk):
+        raise NotImplementedError
+
+    def get(self, request, pk):
+        from apps.reservations.disponibilite import etat_disponibilites
+        du, au, erreur = _bornes_calendrier(request)
+        if erreur:
+            return Response({'erreur': True, 'message': erreur}, status=400)
+        fiche = self.fiche(pk)
+        if fiche is None:
+            return Response({'erreur': True, 'message': f'{self.libelle} introuvable.'}, status=404)
+        return Response({'du': du, 'au': au, **etat_disponibilites(fiche, du, au)})
+
+
+class VehiculeDisponibilitesView(_DisponibilitesBase):
+    """GET /api/v1/locations/vehicules/<id>/disponibilites/?du=&au= (1 unité)."""
+    libelle = 'Véhicule'
+
+    def fiche(self, pk):
+        return Vehicule.objects.filter(article_id=pk, article__type=Article.Type.VEHICULE,
+                                       article__est_actif=True).first()
+
+
+class HebergementDisponibilitesView(_DisponibilitesBase):
+    """GET /api/v1/locations/hebergements/<id>/disponibilites/?du=&au= (nb_unites)."""
+    libelle = 'Hébergement'
+
+    def fiche(self, pk):
+        return _hebergement_public(pk)
