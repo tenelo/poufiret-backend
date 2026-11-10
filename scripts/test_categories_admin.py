@@ -87,7 +87,7 @@ try:
         ok('ordre = dernier du niveau (>= 1)', racine['ordre'] >= 1, racine['ordre'])
         ok('champs complets', set(racine) == {'id', 'nom', 'slug', 'description', 'icone', 'image', 'ordre',
            'est_active', 'est_archivee', 'parent_id', 'parent_nom', 'types_partenaire', 'mots_cles',
-           'nb_partenaires', 'nb_enfants'}, set(racine))
+           'nb_partenaires', 'nb_enfants', 'affichage_enfants'}, set(racine))
         rid = racine['id']
 
         print('=== 3. SOUS-CATEGORIE + IMAGE (multipart) ===')

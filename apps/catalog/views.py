@@ -415,8 +415,13 @@ from apps.restaurants.gabarits import gabarit_de_type  # noqa: E402
 
 
 class PartenairesParCategorieView(_APIView):
-    """GET /categories/<slug>/partenaires/ — partenaires visibles ayant
-    au moins un article actif dans la catégorie."""
+    """GET /categories/<slug>/partenaires/ — partenaires visibles rattachés
+    à la catégorie ou y ayant un article actif.
+
+    Catégorie parente : agrège la catégorie ET toutes ses sous-catégories
+    actives (récursif, sans doublon). ?sous_categorie=<id ou slug> : seulement
+    cette sous-catégorie (et ses descendantes) ; 404 si ce n'est pas une
+    sous-catégorie active de la catégorie demandée."""
     permission_classes = []
 
     def get(self, request, slug=None):
@@ -425,10 +430,19 @@ class PartenairesParCategorieView(_APIView):
             cat = Categorie.objects.get(slug=slug, est_active=True)
         except Categorie.DoesNotExist:
             return _Response({'erreur': True, 'message': 'Catégorie introuvable.'}, status=404)
-        from .models import PartenaireCategorie
-        ids = set(Article.objects.filter(categorie=cat, est_actif=True)
+        from .models import PartenaireCategorie, descendants_actifs
+        perimetre = descendants_actifs(cat)
+        sous = request.query_params.get('sous_categorie')
+        if sous:
+            filtre = {'pk': int(sous)} if sous.isdigit() else {'slug': sous}
+            cible = Categorie.objects.filter(**filtre).exclude(pk=cat.pk).first()
+            if cible is None or cible.pk not in perimetre:
+                return _Response({'erreur': True, 'message': 'Sous-catégorie introuvable dans cette catégorie.'},
+                                 status=404)
+            cat, perimetre = cible, descendants_actifs(cible)
+        ids = set(Article.objects.filter(categorie_id__in=perimetre, est_actif=True)
                   .values_list('partenaire_id', flat=True))
-        ids |= set(PartenaireCategorie.objects.filter(categorie=cat)
+        ids |= set(PartenaireCategorie.objects.filter(categorie_id__in=perimetre)
                    .values_list('partenaire_id', flat=True))
         from apps.geo.portee import filtre_visibilite
         # Departement de l'utilisateur connecte (None si anonyme/non renseigne).
@@ -460,12 +474,11 @@ class PartenairesParCategorieView(_APIView):
                 return ''
         # Couverture specifique a cette categorie, si le partenaire en a
         # defini une (sinon on retombe sur celle du profil).
-        couvertures = {
-            l.partenaire_id: l.image_couverture
-            for l in PartenaireCategorie.objects.filter(
-                categorie=cat, partenaire_id__in=list(ids))
-            if l.image_couverture
-        }
+        # (agrégation : celle de la catégorie demandée d'abord, sinon d'une sous-catégorie).
+        couvertures = {}
+        for l in PartenaireCategorie.objects.filter(categorie_id__in=perimetre, partenaire_id__in=list(ids)):
+            if l.image_couverture and (l.categorie_id == cat.pk or l.partenaire_id not in couvertures):
+                couvertures[l.partenaire_id] = l.image_couverture
         def _coords(profil):
             # PointField(geography=True) stocke (x=longitude, y=latitude).
             pt = profil.localisation

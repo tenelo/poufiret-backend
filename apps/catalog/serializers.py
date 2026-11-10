@@ -10,8 +10,12 @@ from .models import (
 
 
 class CategorieSerializer(serializers.ModelSerializer):
+    """enfants : sous-catégories actives et non archivées, triées par ordre
+    (mêmes champs, récursif) ; affichage_enfants : pastilles | grille ;
+    nb_enfants : nombre de ces sous-catégories."""
     enfants = serializers.SerializerMethodField()
     nb_partenaires = serializers.SerializerMethodField()
+    nb_enfants = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
 
     class Meta:
@@ -19,7 +23,7 @@ class CategorieSerializer(serializers.ModelSerializer):
         fields = ['id', 'nom', 'slug', 'description', 'icone', 'image_couverture', 'image',
                   'parent', 'mode_transaction', 'types_articles', 'affiche_catalogue', 'module_flutter', 'ordre',
                   'est_active', 'nb_partenaires', 'enfants',
-                  'types_partenaire']
+                  'types_partenaire', 'affichage_enfants', 'nb_enfants']
 
     def get_image(self, obj):
         if not obj.image_couverture:
@@ -55,6 +59,9 @@ class CategorieSerializer(serializers.ModelSerializer):
         if a is None and b is None:
             return None  # contexte sans annotation
         return max(a or 0, b or 0)
+
+    def get_nb_enfants(self, obj):
+        return len(self._enfants_actifs(obj))
 
     def get_enfants(self, obj):
         return CategorieSerializer(

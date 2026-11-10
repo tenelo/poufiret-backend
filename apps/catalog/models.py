@@ -104,6 +104,16 @@ class Categorie(ImagesOptimiseesMixin, models.Model):
         help_text=_('Nom du module Flutter associé (ex: "restaurants", "beaute").'),
     )
 
+    class AffichageEnfants(models.TextChoices):
+        PASTILLES = 'pastilles', _('Pastilles')
+        GRILLE = 'grille', _('Grille')
+
+    # Présentation des sous-catégories dans l'app (réglée par l'admin).
+    affichage_enfants = models.CharField(
+        _('affichage des sous-catégories'), max_length=10,
+        choices=AffichageEnfants.choices, default=AffichageEnfants.PASTILLES,
+    )
+
     ordre = models.IntegerField(_('ordre d\'affichage'), default=0)
     est_active = models.BooleanField(_('catégorie active'), default=True)
     est_archivee = models.BooleanField(
@@ -144,6 +154,19 @@ def annoter_nb_partenaires(queryset):
         nb_via_articles=Count('articles__partenaire', distinct=True,
             filter=Q(articles__est_actif=True) & q_partenaire_public('articles__partenaire__')),
     )
+
+
+def descendants_actifs(categorie):
+    """Ids de la catégorie et de toutes ses descendantes actives et non
+    archivées (récursif, sans doublon ; une sous-catégorie masquée exclut
+    aussi ses propres descendantes). Une requête par niveau."""
+    ids, niveau = {categorie.pk}, [categorie.pk]
+    while niveau:
+        niveau = [i for i in Categorie.objects.filter(
+            parent_id__in=niveau, est_active=True, est_archivee=False).values_list('id', flat=True)
+            if i not in ids]
+        ids.update(niveau)
+    return ids
 
 
 def prefetch_enfants_actifs(niveaux=3):

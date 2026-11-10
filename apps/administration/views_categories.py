@@ -73,7 +73,7 @@ class CategorieAdminSerializer(serializers.ModelSerializer):
         model = Categorie
         fields = ['id', 'nom', 'slug', 'description', 'icone', 'image', 'supprimer_image', 'ordre',
                   'est_active', 'est_archivee', 'parent_id', 'parent_nom', 'types_partenaire',
-                  'mots_cles', 'nb_partenaires', 'nb_enfants']
+                  'mots_cles', 'nb_partenaires', 'nb_enfants', 'affichage_enfants']
         read_only_fields = ['slug', 'ordre', 'est_archivee']
         extra_kwargs = {'description': {'required': False, 'allow_blank': True},
                         'icone': {'required': False, 'allow_blank': True, 'max_length': 50}}

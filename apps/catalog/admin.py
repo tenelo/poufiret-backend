@@ -31,7 +31,7 @@ class CategorieAdmin(admin.ModelAdmin):
                        'types_partenaire', 'mots_cles'),
         }),
         (_('Hiérarchie & comportement'), {
-            'fields': ('parent', 'mode_transaction', 'types_articles', 'module_flutter'),
+            'fields': ('parent', 'affichage_enfants', 'mode_transaction', 'types_articles', 'module_flutter'),
         }),
         (_('Affichage'), {
             'fields': ('ordre', 'est_active'),
