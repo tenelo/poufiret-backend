@@ -52,24 +52,30 @@ def telephone_libre():
 try:
     with transaction.atomic():
         u = uuid.uuid4().hex[:6]
-        # Jeton propre au test, pour ne regarder que nos données : chaque nom
-        # / mot-clé est « <mot> <jeton> » et on cherche « <mot> » en filtrant nos ids.
+        # Indépendant des données réelles : la recherche renvoie au plus 10 catégories
+        # (tri ordre, nom), 15 partenaires (favoris d'abord, puis nom) et 20 articles
+        # (tri nb_vues décroissant). Nos données sont placées en tête de chaque tri
+        # (sinon « pou » peut renvoyer 20 vrais articles « poulet » plus vus que le nôtre),
+        # et on ne regarde que nos ids.
+        TETE = -1000000
         plan = PlanAbonnement.objects.get(libelle='Basique')
-        betail = Categorie.objects.create(nom=f'Bétail QA{u}', slug=f'betail-qa-{u}', mots_cles=['boeufs', 'moutons'])
+        betail = Categorie.objects.create(nom=f'Bétail QA{u}', slug=f'betail-qa-{u}', mots_cles=['boeufs', 'moutons'],
+                                          ordre=TETE)
         oeufs_cat = Categorie.objects.create(nom=f'Produits fermiers QA{u}', slug=f'fermiers-qa-{u}',
-                                             mots_cles=['oeufs frais', 'plaquette'])
+                                             mots_cles=['oeufs frais', 'plaquette'], ordre=TETE)
         volaille = Categorie.objects.create(nom=f'Volaille QA{u}', slug=f'volaille-qa-{u}',
-                                            description='Élevage de poulets fermiers')
+                                            description='Élevage de poulets fermiers', ordre=TETE)
         p = ProfilPartenaire.objects.create(
             user=User.objects.create(telephone=telephone_libre(), username=f't_rdm_{u}', role='partenaire'),
-            plan=plan, nom_commerce=f'Ferme du Bœuf QA{u}', type_partenaire='commercant', statut='actif',
-            est_visible=True, description='Vente de cabris et de taurillons')
+            plan=plan, nom_commerce=f'0 Ferme du Bœuf QA{u}', type_partenaire='commercant', statut='actif',
+            est_visible=True, est_faveur=True, description='Vente de cabris et de taurillons')
         PartenaireCategorie.objects.get_or_create(partenaire=p, categorie=volaille, defaults={'est_principale': True})
         art_boeuf = Article.objects.create(partenaire=p, categorie=volaille, nom=f'Bœuf entier QA{u}',
-                                           slug=f'rdm-boeuf-{u}', type='produit', prix=1000, est_actif=True)
+                                           slug=f'rdm-boeuf-{u}', type='produit', prix=1000, est_actif=True,
+                                           nb_vues=10 ** 9)
         art_poulet = Article.objects.create(partenaire=p, categorie=volaille, nom=f'Poulet braisé QA{u}',
                                             slug=f'rdm-poulet-{u}', type='produit', prix=1000, est_actif=True,
-                                            description='Poulet de chair')
+                                            description='Poulet de chair', nb_vues=10 ** 9)
         nos_cats = {betail.id, oeufs_cat.id, volaille.id}
 
         def chercher(terme):

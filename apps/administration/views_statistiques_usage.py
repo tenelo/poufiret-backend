@@ -289,25 +289,32 @@ class ContactsPartenairesUsageView(_Vue):
         qs = ProfilPartenaire.objects.all()
         if periode.departement:
             qs = qs.filter(departement_id=periode.departement)
+        # Annotations préfixées « stat_ » : ProfilPartenaire a déjà vues_vitrine et
+        # commandes (relations inverses) et whatsapp (champ) — conflit sinon.
+        # Les clés JSON et les valeurs de ?tri= restent sans préfixe.
         qs = (qs.annotate(
-            vues_vitrine=_compte(vues), appels=_compte(evts.filter(type='appel_partenaire')),
-            whatsapp=_compte(evts.filter(type='whatsapp_partenaire')),
-            itineraires=_compte(evts.filter(type='itineraire_partenaire')), commandes=_compte(cmd))
-            .annotate(contacts=F('appels') + F('whatsapp') + F('itineraires'))
-            .filter(Q(vues_vitrine__gt=0) | Q(contacts__gt=0) | Q(commandes__gt=0))
-            .annotate(taux_contact_commande=Cast('commandes', FloatField()) / NullIf(F('contacts'), 0),
-                      taux_vue_contact=Cast('contacts', FloatField()) / NullIf(F('vues_vitrine'), 0)))
+            stat_vues_vitrine=_compte(vues), stat_appels=_compte(evts.filter(type='appel_partenaire')),
+            stat_whatsapp=_compte(evts.filter(type='whatsapp_partenaire')),
+            stat_itineraires=_compte(evts.filter(type='itineraire_partenaire')), stat_commandes=_compte(cmd))
+            .annotate(stat_contacts=F('stat_appels') + F('stat_whatsapp') + F('stat_itineraires'))
+            .filter(Q(stat_vues_vitrine__gt=0) | Q(stat_contacts__gt=0) | Q(stat_commandes__gt=0))
+            .annotate(stat_taux_contact_commande=Cast('stat_commandes', FloatField()) / NullIf(F('stat_contacts'), 0),
+                      stat_taux_vue_contact=Cast('stat_contacts', FloatField()) / NullIf(F('stat_vues_vitrine'), 0)))
         champ = tri.lstrip('-')
+        champ = champ if champ == 'nom_commerce' else f'stat_{champ}'
         ordre = F(champ).desc(nulls_last=True) if tri.startswith('-') else F(champ).asc(nulls_last=True)
         qs = qs.order_by(ordre, 'nom_commerce', 'id')
         total = qs.count()
-        lignes = qs.values('id', 'nom_commerce', 'type_partenaire', 'departement_id', 'vues_vitrine', 'appels',
-                           'whatsapp', 'itineraires', 'contacts', 'commandes', 'taux_contact_commande',
-                           'taux_vue_contact')[(page - 1) * taille: page * taille]
-        resultats = [{**l, 'taux_contact_commande': None if l['taux_contact_commande'] is None
-                      else round(l['taux_contact_commande'], 4),
-                      'taux_vue_contact': None if l['taux_vue_contact'] is None else round(l['taux_vue_contact'], 4)}
-                     for l in lignes]
+        stats = [t for t in TRIS if t != 'nom_commerce']
+        lignes = qs.values('id', 'nom_commerce', 'type_partenaire', 'departement_id',
+                           *[f'stat_{t}' for t in stats])[(page - 1) * taille: page * taille]
+        resultats = []
+        for l in lignes:
+            ligne = {k: l[k] for k in ('id', 'nom_commerce', 'type_partenaire', 'departement_id')}
+            ligne.update({t: l[f'stat_{t}'] for t in stats})
+            for t in ('taux_contact_commande', 'taux_vue_contact'):
+                ligne[t] = None if ligne[t] is None else round(ligne[t], 4)
+            resultats.append(ligne)
         return {'count': total, 'page': page, 'page_size': taille, 'tri': tri, 'resultats': resultats}
 
 

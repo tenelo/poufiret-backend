@@ -92,6 +92,9 @@ try:
         # Rattachement à la main par l'admin (comme « Porc de ferme »).
         porc_ferme = Categorie.objects.create(nom=f'Porc de ferme {uid}', slug=f'porc-ferme-{uid}',
                                               types_articles=['produit'])
+        # Indépendant des données réelles : on retire les liens créés par le signal
+        # (ex. « Élevage & Ferme » déclare eleveur), porc_ferme devient la seule catégorie.
+        PartenaireCategorie.objects.filter(partenaire=eleveur).delete()
         PartenaireCategorie.objects.create(partenaire=eleveur, categorie=porc_ferme, est_principale=True)
         r = req('get', f'/api/v1/auth/partenaires/{eleveur.id}/')
         ok('vitrine : gabarit elevage', r.status_code == 200 and r.json()['gabarit'] == 'elevage', r.content)
