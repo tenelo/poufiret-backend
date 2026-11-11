@@ -104,7 +104,12 @@ try:
         ok('fiche : libelles, heures, equipements', e['type_etablissement_libelle'] == 'Hôtel'
            and e['heure_arrivee'] == '14:00:00' and e['equipements_etablissement_libelles'] == ['Wifi', 'Navette']
            and int(e['prix_petit_dejeuner']) == 2500, e)
-        ok('galerie = images des hebergements actifs (4 hebergements x 2)', len(e['galerie']) == 8, e['galerie'])
+        # Vitrine vide : photo principale de chaque hébergement actif (index 0), plafonnée
+        # au maximum réglable (test_vitrine_etablissement couvre la vitrine composée).
+        from apps.locations.models import ParametresLocations
+        maxi = ParametresLocations.obtenir().nb_max_images_vitrine
+        ok('galerie = photo principale de chaque hebergement actif (4), plafonnee',
+           len(e['galerie']) == min(4, maxi) and all(x.endswith('0.png') for x in e['galerie']), e['galerie'])
         ok('panoramas agreges (4)', len(e['panoramas']) == 4, e['panoramas'])
         titres = [x['titre'] for x in d['hebergements']]
         ok('hebergements actifs tries par prix (inactif exclu)',

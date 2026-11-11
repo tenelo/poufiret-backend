@@ -403,14 +403,16 @@ def _carte_hebergement(h, request):
 class EtablissementPublicView(APIView):
     """GET /api/v1/locations/partenaires/<id>/etablissement/ — fiche
     établissement + hébergements actifs. Localisation, contacts, logo,
-    couverture, description = ceux du partenaire. galerie / panoramas =
-    images et panoramas actifs de ses hébergements (pas de galerie propre
-    à l'établissement : aucun modèle dupliqué). Requêtes constantes."""
+    couverture, description = ceux du partenaire. galerie = vitrine de
+    l'établissement (ImageVitrine), ou à défaut la photo principale de chaque
+    hébergement actif, plafonnée (ParametresLocations.nb_max_images_vitrine) ;
+    panoramas = panoramas actifs de ses hébergements. Requêtes constantes
+    (maximum lu en sous-requête, vitrine en une requête)."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, partenaire_id):
-        partenaire = (ProfilPartenaire.objects
-                      .filter(q_partenaire_public(), pk=partenaire_id, type_partenaire=ProfilPartenaire.TypePartenaire.HOTELIER)
+        partenaire = (services.annoter_nb_max_vitrine(ProfilPartenaire.objects
+                      .filter(q_partenaire_public(), pk=partenaire_id, type_partenaire=ProfilPartenaire.TypePartenaire.HOTELIER))
                       .select_related('profil_etablissement', 'localite', 'quartier_geo').first())
         if partenaire is None:
             return Response({'erreur': True, 'message': 'Établissement introuvable.'}, status=404)
@@ -429,7 +431,11 @@ class EtablissementPublicView(APIView):
                 'nom': partenaire.nom_commerce,
                 'logo': _url(request, partenaire.logo),
                 'couverture': _url(request, partenaire.photo_couverture),
-                'galerie': [_url(request, i.image) for h in hebergements for i in h.article.images.all()],
+                # Vitrine composée par l'établissement, sinon la photo principale de chaque
+                # hébergement ; plafonnée (ParametresLocations). Format inchangé : liste d'URL.
+                'galerie': services.galerie_etablissement(
+                    fiche, hebergements, request,
+                    maxi=partenaire.nb_max_vitrine or services._nb_max_par_defaut()),
                 'panoramas': PanoramaSerializer(panoramas, many=True, context={'request': request}).data,
                 'type_etablissement': fiche.type_etablissement,
                 'type_etablissement_libelle': fiche.get_type_etablissement_display(),

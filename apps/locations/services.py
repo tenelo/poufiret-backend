@@ -359,3 +359,126 @@ def hebergement_dict(obj, request):
         'modifie_le': obj.updated_at,
         'cree_le': obj.created_at,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VITRINE D'ÉTABLISSEMENT (carrousel de la page publique d'un hôtel /
+# d'une résidence) — modèle ImageVitrine, maximum ParametresLocations.
+# ═══════════════════════════════════════════════════════════════════════
+
+MESSAGE_VITRINE_PLEINE = ('La vitrine est complète : {maxi} image(s) au maximum. '
+                          'Retirez une image avant d\'en ajouter une autre.')
+
+
+def _url_image(champ, request):
+    if not champ:
+        return None
+    try:
+        return request.build_absolute_uri(champ.url) if request is not None else champ.url
+    except ValueError:
+        return None
+
+
+def nb_max_images_vitrine():
+    from .models import ParametresLocations
+    return ParametresLocations.obtenir().nb_max_images_vitrine
+
+
+def annoter_nb_max_vitrine(qs_partenaires):
+    """Ajoute nb_max_vitrine (sous-requête sur le singleton) à un queryset de
+    partenaires : lecture publique sans requête ni écriture supplémentaires."""
+    from django.db.models import Subquery
+    from .models import ParametresLocations
+    return qs_partenaires.annotate(nb_max_vitrine=Subquery(
+        ParametresLocations.objects.order_by().values('nb_max_images_vitrine')[:1]))
+
+
+def _nb_max_par_defaut():
+    from .models import ParametresLocations
+    return ParametresLocations._meta.get_field('nb_max_images_vitrine').default
+
+
+def images_hebergements_actives(partenaire):
+    """Photos actives des hébergements actifs du partenaire (celles qu'il peut
+    mettre en vitrine), triées comme la page publique : hébergement par prix,
+    puis ordre de la photo."""
+    from apps.catalog.models import Article, ArticleImage
+    return (ArticleImage.objects
+            .filter(est_active=True, article__partenaire=partenaire, article__est_actif=True,
+                    article__type=Article.Type.HEBERGEMENT)
+            .select_related('article')
+            .order_by('article__prix', 'article_id', 'ordre', 'id'))
+
+
+def vitrine_qs(fiche):
+    """Éléments effectifs de la vitrine, dans l'ordre : photos propres, et
+    photos d'hébergement encore actives (photo et hébergement actifs, et
+    toujours à ce partenaire). Une photo désactivée sort d'elle-même."""
+    from django.db.models import Q
+
+    from apps.catalog.models import Article
+    from .models import ImageVitrine
+    if fiche.pk is None:
+        return ImageVitrine.objects.none()
+    return (ImageVitrine.objects.filter(etablissement=fiche)
+            .filter(Q(image_hebergement__isnull=True)
+                    | Q(image_hebergement__est_active=True, image_hebergement__article__est_actif=True,
+                        image_hebergement__article__type=Article.Type.HEBERGEMENT,
+                        image_hebergement__article__partenaire_id=fiche.partenaire_id))
+            .select_related('image_hebergement__article')
+            .order_by('ordre', 'cree_le', 'id'))
+
+
+def element_vitrine_dict(el, request):
+    photo = el.image_hebergement
+    return {
+        'id': str(el.id),
+        'source': 'hebergement' if photo is not None else 'propre',
+        'url': _url_image(photo.image if photo is not None else el.image, request),
+        'legende': el.legende,
+        'ordre': el.ordre,
+        'image_hebergement_id': photo.id if photo is not None else None,
+        'hebergement_id': photo.article_id if photo is not None else None,
+        'hebergement_nom': photo.article.nom if photo is not None else None,
+        'cree_le': el.cree_le,
+        'modifie_le': el.modifie_le,
+    }
+
+
+def vitrine_gestion_dict(fiche, request):
+    """GET …/vitrine/ : maximum, éléments et photos de chambres à cocher."""
+    elements = list(vitrine_qs(fiche))
+    dans_vitrine = {el.image_hebergement_id for el in elements if el.image_hebergement_id}
+    return {
+        'nb_max_images': nb_max_images_vitrine(),
+        'nb_images': len(elements),
+        'images': [element_vitrine_dict(el, request) for el in elements],
+        'photos_disponibles': [{
+            'id': i.id,
+            'url': _url_image(i.image, request),
+            'hebergement_id': i.article_id,
+            'hebergement_nom': i.article.nom,
+            'est_principale': i.est_principale,
+            'dans_vitrine': i.id in dans_vitrine,
+        } for i in images_hebergements_actives(fiche.partenaire)],
+    }
+
+
+def galerie_etablissement(fiche, hebergements, request, maxi=None):
+    """etablissement.galerie (liste d'URL, format inchangé), plafonnée au
+    maximum : la vitrine si elle n'est pas vide ; sinon la photo principale de
+    chaque hébergement (à défaut sa première par ordre), dans l'ordre reçu.
+    `hebergements` : leurs article.images sont préchargées (actives, par ordre).
+    maxi : déjà lu (annoter_nb_max_vitrine) ; sinon lu sur le singleton."""
+    if maxi is None:
+        maxi = nb_max_images_vitrine()
+    elements = list(vitrine_qs(fiche)[:maxi])
+    if elements:
+        return [element_vitrine_dict(el, request)['url'] for el in elements]
+    urls = []
+    for h in hebergements:
+        images = list(h.article.images.all())
+        photo = next((i for i in images if i.est_principale), None) or (images[0] if images else None)
+        if photo is not None:
+            urls.append(_url_image(photo.image, request))
+    return urls[:maxi]

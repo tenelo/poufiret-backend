@@ -14,13 +14,14 @@ from rest_framework.views import APIView
 
 from apps.catalog.models import Article, ArticleImage, Hebergement, Logement, Panorama, Vehicule
 from apps.catalog.serializers import ArticleImageImbriqueeSerializer, PanoramaImbriqueSerializer
-from apps.core.permissions import ADroitDe
+from apps.core.permissions import ADroitDe, EstSuperAdmin
 from apps.users.models import ProfilPartenaire
 
 from . import services, vente
 from .serializers import (
-    EtablissementGestionSerializer, HebergementGestionSerializer, LogementGestionSerializer,
-    VehiculeGestionSerializer,
+    EtablissementGestionSerializer, HebergementGestionSerializer, ImageVitrineAjoutSerializer,
+    ImageVitrineLegendeSerializer, LogementGestionSerializer, ParametresLocationsSerializer,
+    VehiculeGestionSerializer, VitrineOrdreSerializer,
 )
 
 
@@ -547,3 +548,144 @@ class AdminHebergementPanoramasView(_BienHebergement, _PerimetreAdminMixin, _Pan
 
 class AdminHebergementPanoramaDetailView(_BienHebergement, _PerimetreAdminMixin, _PanoramaDetailBase):
     """GET/PATCH/DELETE /locations/admin/<partenaire_id>/hebergements/<hebergement_id>/panoramas/<id>/"""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VITRINE D'ÉTABLISSEMENT (carrousel de la page publique) — hôtelier dans
+# mon-espace, admin (gerer_locations) à sa place. Fiche créée au besoin,
+# comme la gestion de la fiche établissement.
+# ═══════════════════════════════════════════════════════════════════════
+
+class _VitrineMixin:
+    def get_fiche(self):
+        return services.fiche_etablissement(self.get_partenaire(), creer=True)
+
+    def journaliser(self, fiche, texte):
+        if self.acteur_role == 'admin':
+            _journaliser_admin(self.request.user, fiche.partenaire, 'loc_etablissement_modif',
+                               f'Vitrine « {fiche.partenaire.nom_commerce} » : {texte} (admin).')
+
+    def reponse(self, fiche, status=200):
+        return Response(services.vitrine_gestion_dict(fiche, self.request), status=status)
+
+
+class _VitrineBase(_VitrineMixin, APIView):
+    """GET (vitrine + maximum + photos à cocher) / POST (ajout) P/vitrine/"""
+
+    def get(self, request, *args, **kwargs):
+        return self.reponse(self.get_fiche())
+
+    def post(self, request, *args, **kwargs):
+        from django.db.models import Max
+        from .models import ImageVitrine
+        fiche = self.get_fiche()
+        ser = ImageVitrineAjoutSerializer(data=request.data, context={'fiche': fiche})
+        if not ser.is_valid():
+            return Response({'erreur': True, 'details': ser.errors}, status=400)
+        d = ser.validated_data
+        dernier = ImageVitrine.objects.filter(etablissement=fiche).aggregate(m=Max('ordre'))['m'] or 0
+        ImageVitrine.objects.create(etablissement=fiche, image_hebergement=d.get('image_hebergement'),
+                                    image=d.get('image') or '', legende=d.get('legende', ''), ordre=dernier + 1)
+        self.journaliser(fiche, 'image ajoutée')
+        return self.reponse(fiche, status=201)
+
+
+class _VitrineElementBase(_VitrineMixin, APIView):
+    """PATCH (légende) / DELETE (retrait de la vitrine) P/vitrine/<id>/ —
+    retirer une photo de chambre ne supprime jamais la photo elle-même."""
+
+    def _element(self, fiche):
+        from .models import ImageVitrine
+        return get_object_or_404(ImageVitrine, pk=self.kwargs['pk'], etablissement=fiche)
+
+    def patch(self, request, *args, **kwargs):
+        fiche = self.get_fiche()
+        element = self._element(fiche)
+        ser = ImageVitrineLegendeSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response({'erreur': True, 'details': ser.errors}, status=400)
+        element.legende = ser.validated_data['legende']
+        element.save(update_fields=['legende', 'modifie_le'])
+        self.journaliser(fiche, 'légende modifiée')
+        return self.reponse(fiche)
+
+    def delete(self, request, *args, **kwargs):
+        fiche = self.get_fiche()
+        element = self._element(fiche)
+        if element.image:
+            element.image.delete(save=False)  # photo propre : fichier supprimé avec l'élément
+        element.delete()
+        self.journaliser(fiche, 'image retirée')
+        return self.reponse(fiche)
+
+
+class _VitrineOrdreBase(_VitrineMixin, APIView):
+    """POST P/vitrine/ordre/ {"ids": [...]} — réordonne toute la vitrine en un
+    appel : la liste doit contenir exactement les éléments de la vitrine."""
+
+    def post(self, request, *args, **kwargs):
+        from django.db import transaction
+        from .models import ImageVitrine
+        fiche = self.get_fiche()
+        ser = VitrineOrdreSerializer(data=request.data)
+        if not ser.is_valid():
+            return Response({'erreur': True, 'details': ser.errors}, status=400)
+        ids = ser.validated_data['ids']
+        actuels = [el.id for el in services.vitrine_qs(fiche)]
+        if len(ids) != len(set(ids)) or set(ids) != set(actuels):
+            return Response({'erreur': True, 'message':
+                             'La liste ids doit contenir exactement les images de la vitrine, chacune une fois.',
+                             'details': {'ids': ['Attendu : ' + ', '.join(str(i) for i in actuels) + '.']}},
+                            status=400)
+        with transaction.atomic():
+            for rang, pk in enumerate(ids, start=1):
+                ImageVitrine.objects.filter(pk=pk, etablissement=fiche).update(ordre=rang)
+            # Éléments masqués (photo de chambre désactivée) : après, ordre relatif conservé.
+            masques = (ImageVitrine.objects.filter(etablissement=fiche).exclude(pk__in=ids)
+                       .order_by('ordre', 'cree_le', 'id').values_list('pk', flat=True))
+            for rang, pk in enumerate(masques, start=len(ids) + 1):
+                ImageVitrine.objects.filter(pk=pk).update(ordre=rang)
+        self.journaliser(fiche, 'ordre modifié')
+        return self.reponse(fiche)
+
+
+class MonVitrineView(_BienHebergement, _PerimetreLoueurMixin, _VitrineBase):
+    """GET/POST /locations/mon-espace/vitrine/"""
+
+
+class MonVitrineElementView(_BienHebergement, _PerimetreLoueurMixin, _VitrineElementBase):
+    """PATCH/DELETE /locations/mon-espace/vitrine/<id>/"""
+
+
+class MonVitrineOrdreView(_BienHebergement, _PerimetreLoueurMixin, _VitrineOrdreBase):
+    """POST /locations/mon-espace/vitrine/ordre/"""
+
+
+class AdminVitrineView(_BienHebergement, _PerimetreAdminMixin, _VitrineBase):
+    """GET/POST /locations/admin/<partenaire_id>/vitrine/"""
+
+
+class AdminVitrineElementView(_BienHebergement, _PerimetreAdminMixin, _VitrineElementBase):
+    """PATCH/DELETE /locations/admin/<partenaire_id>/vitrine/<id>/"""
+
+
+class AdminVitrineOrdreView(_BienHebergement, _PerimetreAdminMixin, _VitrineOrdreBase):
+    """POST /locations/admin/<partenaire_id>/vitrine/ordre/"""
+
+
+class ParametresLocationsAdminView(APIView):
+    """GET/PATCH /locations/admin/parametres/ — singleton ParametresLocations,
+    réservé au super-admin."""
+    permission_classes = [permissions.IsAuthenticated, EstSuperAdmin]
+
+    def get(self, request):
+        from .models import ParametresLocations
+        return Response(ParametresLocationsSerializer(ParametresLocations.obtenir()).data)
+
+    def patch(self, request):
+        from .models import ParametresLocations
+        ser = ParametresLocationsSerializer(ParametresLocations.obtenir(), data=request.data, partial=True)
+        if not ser.is_valid():
+            return Response({'erreur': True, 'details': ser.errors}, status=400)
+        ser.save()
+        return Response(ser.data)

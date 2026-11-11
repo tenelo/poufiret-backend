@@ -12,7 +12,7 @@ from apps.geo.coherence import verifier_coherence
 from apps.geo.models import Localite, Quartier
 
 from . import vente
-from .models import ProfilEtablissement
+from .models import ParametresLocations, ProfilEtablissement
 from .services import (
     EQUIPEMENTS_ETABLISSEMENT_LIBELLES, EQUIPEMENTS_HEBERGEMENT_LIBELLES, EQUIPEMENTS_REFERENTIEL,
     EQUIPEMENTS_VEHICULE_LIBELLES, valider_equipements,
@@ -317,3 +317,58 @@ class EtablissementGestionSerializer(serializers.ModelSerializer):
         validated_data['modifie_par_role'] = self.context['acteur_role']
         validated_data['modifie_par_nom'] = self.context['acteur_nom']
         return super().update(inst, validated_data)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VITRINE D'ÉTABLISSEMENT ET PARAMÈTRES LOCATIONS
+# ═══════════════════════════════════════════════════════════════════════
+
+class ParametresLocationsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ParametresLocations
+        fields = ['id', 'nb_max_images_vitrine', 'modifie_le']
+        read_only_fields = ['id', 'modifie_le']
+
+
+class ImageVitrineAjoutSerializer(serializers.Serializer):
+    """POST …/vitrine/ : SOIT image_hebergement (id d'une photo active d'un
+    hébergement actif du partenaire, JSON ou multipart), SOIT image (fichier,
+    multipart) ; legende facultative. context['fiche'] requis."""
+    image_hebergement = serializers.IntegerField(required=False, allow_null=True)
+    image = serializers.ImageField(required=False, allow_null=True)
+    legende = serializers.CharField(required=False, allow_blank=True, max_length=200, default='')
+
+    def validate(self, attrs):
+        from apps.core.exceptions import ErreurMetier
+        from . import services
+        from .models import ImageVitrine
+        fiche = self.context['fiche']
+        photo_id, fichier = attrs.get('image_hebergement'), attrs.get('image')
+        if (photo_id is None) == (fichier is None):
+            raise serializers.ValidationError({'non_field_errors': [
+                "Fournissez soit image_hebergement (une photo de vos hébergements), soit image "
+                "(une photo téléversée), mais pas les deux."]})
+        if photo_id is not None:
+            photo = services.images_hebergements_actives(fiche.partenaire).filter(pk=photo_id).first()
+            if photo is None:
+                raise serializers.ValidationError({'image_hebergement': [
+                    'Photo introuvable parmi les photos actives de vos hébergements.']})
+            if ImageVitrine.objects.filter(etablissement=fiche, image_hebergement=photo).exists():
+                raise serializers.ValidationError({'image_hebergement': ['Cette photo est déjà dans la vitrine.']})
+            attrs['image_hebergement'] = photo
+        maxi, nb = services.nb_max_images_vitrine(), services.vitrine_qs(fiche).count()
+        if nb >= maxi:
+            raise ErreurMetier(services.MESSAGE_VITRINE_PLEINE.format(maxi=maxi),
+                               {'nb_max_images': maxi, 'nb_images': nb})
+        return attrs
+
+
+class ImageVitrineLegendeSerializer(serializers.Serializer):
+    """PATCH …/vitrine/<id>/ : seule la légende se modifie."""
+    legende = serializers.CharField(allow_blank=True, max_length=200)
+
+
+class VitrineOrdreSerializer(serializers.Serializer):
+    """POST …/vitrine/ordre/ : {"ids": [...]} = TOUS les éléments de la vitrine,
+    dans le nouvel ordre."""
+    ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=True)

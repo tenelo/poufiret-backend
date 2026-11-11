@@ -6,9 +6,13 @@ apps.restaurants.ProfilRestaurant. Localisation, contacts, logo, couverture
 et description restent ceux du partenaire (non dupliqués). Les chambres /
 unités vendues sont des Article + catalog.Hebergement.
 """
+from django.core.validators import MinValueValidator
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
+from apps.core.images import ImagesOptimiseesMixin
+from apps.core.models import ModeleBase
 from apps.users.models import ProfilPartenaire
 
 
@@ -58,3 +62,70 @@ class ProfilEtablissement(models.Model):
 
     def __str__(self):
         return f'Fiche établissement — {self.partenaire.nom_commerce}'
+
+
+class ParametresLocations(ModeleBase):
+    """Paramètres modifiables du module locations (ligne unique, obtenir())."""
+
+    nb_max_images_vitrine = models.PositiveSmallIntegerField(
+        "nombre maximum d'images de vitrine", default=10, validators=[MinValueValidator(1)],
+        help_text="Carrousel d'un hôtel / d'une résidence. Baisser ce nombre ne supprime rien : "
+                  "la page publique ne montre que les premières images.")
+
+    class Meta:
+        verbose_name = 'paramètres locations'
+        verbose_name_plural = 'paramètres locations'
+
+    def save(self, *args, **kwargs):
+        # Singleton : on force une seule ligne
+        self.pk = self.pk or self.__class__.objects.first() and self.__class__.objects.first().pk or None
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def obtenir(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create()
+        return obj
+
+    def __str__(self):
+        return f'Paramètres locations (vitrine : {self.nb_max_images_vitrine} images max)'
+
+
+class ImageVitrine(ImagesOptimiseesMixin, ModeleBase):
+    """Élément de la vitrine d'un établissement (carrousel de sa page publique) :
+    SOIT une photo existante d'un de ses hébergements (référence, sans copie de
+    fichier), SOIT une photo propre à l'établissement (façade, piscine…).
+    Photo de chambre supprimée → l'élément disparaît (CASCADE) ; désactivée (ou
+    hébergement désactivé) → ignoré partout (voir services.vitrine_qs)."""
+    champs_images = ('image',)
+
+    etablissement = models.ForeignKey(
+        ProfilEtablissement, on_delete=models.CASCADE, related_name='images_vitrine',
+        verbose_name=_('établissement'))
+    image_hebergement = models.ForeignKey(
+        'catalog.ArticleImage', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='vitrines', verbose_name=_("photo d'hébergement"))
+    image = models.ImageField(_('photo propre'), upload_to='vitrines/', blank=True)
+    legende = models.CharField(_('légende'), max_length=200, blank=True)
+    ordre = models.IntegerField(_('ordre'), default=0)
+
+    class Meta:
+        verbose_name = _('image de vitrine')
+        verbose_name_plural = _('images de vitrine')
+        ordering = ['etablissement', 'ordre', 'cree_le']
+        constraints = [
+            # Soit une photo d'hébergement, soit une photo propre — jamais les deux.
+            models.CheckConstraint(
+                check=(Q(image_hebergement__isnull=False) & Q(image=''))
+                | (Q(image_hebergement__isnull=True) & ~Q(image='')),
+                name='image_vitrine_une_seule_source'),
+            # Une photo de chambre au plus une fois par vitrine.
+            models.UniqueConstraint(
+                fields=['etablissement', 'image_hebergement'],
+                condition=Q(image_hebergement__isnull=False),
+                name='unique_image_hebergement_par_vitrine'),
+        ]
+
+    def __str__(self):
+        return f'Vitrine {self.etablissement.partenaire.nom_commerce} — {self.ordre}'
