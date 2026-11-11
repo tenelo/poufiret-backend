@@ -315,50 +315,25 @@ class ReconduirePubliciteView(APIView):
             return Response({'erreur': True, 'message': 'Publicité introuvable.'},
                             status=404)
 
-        if ancienne.statut != Publicite.Statut.TERMINEE:
-            return Response(
-                {'erreur': True,
-                 'message': ('Seule une publicité terminée peut être reconduite '
-                            f'(statut actuel : "{ancienne.get_statut_display()}").')},
-                status=400)
+        from .services import (ReconductionInvalide, copier_pour_reconduction,
+                               options_reconduction, raison_refus_reconduction)
+        refus = raison_refus_reconduction(ancienne)
+        if refus:
+            return Response({'erreur': True, 'message': refus}, status=400)
 
-        formule_id = request.data.get('formule_id')
-        if formule_id:
-            try:
-                formule = FormulePublicite.objects.filter(
-                    pk=formule_id, est_active=True).first()
-            except (ValueError, TypeError, DjangoValidationError):
-                formule = None
-            if formule is None:
-                return Response(
-                    {'erreur': True, 'message': 'Formule introuvable ou inactive.'},
-                    status=400)
-        else:
-            formule = ancienne.formule
+        # Options (formule_id, image_couverture, portee) et règle de copie
+        # communes avec la reconduction par l'admin : services.
+        # options_reconduction / copier_pour_reconduction. Portée : MAX(forfait
+        # actuel, portee demandée ou celle de l'ancienne) — jamais d'erreur
+        # pour une portée inférieure au forfait.
+        try:
+            formule, nouvelle_image, portee_demandee = options_reconduction(
+                request.data, request.FILES, ancienne)
+        except ReconductionInvalide as exc:
+            return Response({'erreur': True, 'message': str(exc)}, status=400)
 
-        nouvelle_image = request.FILES.get('image_couverture')
-        image_a_utiliser = nouvelle_image or ancienne.image_couverture.name
-
-        # Portee : body optionnel `portee`, sinon celle de l'ancienne pub ;
-        # dans tous les cas MAX(forfait actuel, portee) — jamais d'erreur
-        # pour une portee inferieure au forfait.
-        from apps.users.models import Portee
-        from .services import portee_a_appliquer
-        portee_demandee = request.data.get('portee')
-        if portee_demandee and portee_demandee not in Portee.values:
-            return Response({'erreur': True, 'message': 'Portée invalide.'},
-                            status=400)
-        portee = portee_a_appliquer(profil, portee_demandee or ancienne.portee)
-
-        nouvelle = Publicite.objects.create(
-            partenaire=profil,
-            formule=formule,
-            titre=ancienne.titre,
-            description=ancienne.description,
-            image_couverture=image_a_utiliser,
-            video=ancienne.video.name if ancienne.video else None,
-            portee=portee,
-        )
+        nouvelle = copier_pour_reconduction(
+            ancienne, profil, formule, nouvelle_image, portee_demandee)
 
         return Response(
             PubliciteCreationSerializer(nouvelle, context={'request': request}).data,

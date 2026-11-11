@@ -42,6 +42,8 @@ class JournalModeration(ModeleBase):
         PUB_FORMULE_REACT = 'pub_formule_react', 'Formule pub réactivée'
         PUB_PARAMETRES_MAJ = 'pub_parametres_maj', 'Paramètres pub modifiés'
         PUB_STATS_VISIBLES = 'pub_stats_visibles', 'Stats pub : visibilité partenaire'
+        PUB_CREEE_ADMIN = 'pub_creee_admin', 'Publicité créée par l\'admin pour un partenaire'
+        PUB_RECONDUITE_ADMIN = 'pub_reconduite_admin', 'Publicité reconduite par l\'admin'
         RESTO_FICHE_MODIF = 'resto_fiche_modif', 'Fiche restaurant modifiée (admin)'
         RESTO_PLAT_MODIF = 'resto_plat_modif', 'Plat modifié (admin)'
         RESTO_MENU_MODIF = 'resto_menu_modif', 'Menu modifié (admin)'
@@ -210,6 +212,8 @@ class PermissionsAdmin(ModeleBase):
     # ── C. Publicités ────────────────────────────────────────────────
     valider_publicite = models.BooleanField('valider / rejeter une publicité', default=False)
     offrir_campagne = models.BooleanField('offrir / retirer une campagne', default=False)
+    gerer_pubs_partenaires = models.BooleanField(
+        'Créer et reconduire des pubs pour un partenaire', default=False)
 
     # ── D. Commandes & paiements ─────────────────────────────────────
     valider_commande = models.BooleanField('valider / rejeter une commande', default=False)

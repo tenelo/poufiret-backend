@@ -82,7 +82,7 @@ class PubliciteAdmin(admin.ModelAdmin):
     list_filter = ('statut', 'formule', 'stats_visibles_partenaire')
     search_fields = ('titre', 'partenaire__nom_commerce')
     inlines = [ImagePubliciteInline]
-    readonly_fields = ('debut_diffusion', 'fin_diffusion')
+    readonly_fields = ('debut_diffusion', 'fin_diffusion', 'cree_par_admin')
 
     def get_list_display(self, request):
         return ('titre', 'partenaire', 'formule', 'statut', 'boutons',

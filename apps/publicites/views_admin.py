@@ -2,15 +2,22 @@
 diffusion. Distinctes de FormulesQuotasAdminView (apps.publicites.stats,
 lecture seule, permission voir_stats, INCHANGÉE) : ici, l'édition,
 réservée à ADroitDe('gerer_formules_pub').
+
+Plus : création et reconduction d'une pub PAR l'admin POUR un partenaire
+(capacité gerer_pubs_partenaires), activée directement aux dates choisies.
 """
+from django.db import transaction
 from django.db.models import Count, ProtectedError, Q
-from rest_framework import generics, permissions, status
+from django.utils import timezone
+from rest_framework import generics, permissions, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.permissions import ADroitDe
 
+from . import services
 from .models import FormulePublicite, ParametresPublicite, Publicite
+from .serializers import PubliciteCreationAdminSerializer
 from .serializers_admin import (
     FormulePubliciteAdminSerializer, ParametresPubliciteAdminSerializer,
 )
@@ -167,3 +174,194 @@ class ParametresPubliciteAdminView(APIView):
                 request.user, 'pub_parametres_maj',
                 f'Paramètres publicité modifiés : {", ".join(modifies)}.')
         return Response(ParametresPubliciteAdminSerializer(params).data)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Création / reconduction d'une pub par l'admin pour un partenaire
+# ═══════════════════════════════════════════════════════════════════════
+
+_PERMISSION_PUBS_PARTENAIRES = [permissions.IsAuthenticated, ADroitDe('gerer_pubs_partenaires')]
+
+
+class ActivationAdminSerializer(serializers.Serializer):
+    """Dates de diffusion et règlement choisis par l'admin."""
+    date_debut = serializers.DateField()
+    date_fin = serializers.DateField(required=False, allow_null=True)
+    reglement = serializers.ChoiceField(choices=[
+        (services.REGLEMENT_PAYEE, 'Payée'), (services.REGLEMENT_OFFERTE, 'Offerte')])
+    motif = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_date_debut(self, valeur):
+        if valeur < timezone.localdate():
+            raise serializers.ValidationError(
+                "La date de début doit être aujourd'hui ou plus tard.")
+        return valeur
+
+    def validate(self, donnees):
+        fin = donnees.get('date_fin')
+        if fin is not None and fin <= donnees['date_debut']:
+            raise serializers.ValidationError(
+                {'date_fin': ['La date de fin doit être postérieure à la date de début.']})
+        return donnees
+
+
+class _QuotaAtteint(Exception):
+    """Activation refusée pour quota : annule la création (rollback)."""
+
+
+def _premier_message(erreurs):
+    """Premier message lisible d'un dict d'erreurs DRF (pour 'message')."""
+    for valeur in erreurs.values():
+        while isinstance(valeur, (list, tuple)) and valeur:
+            valeur = valeur[0]
+        if isinstance(valeur, dict):
+            return _premier_message(valeur)
+        if valeur:
+            return str(valeur)
+    return 'Données invalides.'
+
+
+def _erreur_400(erreurs):
+    return Response({'erreur': True, 'message': _premier_message(erreurs), 'details': erreurs},
+                    status=status.HTTP_400_BAD_REQUEST)
+
+
+def _url(request, champ):
+    if not champ:
+        return None
+    try:
+        return request.build_absolute_uri(champ.url)
+    except ValueError:
+        return None
+
+
+def _pub_admin_dict(pub, request):
+    """Réponse admin (jamais servie au partenaire)."""
+    return {
+        'id': str(pub.id),
+        'partenaire_id': pub.partenaire_id,
+        'partenaire_nom': pub.partenaire.nom_commerce,
+        'formule_id': str(pub.formule_id),
+        'formule_nom': pub.formule.nom,
+        'titre': pub.titre,
+        'description': pub.description,
+        'image_couverture': _url(request, pub.image_couverture),
+        'video': _url(request, pub.video),
+        'portee': pub.portee,
+        'portee_effective': pub.portee_effective,
+        'statut': pub.statut,
+        'debut_diffusion': pub.debut_diffusion,
+        'fin_diffusion': pub.fin_diffusion,
+        'reglement': services.REGLEMENT_OFFERTE if pub.est_faveur else services.REGLEMENT_PAYEE,
+        'est_faveur': pub.est_faveur,
+        'faveur_motif': pub.faveur_motif,
+        'cree_par_admin_id': pub.cree_par_admin_id,
+    }
+
+
+def _journaliser_pub_admin(acteur, pub, code, texte):
+    """Best-effort, même pattern que services.journaliser_transition."""
+    try:
+        from apps.administration.moderation import _journaliser
+        _journaliser(acteur, pub.partenaire.user, code, texte)
+    except Exception:
+        pass
+
+
+def _resume_journal(pub):
+    reglement = (f'offerte ({pub.faveur_motif})' if pub.est_faveur else 'payée')
+    return (f'Publicité « {pub.titre} » (id {pub.pk}) pour « {pub.partenaire.nom_commerce} » — '
+            f'{pub.formule.nom}, {reglement}, du {timezone.localtime(pub.debut_diffusion):%d/%m/%Y} '
+            f'au {timezone.localtime(pub.fin_diffusion):%d/%m/%Y}')
+
+
+class CreerPubliciteAdminView(APIView):
+    """POST /api/v1/publicites/admin/creer/ (multipart) — l'admin crée une
+    pub pour un partenaire ; elle passe directement au statut active aux
+    dates choisies (quota de la formule vérifié comme dans le circuit
+    normal). Capacité gerer_pubs_partenaires."""
+    permission_classes = _PERMISSION_PUBS_PARTENAIRES
+
+    def post(self, request):
+        from apps.users.models import ProfilPartenaire
+
+        brut = request.data.get('partenaire')
+        if brut in (None, ''):
+            return _erreur_400({'partenaire': ['Ce champ est obligatoire.']})
+        try:
+            partenaire = ProfilPartenaire.objects.select_related('user', 'plan').filter(pk=int(brut)).first()
+        except (TypeError, ValueError):
+            partenaire = None
+        if partenaire is None:
+            return _erreur_400({'partenaire': ['Partenaire introuvable.']})
+
+        creation = PubliciteCreationAdminSerializer(
+            data=request.data, context={'request': request, 'partenaire': partenaire})
+        activation = ActivationAdminSerializer(data=request.data)
+        creation_ok, activation_ok = creation.is_valid(), activation.is_valid()
+        if not (creation_ok and activation_ok):
+            return _erreur_400({**creation.errors, **activation.errors})
+        a = activation.validated_data
+        debut, fin = services.bornes_diffusion(
+            creation.validated_data['formule'], a['date_debut'], a.get('date_fin'))
+
+        try:
+            with transaction.atomic():
+                pub = creation.save(partenaire=partenaire)
+                ok, message = services.activer_publicite_aux_dates(
+                    pub, debut, fin, request.user, a['reglement'], a.get('motif', ''))
+                if not ok:
+                    raise _QuotaAtteint(message)
+        except _QuotaAtteint as exc:
+            return Response({'erreur': True, 'message': str(exc)}, status=status.HTTP_409_CONFLICT)
+
+        _journaliser_pub_admin(request.user, pub, 'pub_creee_admin', _resume_journal(pub))
+        return Response(_pub_admin_dict(pub, request), status=status.HTTP_201_CREATED)
+
+
+class ReconduirePubliciteAdminView(APIView):
+    """POST /api/v1/publicites/admin/<id>/reconduire/ — l'admin reconduit une
+    pub terminée d'un partenaire : même règle de copie que la reconduction
+    partenaire (services.copier_pour_reconduction), mais la copie passe
+    directement au statut active aux dates choisies. L'originale n'est
+    jamais modifiée. Capacité gerer_pubs_partenaires."""
+    permission_classes = _PERMISSION_PUBS_PARTENAIRES
+
+    def post(self, request, pk=None):
+        ancienne = (Publicite.objects.select_related('formule', 'partenaire__user', 'partenaire__plan')
+                    .filter(pk=pk).first())
+        if ancienne is None:
+            return Response({'erreur': True, 'message': 'Publicité introuvable.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        refus = services.raison_refus_reconduction(ancienne)
+        if refus:
+            return Response({'erreur': True, 'message': refus}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            formule, nouvelle_image, portee_demandee = services.options_reconduction(
+                request.data, request.FILES, ancienne)
+        except services.ReconductionInvalide as exc:
+            return Response({'erreur': True, 'message': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        activation = ActivationAdminSerializer(data=request.data)
+        if not activation.is_valid():
+            return _erreur_400(activation.errors)
+        a = activation.validated_data
+        debut, fin = services.bornes_diffusion(formule, a['date_debut'], a.get('date_fin'))
+
+        try:
+            with transaction.atomic():
+                nouvelle = services.copier_pour_reconduction(
+                    ancienne, ancienne.partenaire, formule, nouvelle_image, portee_demandee)
+                ok, message = services.activer_publicite_aux_dates(
+                    nouvelle, debut, fin, request.user, a['reglement'], a.get('motif', ''))
+                if not ok:
+                    raise _QuotaAtteint(message)
+        except _QuotaAtteint as exc:
+            return Response({'erreur': True, 'message': str(exc)}, status=status.HTTP_409_CONFLICT)
+
+        _journaliser_pub_admin(
+            request.user, nouvelle, 'pub_reconduite_admin',
+            f'{_resume_journal(nouvelle)} — reconduction de {ancienne.pk}')
+        donnees = _pub_admin_dict(nouvelle, request)
+        donnees['reconduite_depuis'] = str(ancienne.pk)
+        return Response(donnees, status=status.HTTP_201_CREATED)

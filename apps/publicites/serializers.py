@@ -66,8 +66,21 @@ class PubliciteCreationSerializer(serializers.ModelSerializer):
         # Portee effective = MAX(forfait, choisie) : jamais d'erreur pour une
         # portee absente/egale/inferieure au forfait, on stocke celle du forfait.
         from .services import portee_a_appliquer
-        requete = self.context.get('request')
-        profil = getattr(getattr(requete, 'user', None),
-                         'profil_partenaire', None)
-        donnees['portee'] = portee_a_appliquer(profil, donnees.get('portee'))
+        donnees['portee'] = portee_a_appliquer(self.profil_cible(), donnees.get('portee'))
         return donnees
+
+    def profil_cible(self):
+        """Partenaire dont le forfait fixe la portée : celui de l'utilisateur
+        connecté (parcours partenaire)."""
+        requete = self.context.get('request')
+        return getattr(getattr(requete, 'user', None), 'profil_partenaire', None)
+
+
+class PubliciteCreationAdminSerializer(PubliciteCreationSerializer):
+    """Création par l'admin POUR un partenaire (POST /publicites/admin/creer/) :
+    mêmes champs et mêmes règles que le parcours partenaire, mais la portée
+    se calcule sur le forfait du partenaire passé en contexte
+    (context['partenaire']). Le parcours partenaire n'est pas modifié."""
+
+    def profil_cible(self):
+        return self.context['partenaire']

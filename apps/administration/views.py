@@ -404,10 +404,12 @@ class RecherchePartenairesView(APIView):
     """Recherche un partenaire par nom d'enseigne ou téléphone.
 
     Sert de premier pas au parcours « accorder un crédit de formule pub » :
-    l'admin cherche le partenaire avant de lui offrir un crédit.
+    l'admin cherche le partenaire avant de lui offrir un crédit — et à la
+    création d'une pub pour un partenaire (capacité gerer_pubs_partenaires :
+    l'une OU l'autre suffit).
     GET ?q=<texte> — moins de 2 caractères => liste vide (pas d'erreur).
     """
-    permission_classes = [IsAuthenticated, ADroitDe('offrir_campagne')]
+    permission_classes = [IsAuthenticated, ADroitDeUnDe('offrir_campagne', 'gerer_pubs_partenaires')]
 
     def get(self, request):
         q = request.query_params.get('q', '').strip()

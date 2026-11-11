@@ -11,8 +11,8 @@ from .stats import (ExportCSVView, FormulesQuotasAdminView, StatsAdminView,
                     StatistiquesGlobalesAdminView, StatsPartenaireView,
                     StatsVisiblesAdminView)
 from .views_admin import (
-    FormuleGestionDetailView, FormuleGestionListCreateView,
-    ParametresPubliciteAdminView,
+    CreerPubliciteAdminView, FormuleGestionDetailView, FormuleGestionListCreateView,
+    ParametresPubliciteAdminView, ReconduirePubliciteAdminView,
 )
 
 app_name = 'publicites'
@@ -33,6 +33,9 @@ urlpatterns = [
          name='admin-formule-gestion-detail'),
     path('admin/parametres/', ParametresPubliciteAdminView.as_view(),
          name='admin-parametres'),
+    path('admin/creer/', CreerPubliciteAdminView.as_view(), name='admin-creer'),
+    path('admin/<uuid:pk>/reconduire/', ReconduirePubliciteAdminView.as_view(),
+         name='admin-reconduire'),
     path('carrousel/', CarrouselView.as_view(), name='carrousel'),
     path('interstitiel/', InterstitielView.as_view(), name='interstitiel'),
     path('bandeau-bas/', BandeauBasView.as_view(), name='bandeau-bas'),

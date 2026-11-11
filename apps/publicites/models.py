@@ -151,6 +151,14 @@ class Publicite(ImagesOptimiseesMixin, ModeleBase):
         'motif de la faveur', blank=True,
         help_text='Ex: "Partenariat", "Lancement", "Compensation".',
     )
+    # ── Traçage interne : admin auteur d'une création ou d'une reconduction
+    # faite pour le partenaire (POST /publicites/admin/creer/ et
+    # /publicites/admin/<id>/reconduire/). Jamais exposé au partenaire.
+    cree_par_admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='publicites_creees_pour_partenaire',
+        verbose_name="créée ou reconduite par l'admin",
+    )
     # ── Masquage côté partenaire (soft delete, pas une suppression admin) ─
     masquee_par_partenaire = models.BooleanField(
         'masquée par le partenaire', default=False,

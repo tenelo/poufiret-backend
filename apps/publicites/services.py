@@ -367,6 +367,19 @@ def quota_formule_disponible(pub):
     return nb_actives_formule(pub.formule, exclure=pub) < pub.formule.quota_partenaires
 
 
+def message_quota_atteint(pub):
+    """Message de refus d'activation pour quota de formule atteint — source
+    unique, partagée par appliquer_transition (circuit normal) et
+    l'activation directe par l'admin (activer_publicite_aux_dates)."""
+    quota = pub.formule.quota_partenaires
+    return (
+        f'Quota de la formule « {pub.formule.nom} » atteint '
+        f'({nb_actives_formule(pub.formule, exclure=pub)}/{quota} '
+        f'campagne(s) active(s) en même temps). Activation impossible '
+        f'tant qu\'une campagne active de cette formule n\'est pas '
+        f'terminée.')
+
+
 def raison_refus_annulation(pub):
     """Message francais si la soumission ne peut pas etre annulee, sinon None.
 
@@ -490,13 +503,7 @@ def appliquer_transition(pub, action):
     )
     if activation:
         if not quota_formule_disponible(pub):
-            quota = pub.formule.quota_partenaires
-            return False, (
-                f'Quota de la formule « {pub.formule.nom} » atteint '
-                f'({nb_actives_formule(pub.formule, exclure=pub)}/{quota} '
-                f'campagne(s) active(s) en même temps). Activation impossible '
-                f'tant qu\'une campagne active de cette formule n\'est pas '
-                f'terminée.')
+            return False, message_quota_atteint(pub)
         activer_publicite(pub)
         return True, 'Publicite activee, diffusion lancee.'
 
@@ -504,3 +511,133 @@ def appliquer_transition(pub, action):
     pub.save(update_fields=['statut', 'modifie_le'])
     _notifier_transition_pub(pub, vers)
     return True, f'Statut : {pub.get_statut_display()}.'
+
+
+# ── Reconduction (règle de copie commune partenaire / admin) ──────────
+
+def raison_refus_reconduction(pub):
+    """Message si la pub ne peut pas être reconduite (seule une pub
+    terminée le peut), sinon None — partagé partenaire / admin."""
+    if pub.statut != Publicite.Statut.TERMINEE:
+        return ('Seule une publicité terminée peut être reconduite '
+                f'(statut actuel : "{pub.get_statut_display()}").')
+    return None
+
+
+class ReconductionInvalide(Exception):
+    """Option de reconduction refusée (message français, réponse 400)."""
+
+
+def options_reconduction(donnees, fichiers, ancienne):
+    """Lit les options facultatives d'une reconduction, communes au
+    partenaire (POST /mes-publicites/<id>/reconduire/) et à l'admin
+    (POST /admin/<id>/reconduire/) : formule_id (sinon celle de l'ancienne
+    pub), image_couverture (sinon celle de l'ancienne), portee (sinon
+    celle de l'ancienne). Retourne (formule, image ou None, portee
+    demandée) ; lève ReconductionInvalide avec le message à renvoyer."""
+    from django.core.exceptions import ValidationError as DjangoValidationError
+
+    from apps.users.models import Portee
+
+    from .models import FormulePublicite
+
+    formule_id = donnees.get('formule_id')
+    if formule_id:
+        try:
+            formule = FormulePublicite.objects.filter(
+                pk=formule_id, est_active=True).first()
+        except (ValueError, TypeError, DjangoValidationError):
+            formule = None
+        if formule is None:
+            raise ReconductionInvalide('Formule introuvable ou inactive.')
+    else:
+        formule = ancienne.formule
+
+    nouvelle_image = fichiers.get('image_couverture')
+
+    portee_demandee = donnees.get('portee')
+    if portee_demandee and portee_demandee not in Portee.values:
+        raise ReconductionInvalide('Portée invalide.')
+    return formule, nouvelle_image, portee_demandee
+
+
+def copier_pour_reconduction(ancienne, profil, formule, nouvelle_image=None,
+                             portee_demandee=None, **champs):
+    """Crée la NOUVELLE pub d'une reconduction, en brouillon par défaut —
+    règle de copie unique (partenaire et admin) : titre, description,
+    image de couverture (référence du fichier existant, sauf nouvelle
+    image fournie), vidéo (référence) et portée = MAX(forfait actuel du
+    partenaire, portée demandée ou celle de l'ancienne). La galerie
+    (ImagePublicite) n'est PAS copiée. L'ancienne n'est jamais modifiée.
+    `champs` : valeurs supplémentaires posées dès la création (admin)."""
+    return Publicite.objects.create(
+        partenaire=profil,
+        formule=formule,
+        titre=ancienne.titre,
+        description=ancienne.description,
+        image_couverture=nouvelle_image or ancienne.image_couverture.name,
+        video=ancienne.video.name if ancienne.video else None,
+        portee=portee_a_appliquer(profil, portee_demandee or ancienne.portee),
+        **champs,
+    )
+
+
+# ── Création / reconduction par l'admin pour un partenaire ────────────
+
+REGLEMENT_PAYEE = 'payee'
+REGLEMENT_OFFERTE = 'offerte'
+MOTIF_OFFERTE_DEFAUT = "Offerte par l'administration"
+
+
+def bornes_diffusion(formule, date_debut, date_fin=None):
+    """(debut, fin) de diffusion choisis par l'admin (dates déjà validées).
+
+    debut : maintenant si date_debut est aujourd'hui, sinon minuit (heure
+    locale) de date_debut. fin : date_fin incluse (23:59:59 heure locale)
+    si fournie, sinon debut + formule.duree_jours (même calcul que
+    activer_publicite)."""
+    from datetime import datetime, time
+
+    if date_debut == timezone.localdate():
+        debut = timezone.now()
+    else:
+        debut = timezone.make_aware(datetime.combine(date_debut, time.min))
+    if date_fin is None:
+        fin = debut + timedelta(days=formule.duree_jours)
+    else:
+        fin = timezone.make_aware(datetime.combine(date_fin, time.max))
+    return debut, fin
+
+
+def appliquer_reglement(pub, reglement, admin, motif=''):
+    """Pose le règlement sur la pub (sans sauvegarder) : « payee » =>
+    campagne non offerte (comptée dans les revenus estimés existants,
+    aucun Paiement créé) ; « offerte » => est_faveur, admin et motif
+    tracés (même marquage que offrir_campagne)."""
+    if reglement == REGLEMENT_OFFERTE:
+        pub.est_faveur = True
+        pub.faveur_accordee_par = admin
+        pub.faveur_motif = (motif or '').strip() or MOTIF_OFFERTE_DEFAUT
+    else:
+        pub.est_faveur = False
+        pub.faveur_accordee_par = None
+        pub.faveur_motif = ''
+
+
+def activer_publicite_aux_dates(pub, debut, fin, admin, reglement, motif=''):
+    """Active directement une pub créée ou reconduite par l'admin, aux
+    dates choisies. Chemin distinct de activer_publicite / offrir_campagne
+    / consommer_credit (inchangés). Vérifie le quota de la formule comme
+    le circuit normal. Retourne (ok, message) ; ne notifie personne (même
+    comportement qu'une validation admin du circuit normal)."""
+    if not quota_formule_disponible(pub):
+        return False, message_quota_atteint(pub)
+    pub.statut = Publicite.Statut.ACTIVE
+    pub.debut_diffusion = debut
+    pub.fin_diffusion = fin
+    pub.cree_par_admin = admin
+    appliquer_reglement(pub, reglement, admin, motif)
+    pub.save(update_fields=[
+        'statut', 'debut_diffusion', 'fin_diffusion', 'cree_par_admin',
+        'est_faveur', 'faveur_accordee_par', 'faveur_motif', 'modifie_le'])
+    return True, 'Publicité activée.'
