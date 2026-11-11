@@ -52,6 +52,24 @@ try:
         ua, ub = pa.user, pb.user
         decouverte = FormulePublicite.objects.get(nom='Découverte')
         exclusif = FormulePublicite.objects.get(nom='Exclusif')
+        # Indépendant des réglages de l'admin (annulé au rollback) : quotas supposés
+        # par le test fixés explicitement (Découverte 20, Exclusif 1).
+        FormulePublicite.objects.filter(id=decouverte.id).update(quota_partenaires=20)
+        FormulePublicite.objects.filter(id=exclusif.id).update(quota_partenaires=1)
+        decouverte.refresh_from_db()
+        exclusif.refresh_from_db()
+        # Portée du forfait (section 5) : vient du plan, réglable dans l'admin. On
+        # fixe Salon Awa = departement, Business Center = region (plan distinct si
+        # les deux partagent le même). update() : aucun signal déclenché.
+        from apps.users.models import PlanAbonnement
+        plan_dep = pa.plan_id
+        plan_reg = pb.plan_id if pb.plan_id != pa.plan_id else (
+            PlanAbonnement.objects.exclude(pk=pa.plan_id).order_by('pk').values_list('pk', flat=True).first())
+        PlanAbonnement.objects.filter(pk=plan_dep).update(portee='departement')
+        PlanAbonnement.objects.filter(pk=plan_reg).update(portee='region')
+        ProfilPartenaire.objects.filter(pk=pb.pk).update(plan_id=plan_reg)
+        pa.refresh_from_db()
+        pb.refresh_from_db()
 
         def pub(formule, statut, partenaire=pa, titre='T', portee='departement', **kw):
             return Publicite.objects.create(
