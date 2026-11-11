@@ -307,10 +307,11 @@ class AdminPlatsOrdreView(_PerimetreAdminMixin, _PlatsOrdreBase):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# IMAGES D'UN PLAT (comme /catalogue/images/ : quota du plan, pas de
+# IMAGES D'UN PLAT (comme /catalogue/images/ : plafond de photos de la
+# catégorie, sinon quota du plan — apps.catalog.quota_photos ; pas de
 # bascule auto d'image principale — PATCH l'ancienne à est_principale=false
 # avant d'en poser une nouvelle). Le plat est celui de l'URL : champ
-# "article" du corps facultatif (400 s'il diffère) ; quota dépassé → 400.
+# "article" du corps facultatif (400 s'il diffère) ; plafond dépassé → 400.
 # ═══════════════════════════════════════════════════════════════════════
 
 class _PlatImagesListCreateBase(generics.ListCreateAPIView):
@@ -319,7 +320,7 @@ class _PlatImagesListCreateBase(generics.ListCreateAPIView):
     def _plat(self):
         if not hasattr(self, '_plat_cache'):
             self._plat_cache = get_object_or_404(
-                Article.objects.select_related('partenaire__plan'), pk=self.kwargs['plat_id'],
+                Article.objects.select_related('partenaire__plan', 'categorie'), pk=self.kwargs['plat_id'],
                 partenaire=self.get_partenaire(), type__in=gabarits.types_articles_moteur())
         return self._plat_cache
 
@@ -331,6 +332,14 @@ class _PlatImagesListCreateBase(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(article=self._plat(), est_active=True)
+
+    def list(self, request, *args, **kwargs):
+        """+ plafond_photos : plafond effectif (catégorie sinon abonnement)
+        et nombre de photos, pour afficher « n / max » et bloquer l'ajout."""
+        from apps.catalog.quota_photos import etat_photos
+        reponse = super().list(request, *args, **kwargs)
+        reponse.data['plafond_photos'] = etat_photos(self._plat())
+        return reponse
 
 
 class _PlatImageDetailBase(generics.RetrieveUpdateDestroyAPIView):

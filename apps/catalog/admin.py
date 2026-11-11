@@ -31,7 +31,8 @@ class CategorieAdmin(admin.ModelAdmin):
                        'types_partenaire', 'mots_cles'),
         }),
         (_('Hiérarchie & comportement'), {
-            'fields': ('parent', 'affichage_enfants', 'mode_transaction', 'types_articles', 'module_flutter'),
+            'fields': ('parent', 'affichage_enfants', 'mode_transaction', 'types_articles', 'module_flutter',
+                       'max_photos_par_article'),
         }),
         (_('Affichage'), {
             'fields': ('ordre', 'est_active'),
@@ -75,7 +76,7 @@ class ArticleImageInline(admin.TabularInline):
         return "images d'articles"
 
     def get_formset(self, request, obj=None, **kwargs):
-        """Rappelle la limite du plan directement dans l'en-tete du bloc.
+        """Rappelle la limite (catégorie, sinon plan) dans l'en-tete du bloc.
 
         Le quota n'est pas applique ici : l'admin peut deliberement
         depasser (faveur, correction). Mais il doit le savoir.
@@ -83,10 +84,15 @@ class ArticleImageInline(admin.TabularInline):
         formset = super().get_formset(request, obj, **kwargs)
         plan = getattr(getattr(obj, 'partenaire', None), 'plan', None) if obj else None
         if plan is not None:
+            from .quota_photos import SOURCE_CATEGORIE, plafond_photos
             actuelles = obj.images.count()
+            plafond = plafond_photos(obj)
+            if plafond['source'] == SOURCE_CATEGORIE:
+                origine = f"catégorie {plafond['categorie_nom']} : {plafond['max']}"
+            else:
+                origine = f"plan {plan.libelle} : {plan.nb_photos_par_article}"
             formset.verbose_name_plural = (
-                f"images — plan {plan.libelle} : "
-                f"{plan.nb_photos_par_article} autorisée(s), "
+                f"images — {origine} autorisée(s), "
                 f"{actuelles} enregistrée(s)"
             )
         return formset

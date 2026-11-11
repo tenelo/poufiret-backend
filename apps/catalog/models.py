@@ -5,7 +5,7 @@ Module 2 du modèle Poufiret. Couvre catégories, articles, photos, panoramas,
 sections de menu, variantes, suppléments et tracking de vues.
 """
 from django.contrib.gis.db import models as gis_models
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -114,6 +114,17 @@ class Categorie(ImagesOptimiseesMixin, models.Model):
         choices=AffichageEnfants.choices, default=AffichageEnfants.PASTILLES,
     )
 
+    # Plafond de photos par article, prioritaire sur le quota de l'abonnement
+    # (PlanAbonnement.nb_photos_par_article). Vide = hérité de la catégorie
+    # parente, sinon quota de l'abonnement (apps.catalog.quota_photos).
+    MAX_PHOTOS_PAR_ARTICLE = 4
+    max_photos_par_article = models.PositiveSmallIntegerField(
+        _('nombre maximum de photos par article'), blank=True, null=True,
+        validators=[MinValueValidator(1), MaxValueValidator(MAX_PHOTOS_PAR_ARTICLE)],
+        help_text=_('De 1 à 4. S\'applique à la place du quota de l\'abonnement du vendeur. '
+                    'Vide = valeur de la catégorie parente, sinon quota de l\'abonnement.'),
+    )
+
     ordre = models.IntegerField(_('ordre d\'affichage'), default=0)
     est_active = models.BooleanField(_('catégorie active'), default=True)
     est_archivee = models.BooleanField(
@@ -129,6 +140,13 @@ class Categorie(ImagesOptimiseesMixin, models.Model):
         verbose_name = _('catégorie')
         verbose_name_plural = _('catégories')
         ordering = ['ordre', 'nom']
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(max_photos_par_article__isnull=True)
+                | models.Q(max_photos_par_article__gte=1, max_photos_par_article__lte=4),
+                name='categorie_max_photos_1_a_4',
+            ),
+        ]
 
     def __str__(self):
         if self.parent:

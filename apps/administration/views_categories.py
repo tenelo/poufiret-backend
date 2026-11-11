@@ -66,6 +66,9 @@ class CategorieAdminSerializer(serializers.ModelSerializer):
     types_partenaire = serializers.ListField(
         child=serializers.ChoiceField(choices=TYPES.choices), required=False)
     mots_cles = serializers.ListField(child=serializers.CharField(max_length=200), required=False)
+    max_photos_par_article = serializers.IntegerField(
+        required=False, allow_null=True, min_value=1, max_value=Categorie.MAX_PHOTOS_PAR_ARTICLE,
+        error_messages={'min_value': "Valeur attendue : un entier de 1 à 4, ou vide (quota de l'abonnement).", 'max_value': "Valeur attendue : un entier de 1 à 4, ou vide (quota de l'abonnement).", 'invalid': "Valeur attendue : un entier de 1 à 4, ou vide (quota de l'abonnement)."})
     nb_partenaires = serializers.SerializerMethodField()
     nb_enfants = serializers.SerializerMethodField()
 
@@ -73,7 +76,8 @@ class CategorieAdminSerializer(serializers.ModelSerializer):
         model = Categorie
         fields = ['id', 'nom', 'slug', 'description', 'icone', 'image', 'supprimer_image', 'ordre',
                   'est_active', 'est_archivee', 'parent_id', 'parent_nom', 'types_partenaire',
-                  'mots_cles', 'nb_partenaires', 'nb_enfants', 'affichage_enfants']
+                  'mots_cles', 'nb_partenaires', 'nb_enfants', 'affichage_enfants',
+                  'max_photos_par_article']
         read_only_fields = ['slug', 'ordre', 'est_archivee']
         extra_kwargs = {'description': {'required': False, 'allow_blank': True},
                         'icone': {'required': False, 'allow_blank': True, 'max_length': 50}}

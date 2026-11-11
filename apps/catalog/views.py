@@ -189,15 +189,36 @@ class ArticleImageViewSet(_SousRessourceViewSet):
     serializer_class = ArticleImageSerializer
 
     def perform_create(self, serializer):
+        from .quota_photos import SOURCE_CATEGORIE, erreur_plafond_categorie, refus_ajout_photo
+
         article = self._verifier_proprietaire(serializer)
-        # Quota photos selon le plan
-        maxi = article.partenaire.plan.nb_photos_par_article
-        if maxi and article.images.count() >= maxi:
+        # Plafond de photos : catégorie (400) sinon quota du plan (403, inchangé).
+        refus = refus_ajout_photo(article)
+        if refus:
+            plafond, nb = refus
+            if plafond['source'] == SOURCE_CATEGORIE:
+                raise erreur_plafond_categorie(plafond, nb)
             raise PermissionDenied(
-                f"Quota photos atteint ({maxi}/article pour le plan "
-                f"{article.partenaire.plan.libelle})."
+                f"Quota photos atteint ({plafond['max']}/article pour le plan "
+                f"{plafond['plan_libelle']})."
             )
         serializer.save(est_active=True)
+
+    def list(self, request, *args, **kwargs):
+        """+ plafond_photos (plafond effectif, « n / max ») quand ?article=
+        désigne un article du vendeur connecté ; sinon réponse inchangée."""
+        reponse = super().list(request, *args, **kwargs)
+        article_id = request.query_params.get('article')
+        if article_id and request.user.is_authenticated and isinstance(reponse.data, dict):
+            try:
+                article = Article.objects.select_related('categorie', 'partenaire__plan').filter(
+                    pk=int(article_id), partenaire__user=request.user).first()
+            except (TypeError, ValueError):
+                article = None
+            if article is not None:
+                from .quota_photos import etat_photos
+                reponse.data['plafond_photos'] = etat_photos(article)
+        return reponse
 
 
 class VideosPartenaireView(generics.ListAPIView):

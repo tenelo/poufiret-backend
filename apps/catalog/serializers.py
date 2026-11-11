@@ -108,20 +108,27 @@ class _ArticleDeLUrlMixin:
 
 class ArticleImageImbriqueeSerializer(_ArticleDeLUrlMixin, ArticleImageSerializer):
     """Image d'un article sur une route imbriquée (article déduit de l'URL),
-    avec le quota de photos du plan vérifié à la création (400, message clair)."""
+    avec le plafond de photos vérifié à la création (400, message clair) :
+    plafond de la catégorie s'il existe, sinon quota du plan
+    (apps.catalog.quota_photos)."""
 
     class Meta(ArticleImageSerializer.Meta):
         read_only_fields = ['article', 'est_active']
 
     def validate(self, attrs):
+        from .quota_photos import SOURCE_CATEGORIE, erreur_plafond_categorie, refus_ajout_photo
+
         attrs = super().validate(attrs)
         article = self._article_url()
         if self.instance is None and article is not None:
-            plan = article.partenaire.plan
-            maxi, nb = plan.nb_photos_par_article, article.images.count()
-            if maxi and nb >= maxi:
+            refus = refus_ajout_photo(article)
+            if refus:
+                plafond, nb = refus
+                if plafond['source'] == SOURCE_CATEGORIE:
+                    raise erreur_plafond_categorie(plafond, nb)
+                maxi = plafond['max']
                 message = (f"Quota de photos atteint : {maxi} photo(s) par article avec le plan "
-                           f"« {plan.libelle} » ({nb} déjà). Supprimez une photo ou passez "
+                           f"« {plafond['plan_libelle']} » ({nb} déjà). Supprimez une photo ou passez "
                            f"à un plan supérieur pour en ajouter.")
                 raise ErreurMetier(message, {'quota': maxi, 'nb_images': nb})
         return attrs

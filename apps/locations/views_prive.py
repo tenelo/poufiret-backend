@@ -261,16 +261,17 @@ class _DisponibiliteBase(_BienQuerysetMixin, APIView):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# IMAGES (comme /catalogue/images/ : quota du plan, pas de bascule auto
+# IMAGES (comme /catalogue/images/ : plafond de photos de la catégorie,
+# sinon quota du plan — apps.catalog.quota_photos ; pas de bascule auto
 # d'image principale). Le bien est celui de l'URL : champ "article" du
-# corps facultatif (400 s'il diffère) ; quota dépassé → 400.
+# corps facultatif (400 s'il diffère) ; plafond dépassé → 400.
 # ═══════════════════════════════════════════════════════════════════════
 
 class _BienArticleMixin:
     def _bien_article(self):
         if not hasattr(self, '_bien_cache'):
             self._bien_cache = get_object_or_404(
-                Article.objects.select_related('partenaire__plan'), pk=self.kwargs[self.kwarg_objet],
+                Article.objects.select_related('partenaire__plan', 'categorie'), pk=self.kwargs[self.kwarg_objet],
                 partenaire=self.get_partenaire(), type=self.article_type)
         return self._bien_cache
 
@@ -286,6 +287,14 @@ class _ImagesListCreateBase(_BienArticleMixin, generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(article=self._bien_article(), est_active=True)
+
+    def list(self, request, *args, **kwargs):
+        """+ plafond_photos : plafond effectif (catégorie sinon abonnement)
+        et nombre de photos, pour afficher « n / max » et bloquer l'ajout."""
+        from apps.catalog.quota_photos import etat_photos
+        reponse = super().list(request, *args, **kwargs)
+        reponse.data['plafond_photos'] = etat_photos(self._bien_article())
+        return reponse
 
 
 class _ImageDetailBase(generics.RetrieveUpdateDestroyAPIView):
