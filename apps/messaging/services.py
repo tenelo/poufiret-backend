@@ -153,10 +153,10 @@ def notifier_admins_intervention_nouvelle(demande):
         from apps.notifications.canaux import champs_canal
         from apps.users.models import User
 
-        destinataires = User.objects.filter(is_active=True).filter(
+        destinataires = list(User.objects.filter(is_active=True).filter(
             Q(is_superuser=True)
             | Q(is_staff=True, permissions_admin__voir_interventions=True)
-            | Q(is_staff=True, permissions_admin__gerer_interventions=True)).distinct()
+            | Q(is_staff=True, permissions_admin__gerer_interventions=True)).distinct())
         data = {'intervention_id': demande.id, 'statut': demande.statut}
         canal = champs_canal(Notification.Type.INTERVENTION_NOUVELLE, data)
         client = demande.user.get_full_name() or demande.user.telephone
@@ -170,6 +170,8 @@ def notifier_admins_intervention_nouvelle(demande):
                 data=data, **canal,
             ) for u in destinataires
         ])
+        from apps.notifications.temps_reel import diffuser_compteurs_admin
+        diffuser_compteurs_admin(destinataires, nouvelle=True)
     except Exception:
         logger.exception('Notification admin intervention %s : échec, création non bloquée.',
                          demande.pk)

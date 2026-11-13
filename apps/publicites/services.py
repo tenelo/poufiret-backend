@@ -437,9 +437,9 @@ def _notifier_admins_pub(pub, type_notif, titre, message):
         from apps.moderation.models import Notification
         from apps.users.models import User
 
-        destinataires = User.objects.filter(is_active=True).filter(
+        destinataires = list(User.objects.filter(is_active=True).filter(
             Q(is_superuser=True)
-            | Q(is_staff=True, permissions_admin__valider_publicite=True))
+            | Q(is_staff=True, permissions_admin__valider_publicite=True)))
         from apps.notifications.canaux import champs_canal
 
         data = {'publicite_id': str(pub.id), 'statut_publicite': pub.statut}
@@ -450,6 +450,8 @@ def _notifier_admins_pub(pub, type_notif, titre, message):
                 data=data, **canal,
             ) for u in destinataires
         ])
+        from apps.notifications.temps_reel import diffuser_compteurs_admin
+        diffuser_compteurs_admin(destinataires, nouvelle=True)
     except Exception:
         logger.exception(
             'Notification admin pub %s (%s) : échec, transition non bloquée.',

@@ -1,5 +1,4 @@
 """Vues notifications : token FCM de l'appareil + notifications in-app admin."""
-from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
@@ -8,6 +7,7 @@ from rest_framework.response import Response
 from apps.moderation.models import Notification
 
 from .serializers import NotificationAdminSerializer
+from .temps_reel import compteurs_admin, diffuser_compteurs_admin
 
 
 def _filtre_canal(qs, request):
@@ -81,11 +81,8 @@ class NotificationsAdminCompteurView(APIView):
     permission_classes = [permissions.IsAuthenticated, EstAdminOuSuperAdmin]
 
     def get(self, request):
-        c = Notification.objects.filter(user=request.user, lu=False).aggregate(
-            restaurant=Count('id', filter=Q(canal=Notification.Canal.RESTAURANT)),
-            general=Count('id', filter=Q(canal=Notification.Canal.GENERAL)))
-        return Response({'restaurant': c['restaurant'], 'general': c['general'],
-                         'nb_non_lues': c['restaurant'] + c['general']})
+        # Calcul partagé avec la diffusion WebSocket (apps.notifications.temps_reel).
+        return Response(compteurs_admin(request.user))
 
 
 class NotificationAdminLireView(APIView):
@@ -102,6 +99,7 @@ class NotificationAdminLireView(APIView):
             notif.lu = True
             notif.lu_le = timezone.now()
             notif.save(update_fields=['lu', 'lu_le'])
+            diffuser_compteurs_admin([request.user], nouvelle=False)
         return Response(NotificationAdminSerializer(notif).data)
 
 
@@ -117,5 +115,7 @@ class NotificationsAdminToutLireView(APIView):
         if erreur:
             return Response({'erreur': True, 'message': erreur}, status=400)
         n = qs.update(lu=True, lu_le=timezone.now())
+        if n:
+            diffuser_compteurs_admin([request.user], nouvelle=False)
         restantes = Notification.objects.filter(user=request.user, lu=False).count()
         return Response({'nb_mises_a_jour': n, 'nb_non_lues': restantes})

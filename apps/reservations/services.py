@@ -254,9 +254,9 @@ def _notifier_admins_demande(demande, type_notif, titre, message):
         from apps.moderation.models import Notification
         from apps.users.models import User
 
-        destinataires = User.objects.filter(is_active=True).filter(
+        destinataires = list(User.objects.filter(is_active=True).filter(
             Q(is_superuser=True)
-            | Q(is_staff=True, permissions_admin__gerer_reservations=True))
+            | Q(is_staff=True, permissions_admin__gerer_reservations=True)))
         from apps.notifications.canaux import champs_canal
 
         groupe = GROUPE_PAR_STATUT.get(demande.statut, '')
@@ -268,6 +268,8 @@ def _notifier_admins_demande(demande, type_notif, titre, message):
                 data=data, **canal,
             ) for u in destinataires
         ])
+        from apps.notifications.temps_reel import diffuser_compteurs_admin
+        diffuser_compteurs_admin(destinataires, nouvelle=True)
     except Exception:
         logger.exception('Notification admin demande %s (%s) : échec, action non bloquée.',
                          demande.pk, type_notif)

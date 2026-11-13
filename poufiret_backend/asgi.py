@@ -1,4 +1,5 @@
-"""ASGI : route le HTTP (REST) et le WebSocket (chat temps réel)."""
+"""ASGI : route le HTTP (REST) et le WebSocket (chat, position livreur,
+notifications admin)."""
 import os
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'poufiret_backend.settings')
 
@@ -10,10 +11,11 @@ from channels.security.websocket import AllowedHostsOriginValidator
 from apps.core.ws_auth import JWTAuthMiddleware
 from apps.messaging.routing import websocket_urlpatterns as ws_messaging
 from apps.livraison.routing import websocket_urlpatterns as ws_livraison
+from apps.notifications.routing import websocket_urlpatterns as ws_notifications
 
 application = ProtocolTypeRouter({
     'http': django_asgi_app,
     'websocket': AllowedHostsOriginValidator(
-        JWTAuthMiddleware(URLRouter(ws_messaging + ws_livraison))
+        JWTAuthMiddleware(URLRouter(ws_messaging + ws_livraison + ws_notifications))
     ),
 })

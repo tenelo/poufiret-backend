@@ -50,6 +50,8 @@ def _notifier_changement_telephone(cible, nouveau, message):
         user=cible, type=Notification.Type.COMPTE_TELEPHONE_MODIFIE,
         titre='Numéro de connexion modifié', contenu=message,
         data={'nouveau_telephone': nouveau})
+    from apps.notifications.temps_reel import diffuser_compteurs_admin
+    diffuser_compteurs_admin([cible], nouvelle=True)  # sans effet si la cible n'est pas admin
     notifier_utilisateur(cible, 'Numéro de connexion modifié', message,
                          data={'type': 'compte', 'sous_type': 'telephone_modifie'})
 
