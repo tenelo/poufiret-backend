@@ -60,6 +60,20 @@ def resultats(r):
     return data['results'] if isinstance(data, dict) and 'results' in data else data
 
 
+def ids_toutes_pages(url, user):
+    """Ids de toutes les pages (100 par page) : indépendant du nombre de
+    vraies commandes déjà présentes avant celles du test."""
+    from urllib.parse import urlsplit
+    ids, suivante = set(), url + ('&' if '?' in url else '?') + 'page_size=100'
+    while suivante:
+        r = j(suivante, 'get', user)
+        assert r.status_code == 200, r.content[:300]
+        ids |= {x['id'] for x in resultats(r)}
+        nxt = r.json().get('next') if isinstance(r.json(), dict) else None
+        suivante = (urlsplit(nxt).path + '?' + urlsplit(nxt).query) if nxt else None
+    return ids
+
+
 BASE = '/api/v1/orders/admin'
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -136,25 +150,27 @@ try:
             statut='nouvelle', total=1000)
 
         r = j(f'{BASE}/commandes/?groupe=a_traiter', 'get', superadmin)
-        ok('?groupe=a_traiter contient c1', str(c1.id) in {x['id'] for x in resultats(r)} or c1.id in {x['id'] for x in resultats(r)}, resultats(r))
+        ok('?groupe=a_traiter contient c1 (toutes pages)', c1.id in ids_toutes_pages(
+            f'{BASE}/commandes/?groupe=a_traiter', superadmin))
         ok('?groupe=a_traiter : plus anciennes d\'abord (cree_le croissant)',
            [x['cree_le'] for x in resultats(r)] == sorted(x['cree_le'] for x in resultats(r)))
         r = j(f'{BASE}/commandes/?statut=livree', 'get', superadmin)
-        ids_livree = {x['id'] for x in resultats(r)}
+        ids_livree = ids_toutes_pages(f'{BASE}/commandes/?statut=livree', superadmin)
         ok('?statut=livree', c_livree.id in ids_livree and c1.id not in ids_livree and all(x['statut'] == 'livree' for x in resultats(r)))
         r = j(f'{BASE}/commandes/?statut=inconnu', 'get', superadmin)
         ok('statut inconnu -> 400', r.status_code == 400, r.content)
         r = j(f'{BASE}/commandes/?groupe=inconnu', 'get', superadmin)
         ok('groupe inconnu -> 400', r.status_code == 400, r.content)
         r = j(f'{BASE}/commandes/?partenaire={pa.id}', 'get', superadmin)
-        ok('?partenaire=', c_autre_partenaire.id not in {x['id'] for x in resultats(r)}
-           and c1.id in {x['id'] for x in resultats(r)})
+        ids_pa = ids_toutes_pages(f'{BASE}/commandes/?partenaire={pa.id}', superadmin)
+        ok('?partenaire=', c_autre_partenaire.id not in ids_pa and c1.id in ids_pa)
         r = j(f'{BASE}/commandes/?client={client.id}', 'get', superadmin)
         ok('?client=', all(x['client']['id'] == client.id for x in resultats(r)))
         r = j(f'{BASE}/commandes/?search={c1.numero}', 'get', superadmin)
         ok('?search= reference', {x['id'] for x in resultats(r)} == {c1.id}, resultats(r))
         r = j(f'{BASE}/commandes/?search={pa.nom_commerce}', 'get', superadmin)
-        ok('?search= nom partenaire', c1.id in {x['id'] for x in resultats(r)})
+        ok('?search= nom partenaire', c1.id in ids_toutes_pages(
+            f'{BASE}/commandes/?search={pa.nom_commerce}', superadmin))
         r = j(f'{BASE}/commandes/?mode_livraison=emporter', 'get', superadmin)
         ok('?mode_livraison=', all(x['mode_livraison'] == 'emporter' for x in resultats(r)))
         r = j(f'{BASE}/commandes/?ordering=montant_total', 'get', superadmin)

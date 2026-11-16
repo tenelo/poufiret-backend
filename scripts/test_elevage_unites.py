@@ -215,8 +215,13 @@ try:
         ok('oeufs Plaquette de 15 x1 : 1500', l and Decimal(str(l['prix_ligne'])) == 1500, l)
         ok('oeufs : 1,5 plaquette refuse', ajouter(oeufs, 1.5, p15['id']).status_code == 400)
         r = ajouter(mouton, 1, gros['id'])
-        l = ligne_de(r, mouton, gros['id'])
-        ok('non-regression : variante a supplement (60000 + 10000)', l and Decimal(str(l['prix_ligne'])) == 70000, l)
+        lignes_gros = [x for x in r.json().get('lignes', []) if x['article'] == mouton['id']
+                       and x.get('variante_id') == gros['id']]
+        # La boucle ci-dessus a deja ajoute « Gros » x2 : on verifie le prix
+        # UNITAIRE (60000 + 10000) de toutes les lignes Gros, pas la premiere.
+        ok('non-regression : variante a supplement (60000 + 10000)', r.status_code == 201 and lignes_gros
+           and all(Decimal(str(x['prix_unitaire'])) == 70000 for x in lignes_gros)
+           and sum(Decimal(str(x['prix_ligne'])) for x in lignes_gros) == 70000 * 3, lignes_gros or r.content)
 
         raise Rollback()
 except Rollback:

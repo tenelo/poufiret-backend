@@ -9,7 +9,7 @@ commande. Transaction annulée (rien n'est persisté, aucune image écrite).
 Execution :
     docker exec -i backend-poufiret python manage.py shell < scripts/test_orders_client_images_recherche.py
 """
-import json, uuid
+import json, sys, traceback, uuid
 from datetime import timedelta
 from django.db import connection, transaction
 from django.test import Client
@@ -27,12 +27,15 @@ from unittest import mock as _mock_debit
 from rest_framework.views import APIView as _APIViewDebit
 _mock_debit.patch.object(_APIViewDebit, 'get_throttles', return_value=[]).start()
 class Rollback(Exception): pass
-NB = 0
+NB, KO = 0, []
 def ok(l, c, d=''):
+    """N'interrompt plus le script : compte OK / KO, bilan toujours affiché."""
     global NB
     print(('OK   ' if c else 'FAIL '), l, '' if c else d)
-    assert c, f'{l} {d}'
-    NB += 1
+    if c:
+        NB += 1
+    else:
+        KO.append(l)
 
 def req(method, url, user, corps=None):
     kw = {'secure': True, 'HTTP_HOST': HOST, 'HTTP_AUTHORIZATION': f'Bearer {AccessToken.for_user(user)}'}
@@ -183,3 +186,13 @@ try:
         raise Rollback()
 except Rollback:
     print('Rollback effectue.')
+except Exception:
+    # Erreur inattendue : trace sur la sortie standard (visible avec
+    # « shell < script ») et bilan quand même affiché.
+    traceback.print_exc(file=sys.stdout)
+    KO.append('exception inattendue (trace ci-dessus)')
+
+print(f'\n=== TOTAL : {NB} OK / {len(KO)} KO ===')
+if KO:
+    print('KO :', *KO, sep='\n - ')
+    raise SystemExit(1)

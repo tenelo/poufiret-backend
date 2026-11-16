@@ -65,7 +65,7 @@ try:
         P = {t: partenaire(t, n) for t, n in [
             ('restaurateur', 'Resto'), ('fast_food', 'Fast'), ('boulanger', 'Boulange'),
             ('pharmacien', 'Pharma'), ('boutique_mode', 'Mode'), ('libraire', 'Livres'),
-            ('eleveur', 'Ferme'), ('hotelier', 'Hotel'), ('coiffeur', 'Coiffure')]}
+            ('eleveur', 'Ferme'), ('grilleur', 'Grill'), ('hotelier', 'Hotel'), ('coiffeur', 'Coiffure')]}
         super_ = utilisateur('t_gab_super', 'admin', staff=True, superuser=True)
         admin_sans = utilisateur('t_gab_sans', 'admin', staff=True)
         PermissionsAdmin.objects.create(admin=admin_sans)
@@ -76,7 +76,8 @@ try:
            and T('libraire').label == 'Libraire')
         attendu = {'restaurateur': 'restaurant', 'fast_food': 'restaurant', 'boulanger': 'boulangerie',
                    'pharmacien': 'pharmacie', 'boutique_mode': 'mode', 'libraire': 'librairie',
-                   'coiffeur': 'generique', 'commercant': 'generique', 'autre': 'generique'}
+                   'coiffeur': 'generique', 'commercant': 'generique', 'autre': 'generique',
+                   'grilleur': 'grillades'}
         ok('correspondance type -> gabarit', all(gabarits.gabarit_de_type(t) == g for t, g in attendu.items()),
            {t: gabarits.gabarit_de_type(t) for t in attendu})
         ok('types geres a part : valeurs propres', gabarits.gabarit_de_type('hotelier') == 'hotel'

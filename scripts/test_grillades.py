@@ -24,6 +24,7 @@ Execution :
 """
 import io
 import json
+import os
 import shutil
 import tempfile
 import uuid
@@ -186,6 +187,9 @@ try:
             formats[nom] = d.get('id')
         v = Variante.objects.get(pk=formats['Petit'])
         ok('image stockee sous catalogue/variantes/', v.image.name.startswith('catalogue/variantes/'), v.image.name)
+        ok('images ecrites dans le dossier temporaire du test (supprime a la fin), pas dans media/',
+           all(os.path.realpath(x.image.path).startswith(os.path.realpath(dossier_media))
+               for x in Variante.objects.filter(pk__in=list(formats.values())) if x.image), v.image.path)
         for nom, prix in (('500 F', 500), ('1 000 F', 1000), ('1 500 F', 1500)):
             r = req('post', f'{MON}/carte/variantes/', g_user, {'article': porc['id'], 'nom': nom, 'prix': prix})
             ok(f'format porc {nom} sans image (JSON) -> 201, image null', r.status_code == 201
@@ -217,7 +221,8 @@ try:
             return {x['id']: x for x in (d['results'] if isinstance(d, dict) and 'results' in d else d)}
 
         p = produits()
-        ok('app : formats du poisson avec image (URL absolue)', [
+        # Formats tous a ordre 0 : ordre de creation (Petit, Moyen, Gros), stable.
+        ok('app : formats du poisson avec image (URL absolue), ordre de creation', [
             (x['nom'], bool(x['image']) and x['image'].startswith('http')) for x in p[poisson['id']]['variantes']]
            == [('Petit', True), ('Moyen', True), ('Gros', True)], p[poisson['id']]['variantes'])
         ok('app : formats du porc sans image (null)', all(
@@ -364,6 +369,7 @@ except Rollback:
     print('\nRollback effectue (rien persiste).')
 finally:
     shutil.rmtree(dossier_media, ignore_errors=True)
+    ok('nettoyage : dossier temporaire des images supprime', not os.path.exists(dossier_media), dossier_media)
 
 print(f'\n=== TOTAL : {NB_OK} OK / {len(KO)} KO ===')
 if KO:

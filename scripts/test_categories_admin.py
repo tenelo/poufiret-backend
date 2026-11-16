@@ -68,6 +68,19 @@ try:
         uid = uuid.uuid4().hex[:6]
         nom_racine = f'QA Racine {uid}'
 
+        def detentrice(type_):
+            """Nom de la catégorie (non archivée) qui déclare ce type, ou None
+            (même règle que types-partenaire/ : la plus ancienne)."""
+            return (Categorie.objects.filter(est_archivee=False, types_partenaire__contains=[type_])
+                    .order_by('id').values_list('nom', flat=True).first())
+
+        # « restaurateur » déclaré par une catégorie réelle (ex. Restaurants) ;
+        # sinon une catégorie de test le déclare (transaction annulée).
+        nom_resto = detentrice('restaurateur')
+        if nom_resto is None:
+            nom_resto = f'QA Detentrice {uid}'
+            Categorie.objects.create(nom=nom_resto, slug=f'qa-detentrice-{uid}', types_partenaire=['restaurateur'])
+
         print('=== 1. DROITS ===')
         ok('admin sans capacite -> 403', req('get', A, sans).status_code == 403)
         ok('anonyme -> 401/403', req('get', A).status_code in (401, 403))
@@ -121,7 +134,7 @@ try:
         r = req('post', A, avec, {'nom': f'QA Resto bis {uid}', 'types_partenaire': ['restaurateur']})
         ok('type deja declare -> 400 details.types_partenaire', r.status_code == 400 and 'types_partenaire' in r.json()['details'], r.content)
         ok('message nomme la categorie qui le detient',
-           'Restaurants' in r.json()['details']['types_partenaire'][0], r.json())
+           nom_resto in r.json()['details']['types_partenaire'][0], r.json())
         r = req('post', A, avec, {'nom': f'QA Type bad {uid}', 'types_partenaire': ['zzz']})
         ok('type invalide -> 400', r.status_code == 400, r.content)
         r = req('patch', f'{A}{rid}/', avec, {'types_partenaire': ['restaurateur']})
@@ -214,9 +227,10 @@ try:
         ok('tous les types de partenaire (dont fast_food, boutique_mode)',
            len(t) == len(_PP.TypePartenaire.choices)
            and {'fast_food', 'boutique_mode'} <= {x['valeur'] for x in t}, len(t))
-        ok('fast_food -> Restaurants (rattachement P1)',
-           any(x['valeur'] == 'fast_food' and x['categorie_nom'] == 'Restaurants' for x in t), t)
-        ok('restaurateur -> Restaurants', any(x['valeur'] == 'restaurateur' and x['categorie_nom'] == 'Restaurants' for x in t))
+        ok('chaque type -> sa categorie detentrice reelle (ou null)', all(
+            x['categorie_nom'] == detentrice(x['valeur']) for x in t), t)
+        ok(f'restaurateur -> {nom_resto}', any(
+            x['valeur'] == 'restaurateur' and x['categorie_nom'] == nom_resto for x in t))
         ok('autre -> declare par la categorie creee pendant l archivage', any(
             x['valeur'] == 'autre' and x['categorie_nom'] == f'QA Concurrente {uid}' for x in t))
 

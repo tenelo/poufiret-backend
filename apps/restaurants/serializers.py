@@ -292,9 +292,10 @@ class OptionGroupePubliqueSerializer(serializers.ModelSerializer):
 
 def _actifs_tries(elements, champ_actif):
     """Filtre/tri en Python sur une relation préchargée (prefetch_related) :
-    mêmes résultats que .filter(<actif>=True).order_by('ordre'), sans
-    requête supplémentaire par objet."""
-    return sorted((e for e in elements if getattr(e, champ_actif)), key=lambda e: e.ordre)
+    mêmes résultats que .filter(<actif>=True).order_by('ordre', 'id'), sans
+    requête supplémentaire par objet. Ex aequo sur l'ordre : ordre de
+    création (id), stable d'un appel à l'autre."""
+    return sorted((e for e in elements if getattr(e, champ_actif)), key=lambda e: (e.ordre, e.pk))
 
 
 class GroupeOptionPubliqueSerializer(serializers.ModelSerializer):
