@@ -10,6 +10,8 @@ from .views import (
 from .stats import (ExportCSVView, FormulesQuotasAdminView, StatsAdminView,
                     StatistiquesGlobalesAdminView, StatsPartenaireView,
                     StatsVisiblesAdminView)
+from .views_liste_admin import (CompteursPublicitesAdminView, ListePublicitesAdminView,
+                                PartenairesPublicitesAdminView)
 from .views_admin import (
     CreerPubliciteAdminView, FormuleGestionDetailView, FormuleGestionListCreateView,
     ParametresPubliciteAdminView, ReconduirePubliciteAdminView,
@@ -22,6 +24,9 @@ urlpatterns = [
     path('mes-stats/', StatsPartenaireView.as_view(), name='mes-stats'),
     path('admin/stats/', StatsAdminView.as_view(), name='admin-stats'),
     path('admin/export/', ExportCSVView.as_view(), name='admin-export'),
+    path('admin/liste/', ListePublicitesAdminView.as_view(), name='admin-liste'),
+    path('admin/compteurs/', CompteursPublicitesAdminView.as_view(), name='admin-compteurs'),
+    path('admin/partenaires/', PartenairesPublicitesAdminView.as_view(), name='admin-partenaires'),
     path('admin/statistiques/', StatistiquesGlobalesAdminView.as_view(),
          name='admin-statistiques'),
     path('admin/formules/', FormulesQuotasAdminView.as_view(), name='admin-formules'),

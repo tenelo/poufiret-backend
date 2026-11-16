@@ -1,7 +1,7 @@
 import csv
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractHour, TruncDate
@@ -20,12 +20,27 @@ from .models import (FormulePublicite, ImpressionPublicite, Publicite,
 from .services import annoter_reconduction, infos_reconduction
 
 
-def _stats_pub(pub, nb_actifs=None):
-    impressions = ImpressionPublicite.objects.filter(publicite=pub)
-    par_type = dict(
-        impressions.values_list('type_affichage')
-        .annotate(n=Count('id'))
-    )
+def impressions_par_type_groupees(ids):
+    """{pub_id: {type_affichage: n}} pour plusieurs pubs en UNE requête
+    (même contenu que le calcul pub par pub de _stats_pub)."""
+    par_pub = {pk: {} for pk in ids}
+    if par_pub:
+        for pub_id, type_aff, n in (ImpressionPublicite.objects.filter(publicite_id__in=list(par_pub))
+                                    .values_list('publicite_id', 'type_affichage')
+                                    .annotate(n=Count('id')).order_by()):
+            par_pub[pub_id][type_aff] = n
+    return par_pub
+
+
+def _stats_pub(pub, nb_actifs=None, par_type=None):
+    """`par_type` : impressions par type déjà calculées
+    (impressions_par_type_groupees) ; sinon 1 requête pour cette pub."""
+    if par_type is None:
+        par_type = dict(
+            ImpressionPublicite.objects.filter(publicite=pub)
+            .values_list('type_affichage')
+            .annotate(n=Count('id'))
+        )
     return {
         'id': str(pub.id),
         'titre': pub.titre,
@@ -133,12 +148,32 @@ class StatsVisiblesAdminView(APIView):
                          'stats_visibles': stats_visibles_effectif(pub)})
 
 
-def _publicites_admin_qs(request, avec_statut=True):
+ORIGINES = ('payee', 'offerte', 'admin')
+
+
+def _valeurs_multiples(p, nom):
+    """?nom=a,b ou ?nom=a&nom=b -> ['a', 'b']."""
+    valeurs = []
+    for brut in p.getlist(nom):
+        valeurs += [v.strip() for v in brut.split(',') if v.strip()]
+    return valeurs
+
+
+def _debut_du_jour(jour):
+    return timezone.make_aware(datetime.combine(jour, time.min))
+
+
+def _publicites_admin_qs(request, avec_statut=True, avec_search=True):
     """Publicites vues par l'admin : JAMAIS les brouillons (le partenaire
     seul voit les siens). Filtres optionnels : ?formule=<uuid>,
     ?partenaire=<id>, ?search= (titre / nom du partenaire), ?portee=
-    (portee EFFECTIVE = MAX(forfait, achetee)) et, si avec_statut, ?statut=
-    (un ou plusieurs, repete ou separe par des virgules).
+    (portee EFFECTIVE = MAX(forfait, achetee)), ?date_debut= / ?date_fin=
+    (AAAA-MM-JJ : diffusion qui chevauche la période ; une pub sans dates de
+    diffusion est exclue dès qu'une borne est donnée), ?origine=payee|offerte|admin
+    (une ou plusieurs, en OU ; payee = non offerte, admin = créée ou reconduite
+    par l'admin) et, si avec_statut, ?statut= (un ou plusieurs, repete ou
+    separe par des virgules). avec_search=False : ?search= ignoré (la vue
+    par partenaire l'applique au seul nom du commerce).
 
     Retourne (queryset, erreur) ; erreur est un message francais (400) ou None.
     """
@@ -158,7 +193,7 @@ def _publicites_admin_qs(request, avec_statut=True):
             qs = qs.filter(partenaire_id=int(partenaire))
         except (ValueError, TypeError):
             return qs.none(), 'Partenaire invalide.'
-    search = (p.get('search') or '').strip()
+    search = (p.get('search') or '').strip() if avec_search else ''
     if search:
         qs = qs.filter(Q(titre__icontains=search)
                        | Q(partenaire__nom_commerce__icontains=search))
@@ -175,10 +210,34 @@ def _publicites_admin_qs(request, avec_statut=True):
         else:
             qs = qs.exclude(Q(portee__in=['region', 'district'])
                             | Q(partenaire__plan__portee__in=['region', 'district']))
+    bornes = {}
+    for nom in ('date_debut', 'date_fin'):
+        if p.get(nom):
+            try:
+                bornes[nom] = datetime.strptime(p.get(nom).strip(), '%Y-%m-%d').date()
+            except ValueError:
+                return qs.none(), f'{nom} invalide (format attendu AAAA-MM-JJ).'
+    if 'date_debut' in bornes and 'date_fin' in bornes and bornes['date_debut'] > bornes['date_fin']:
+        return qs.none(), 'La date de début est postérieure à la date de fin.'
+    if 'date_debut' in bornes:  # se termine le jour de date_debut ou après
+        qs = qs.filter(fin_diffusion__gte=_debut_du_jour(bornes['date_debut']))
+    if 'date_fin' in bornes:  # commence le jour de date_fin ou avant
+        qs = qs.filter(debut_diffusion__lt=_debut_du_jour(bornes['date_fin'] + timedelta(days=1)))
+    origines = _valeurs_multiples(p, 'origine')
+    if origines:
+        inconnues = [o for o in origines if o not in ORIGINES]
+        if inconnues:
+            return qs.none(), f'Origine inconnue : {", ".join(inconnues)} (payee, offerte ou admin).'
+        cond = Q()
+        if 'payee' in origines:
+            cond |= Q(est_faveur=False)
+        if 'offerte' in origines:
+            cond |= Q(est_faveur=True)
+        if 'admin' in origines:
+            cond |= Q(cree_par_admin__isnull=False)
+        qs = qs.filter(cond)
     if avec_statut:
-        valeurs = []
-        for brut in p.getlist('statut'):
-            valeurs += [v.strip() for v in brut.split(',') if v.strip()]
+        valeurs = _valeurs_multiples(p, 'statut')
         if valeurs:
             connus = {v for v, _ in Publicite.Statut.choices}
             inconnus = [v for v in valeurs if v not in connus]
@@ -203,11 +262,49 @@ def _compteurs_statut(request):
     return compteurs
 
 
+def lignes_admin(pubs, request):
+    """Lignes de la liste admin (admin/stats/ et admin/liste/), sans requête
+    par pub : `pubs` = liste déjà chargée, annotée par annoter_reconduction,
+    avec select_related formule / partenaire__user / partenaire__plan."""
+    # Nombre de clients actifs calculé UNE fois (évite un parcours des
+    # profils par campagne) et seulement si une formule a une cible.
+    nb_actifs = (nb_clients_actifs()
+                 if any(p.formule.cible_pourcentage_actifs for p in pubs) else None)
+    par_type = impressions_par_type_groupees([p.pk for p in pubs])
+    donnees = []
+    for p in pubs:
+        # Mêmes champs et mêmes noms que StatsPartenaireView (stats
+        # détaillées) : impressions, personnes touchées, clics, taux de
+        # clic, impressions_par_type, cible_atteinte…
+        d = _stats_pub(p, nb_actifs, par_type[p.pk])
+        d['statut_libelle'] = p.get_statut_display()
+        d['stats_visibles'] = stats_visibles_effectif(p)
+        # Média (lecture seule, URL absolue) : _stats_pub reste inchangée
+        # (partagée avec StatsPartenaireView) — ajout scopé aux vues admin,
+        # même logique de construction d'URL que les ImageField/FileField
+        # sérialisés avec context={'request': ...} côté partenaire
+        # (request.build_absolute_uri).
+        d['image_couverture'] = (
+            request.build_absolute_uri(p.image_couverture.url)
+            if p.image_couverture else None
+        )
+        d['video'] = (
+            request.build_absolute_uri(p.video.url) if p.video else None
+        )
+        d['portee'] = p.portee
+        d['stats_visibles_partenaire'] = p.stats_visibles_partenaire
+        d['portee_effective'] = p.portee_effective
+        donnees.append(d)
+    return donnees
+
+
 class StatsAdminView(APIView):
     """Vue d'ensemble des publicites (admin / Angular). Brouillons exclus.
 
     GET ?statut=active,terminee (ou repete) &formule=<uuid> &partenaire=<id>
         &search=<titre|partenaire> &portee=departement|region|district
+        &date_debut=&date_fin= &origine=payee|offerte|admin
+    Liste non paginée (format historique) ; liste paginée : admin/liste/.
     Reponse : {totaux, compteurs_statut, publicites}. `compteurs_statut`
     ignore le filtre statut (onglets).
     """
@@ -220,35 +317,8 @@ class StatsAdminView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
         # Annoté ici seulement (pas dans _publicites_admin_qs, partagé avec des
         # agrégats) : informations de reconduction sans requête par pub.
-        pubs = annoter_reconduction(pubs)
-        donnees = []
-        # Nombre de clients actifs calculé UNE fois (évite un parcours des
-        # profils par campagne) et seulement si une formule a une cible.
-        nb_actifs = (nb_clients_actifs()
-                     if any(p.formule.cible_pourcentage_actifs for p in pubs) else None)
-        for p in pubs:
-            # Mêmes champs et mêmes noms que StatsPartenaireView (stats
-            # détaillées) : impressions, personnes touchées, clics, taux de
-            # clic, impressions_par_type, cible_atteinte…
-            d = _stats_pub(p, nb_actifs)
-            d['statut_libelle'] = p.get_statut_display()
-            d['stats_visibles'] = stats_visibles_effectif(p)
-            # Média (lecture seule, URL absolue) : _stats_pub reste inchangée
-            # (partagée avec StatsPartenaireView) — ajout scopé à cette seule
-            # vue admin, même logique de construction d'URL que les
-            # ImageField/FileField sérialisés avec context={'request': ...}
-            # côté partenaire (request.build_absolute_uri).
-            d['image_couverture'] = (
-                request.build_absolute_uri(p.image_couverture.url)
-                if p.image_couverture else None
-            )
-            d['video'] = (
-                request.build_absolute_uri(p.video.url) if p.video else None
-            )
-            d['portee'] = p.portee
-            d['stats_visibles_partenaire'] = p.stats_visibles_partenaire
-            d['portee_effective'] = p.portee_effective
-            donnees.append(d)
+        pubs = list(annoter_reconduction(pubs))
+        donnees = lignes_admin(pubs, request)
         totaux = {
             'nb_publicites': len(donnees),
             'nb_actives': sum(1 for p in pubs if p.statut == Publicite.Statut.ACTIVE),

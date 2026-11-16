@@ -182,6 +182,10 @@ class Publicite(ImagesOptimiseesMixin, ModeleBase):
             # _pubs_diffusables() filtre sur ces deux champs a chaque
             # affichage : c'est la requete la plus frequente de l'app.
             models.Index(fields=['statut', 'debut_diffusion']),
+            # Liste admin paginée (admin/liste/) : tri par défaut par onglet
+            # (statut, -cree_le) et filtre de période (fin_diffusion >= début).
+            models.Index(fields=['statut', 'cree_le'], name='publicite_statut_cree_idx'),
+            models.Index(fields=['fin_diffusion'], name='publicite_fin_diff_idx'),
         ]
 
     def cible_atteinte_pour(self, nb_actifs=None):
