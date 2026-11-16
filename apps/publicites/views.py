@@ -37,19 +37,25 @@ class FormulesView(generics.ListAPIView):
 
 
 class CarrouselView(APIView):
-    """Pubs actives pour le carrousel (public)."""
+    """Pubs actives pour le carrousel (public).
+
+    `publicites` : pubs partenaires, contrat inchangé (vide si le flag
+    publicite_active est éteint). `elements` (ajout) : les mêmes pubs
+    partenaires (type « partenaire ») mélangées aux pubs Poufiret (type
+    « poufiret », catégorie cible) ; les pubs Poufiret ne dépendent pas du
+    flag, seulement de ParametresPoufiret.pubs_maison_actives."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
-        if not flag_is_active(request._request, 'publicite_active'):
-            return Response({'publicites': []})
-        from .services import selectionner_pubs
-        pubs = selectionner_pubs(
-            TypeAffichage.CARROUSEL,
-            utilisateur=request.user if request.user.is_authenticated else None,
-        )
-        return Response({'publicites': PubliciteListSerializer(
-            pubs, many=True, context={'request': request}).data})
+        from .services_poufiret import elements_carrousel
+        utilisateur = request.user if request.user.is_authenticated else None
+        publicites = []
+        if flag_is_active(request._request, 'publicite_active'):
+            from .services import selectionner_pubs
+            pubs = selectionner_pubs(TypeAffichage.CARROUSEL, utilisateur=utilisateur)
+            publicites = PubliciteListSerializer(pubs, many=True, context={'request': request}).data
+        return Response({'publicites': publicites,
+                         'elements': elements_carrousel(publicites, utilisateur, request)})
 
 
 class PagePublicitesView(APIView):

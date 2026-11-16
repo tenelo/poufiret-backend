@@ -47,7 +47,8 @@ class PermissionsAdminInline(admin.StackedInline):
             'fields': ('masquer_partenaire', 'certifier_partenaire',
                        'accorder_faveur', 'valider_devenir_partenaire')}),
         ('C. Publicités', {
-            'fields': ('valider_publicite', 'offrir_campagne', 'gerer_pubs_partenaires')}),
+            'fields': ('valider_publicite', 'offrir_campagne', 'gerer_pubs_partenaires',
+                       'gerer_pubs_poufiret')}),
         ('D. Commandes & paiements', {
             'fields': ('valider_commande', 'valider_paiement')}),
         ('E. Configuration', {

@@ -371,3 +371,131 @@ class CreditFormulePub(ModeleBase):
 
     def __str__(self):
         return f'{self.formule.nom} → {self.partenaire.nom_commerce} ({self.statut})'
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Pubs Poufiret (pubs maison du carrousel) et parcours « Découvrir Poufiret »
+# Gérés par l'admin (capacité gerer_pubs_poufiret). Aucun lien avec les
+# partenaires, les formules, les paiements ni les quotas : jamais comptés
+# dans les revenus ni dans les statistiques des pubs partenaires.
+# ═══════════════════════════════════════════════════════════════════════
+
+class PubPoufiret(ImagesOptimiseesMixin, ModeleBase):
+    """Pub maison mélangée aux pubs partenaires du carrousel. Un appui
+    ouvre la catégorie cible, comme sa tuile dans la grille de l'accueil."""
+    champs_images = ('image_couverture',)
+
+    class Portee(models.TextChoices):
+        TOUT = 'tout', 'Tout le monde'
+        REGION = 'region', 'Une région'
+        DEPARTEMENT = 'departement', 'Un département'
+
+    titre = models.CharField('titre', max_length=100)
+    texte = models.CharField('texte court', max_length=200, blank=True)
+    image_couverture = models.ImageField('image', upload_to='publicites/poufiret/')
+    categorie = models.ForeignKey(
+        'catalog.Categorie', on_delete=models.SET_NULL, null=True,
+        related_name='pubs_poufiret', verbose_name='catégorie cible',
+        help_text='Supprimée : la pub n\'est plus diffusée.',
+    )
+    est_active = models.BooleanField('active', default=True)
+    ordre = models.IntegerField('ordre', default=0)
+    date_debut = models.DateTimeField('début', null=True, blank=True)
+    date_fin = models.DateTimeField('fin', null=True, blank=True)
+    portee = models.CharField('portée', max_length=12, choices=Portee.choices, default=Portee.TOUT)
+    region = models.ForeignKey('geo.Region', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='pubs_poufiret', verbose_name='région')
+    departement = models.ForeignKey('geo.Departement', on_delete=models.SET_NULL, null=True, blank=True,
+                                    related_name='pubs_poufiret', verbose_name='département')
+    nb_impressions = models.PositiveIntegerField('affichages', default=0)
+    nb_clics = models.PositiveIntegerField('clics', default=0)
+    nb_personnes_touchees = models.PositiveIntegerField('personnes touchées', default=0)
+    cree_par = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True,
+                                 blank=True, related_name='pubs_poufiret_creees', verbose_name='créée par')
+
+    class Meta:
+        verbose_name = 'pub Poufiret'
+        verbose_name_plural = 'pubs Poufiret'
+        ordering = ['ordre', 'cree_le']
+
+    def __str__(self):
+        return self.titre
+
+
+class ImpressionPubPoufiret(ModeleBase):
+    """Affichage ou clic d'une pub Poufiret (même logique que
+    ImpressionPublicite, table séparée pour ne pas fausser les stats,
+    quotas et exports des pubs partenaires)."""
+    pub = models.ForeignKey(PubPoufiret, on_delete=models.CASCADE,
+                            related_name='impressions', verbose_name='pub Poufiret')
+    utilisateur = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='impressions_pubs_poufiret')
+    type_affichage = models.CharField('emplacement', max_length=20, choices=TypeAffichage.choices,
+                                      default=TypeAffichage.CARROUSEL)
+    minute_session = models.PositiveIntegerField('minute de session', null=True, blank=True)
+    session = models.ForeignKey('analytics.TempsSessionUtilisateur', on_delete=models.SET_NULL,
+                                null=True, blank=True, related_name='impressions_pubs_poufiret')
+    cliquee = models.BooleanField('cliquée', default=False)
+
+    class Meta:
+        verbose_name = 'impression de pub Poufiret'
+        verbose_name_plural = 'impressions de pubs Poufiret'
+        indexes = [
+            models.Index(fields=['pub', 'utilisateur'], name='imp_poufiret_pub_user_idx'),
+            models.Index(fields=['session', 'pub', 'type_affichage'], name='imp_poufiret_session_idx'),
+            models.Index(fields=['cree_le'], name='imp_poufiret_cree_le_idx'),
+        ]
+
+
+class EcranDecouverte(ImagesOptimiseesMixin, ModeleBase):
+    """Écran plein écran du parcours « Découvrir Poufiret »."""
+    champs_images = ('image',)
+
+    ordre = models.IntegerField('ordre', default=0)
+    image = models.ImageField('image', upload_to='publicites/decouverte/')
+    titre = models.CharField('titre', max_length=100)
+    texte = models.CharField('texte court', max_length=300, blank=True)
+    bouton_libelle = models.CharField('libellé du bouton', max_length=40, blank=True)
+    bouton_categorie = models.ForeignKey(
+        'catalog.Categorie', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='ecrans_decouverte', verbose_name='catégorie du bouton',
+    )
+    est_actif = models.BooleanField('actif', default=True)
+
+    class Meta:
+        verbose_name = 'écran « Découvrir Poufiret »'
+        verbose_name_plural = 'écrans « Découvrir Poufiret »'
+        ordering = ['ordre', 'cree_le']
+
+    def __str__(self):
+        return self.titre
+
+
+class ParametresPoufiret(ModeleBase):
+    """Réglages des pubs Poufiret et du parcours (singleton, comme
+    ParametresPublicite)."""
+    NB_ECRANS_MIN, NB_ECRANS_MAX = 3, 8
+
+    pubs_maison_actives = models.BooleanField('pubs Poufiret actives', default=False)
+    frequence_pub_maison = models.PositiveIntegerField(
+        'fréquence (une pub Poufiret toutes les N pubs partenaires)', default=3)
+    duree_affichage_secondes = models.PositiveIntegerField(
+        "durée d'affichage d'une pub Poufiret (secondes)", default=5)
+    parcours_actif = models.BooleanField('parcours « Découvrir Poufiret » actif', default=False)
+    version_parcours = models.PositiveIntegerField(
+        'version du parcours', default=0,
+        help_text="Incrémentée à chaque publication : l'app remontre le parcours.")
+
+    class Meta:
+        verbose_name = 'paramètres Poufiret'
+        verbose_name_plural = 'paramètres Poufiret'
+
+    @classmethod
+    def obtenir(cls):
+        obj = cls.objects.first()
+        if obj is None:
+            obj = cls.objects.create()
+        return obj
+
+    def __str__(self):
+        return 'Paramètres Poufiret'

@@ -44,6 +44,11 @@ class JournalModeration(ModeleBase):
         PUB_STATS_VISIBLES = 'pub_stats_visibles', 'Stats pub : visibilité partenaire'
         PUB_CREEE_ADMIN = 'pub_creee_admin', 'Publicité créée par l\'admin pour un partenaire'
         PUB_RECONDUITE_ADMIN = 'pub_reconduite_admin', 'Publicité reconduite par l\'admin'
+        PUB_POUFIRET_CREER = 'pub_poufiret_creer', 'Pub Poufiret créée'
+        PUB_POUFIRET_MODIF = 'pub_poufiret_modif', 'Pub Poufiret modifiée'
+        PUB_POUFIRET_SUPPR = 'pub_poufiret_suppr', 'Pub Poufiret supprimée'
+        POUFIRET_PARCOURS = 'poufiret_parcours', 'Parcours « Découvrir Poufiret » publié'
+        POUFIRET_REGLAGES = 'poufiret_reglages', 'Réglages Poufiret modifiés'
         RESTO_FICHE_MODIF = 'resto_fiche_modif', 'Fiche restaurant modifiée (admin)'
         RESTO_PLAT_MODIF = 'resto_plat_modif', 'Plat modifié (admin)'
         RESTO_MENU_MODIF = 'resto_menu_modif', 'Menu modifié (admin)'
@@ -214,6 +219,8 @@ class PermissionsAdmin(ModeleBase):
     offrir_campagne = models.BooleanField('offrir / retirer une campagne', default=False)
     gerer_pubs_partenaires = models.BooleanField(
         'Créer et reconduire des pubs pour un partenaire', default=False)
+    gerer_pubs_poufiret = models.BooleanField(
+        'Gérer les pubs Poufiret et le parcours « Découvrir Poufiret »', default=False)
 
     # ── D. Commandes & paiements ─────────────────────────────────────
     valider_commande = models.BooleanField('valider / rejeter une commande', default=False)
