@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 
 from apps.catalog.models import Categorie
 from apps.catalog.recherche import normaliser_mots_cles
-from apps.core.permissions import ADroitDe
+from apps.core.permissions import ADroitDe, ADroitDeUnDe
 from apps.users.models import ProfilPartenaire
 
 from .moderation import _journaliser
@@ -146,8 +146,15 @@ def _nb_partenaires_et_enfants(qs):
 
 class CategoriesAdminListCreateView(APIView):
     """GET ?archivees=0|1 — liste (archivées exclues par défaut, incluses avec 1).
-    POST — crée une catégorie (JSON ou multipart)."""
+    POST — crée une catégorie (JSON ou multipart).
+    Lecture (GET) : gerer_parametres OU gerer_pubs_poufiret (choix de la
+    catégorie cible d'une pub Poufiret) ; création : gerer_parametres seul."""
     permission_classes = _PERMISSION
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated(), ADroitDeUnDe('gerer_parametres', 'gerer_pubs_poufiret')()]
+        return super().get_permissions()
 
     def get(self, request):
         archivees = request.query_params.get('archivees', '0')

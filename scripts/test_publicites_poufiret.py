@@ -134,8 +134,8 @@ try:
             user=p_user, plan=plan, nom_commerce=f'Boutique Pouf {uid}', type_partenaire='commercant',
             statut='actif', est_visible=True)
 
-        dep1 = Departement.objects.select_related('region').first()
-        dep2 = Departement.objects.exclude(region=dep1.region).select_related('region').first()
+        dep1 = Departement.objects.filter(est_actif=True).select_related('region').first()
+        dep2 = Departement.objects.filter(est_actif=True).exclude(region=dep1.region).select_related('region').first()
         assert dep1 and dep2, 'Il faut au moins deux départements dans deux régions différentes.'
         client_dep1 = utilisateur('client', departement=dep1)
         client_sans_dep = utilisateur('client')
@@ -164,6 +164,22 @@ try:
         ok('publier : admin sans la capacite -> 403',
            c.post(A + 'parcours/publier/', **entetes(admin_sans)).status_code == 403)
         ok('creation : anonyme -> 401', c.post(A + 'pubs/', {'titre': 'x'}, **entetes()).status_code == 401)
+        # Listes des formulaires Angular (catégorie cible, région, département) :
+        # lisibles avec gerer_pubs_poufiret seul ; écriture toujours refusée.
+        for url in ('/api/v1/administration/categories/', '/api/v1/administration/geo/regions/options/',
+                    '/api/v1/administration/geo/departements/options/'):
+            ok(f'{url} : lecture avec gerer_pubs_poufiret seul -> 200',
+               c.get(url, **entetes(admin_avec)).status_code == 200)
+            ok(f'{url} : admin sans la capacite -> 403', c.get(url, **entetes(admin_sans)).status_code == 403)
+        r = c.get('/api/v1/administration/categories/', **entetes(admin_avec))
+        ok('categories : la categorie de test est dans la liste', cat_ok.id in {
+            x['id'] for x in r.json()['resultats']}, details(r)[:300])
+        r = c.get('/api/v1/administration/geo/departements/options/', {'region': dep1.region_id}, **entetes(admin_avec))
+        ok('departements/options?region= : departement 1 present', dep1.id in {
+            x['id'] for x in r.json()['resultats']}, details(r)[:300])
+        ok('categories : creation toujours refusee avec gerer_pubs_poufiret seul -> 403', c.post(
+            '/api/v1/administration/categories/', json.dumps({'nom': f'Interdite {uid}'}),
+            content_type='application/json', **entetes(admin_avec)).status_code == 403)
         ok('carrousel et decouvrir : publics (anonyme -> 200)', c.get(CARROUSEL, **entetes()).status_code == 200
            and c.get(DECOUVRIR, **entetes()).status_code == 200)
 
@@ -191,6 +207,10 @@ try:
            and d['texte'] == 'Découvrez la mode' and d['categorie'] == cat_ok.id and d['categorie_disponible'] is True
            and d['portee'] == 'tout' and d['image_couverture'] and d['nb_impressions'] == 0, d)
         pub = PubPoufiret.objects.get(pk=d['id'])
+        ok('multipart sans est_active : pub active par defaut', d['est_active'] is True and pub.est_active is True, d)
+        r = creer(titre=f'Inactive {uid}', est_active='false')
+        ok('multipart est_active=false : pub inactive', r.status_code == 201 and r.json()['est_active'] is False,
+           details(r))
         ok('cree_par + image enregistree', pub.cree_par_id == admin_avec.id and pub.image_couverture.name.startswith(
             'publicites/poufiret/'), pub.image_couverture.name)
         ok('journal pub_poufiret_creer', JournalModeration.objects.filter(
@@ -424,7 +444,9 @@ try:
         ok('ecran : sans image -> 400', c.post(A + 'ecrans/', {'titre': 'x'}, **entetes(admin_avec)).status_code == 400)
         r1 = ecran(titre=f'E1 {uid}', ordre=0, texte='Bienvenue')
         r2 = ecran(titre=f'E2 {uid}', ordre=1, bouton_libelle='Voir la mode', bouton_categorie=cat_ok.id)
-        ok('2 ecrans crees (201)', r1.status_code == r2.status_code == 201, details(r2))
+        ok('2 ecrans crees (201), actifs par defaut (multipart sans est_actif)',
+           r1.status_code == r2.status_code == 201 and r1.json()['est_actif'] is True
+           and r2.json()['est_actif'] is True, details(r2))
         r = c.post(A + 'parcours/publier/', **entetes(admin_avec))
         ok('publier avec 2 ecrans -> 400, message clair', r.status_code == 400
            and 'entre 3 et 8' in r.json()['message'], details(r))
@@ -434,9 +456,9 @@ try:
         r3 = ecran(titre=f'E3 {uid}', ordre=2, bouton_libelle='Coiffure', bouton_categorie=cat_enfant.id)
         r = c.post(A + 'parcours/publier/', **entetes(admin_avec))
         ok('publier avec 3 ecrans -> 200, version + 1', r.status_code == 200
-           and r.json()['version_parcours'] == v0 + 1 and r.json()['nb_ecrans'] == 3, details(r))
+           and r.json().get('version_parcours') == v0 + 1 and r.json().get('nb_ecrans') == 3, details(r))
         r = c.post(A + 'parcours/publier/', **entetes(admin_avec))
-        ok('republier -> version + 2', r.json()['version_parcours'] == v0 + 2 and JournalModeration.objects.filter(
+        ok('republier -> version + 2', r.json().get('version_parcours') == v0 + 2 and JournalModeration.objects.filter(
             action='poufiret_parcours', acteur=admin_avec).exists())
         d = c.get(DECOUVRIR, **entetes()).json()
         ok('decouvrir inactif : {actif false, version, ecrans []}', d == {'actif': False, 'version': v0 + 2, 'ecrans': []}, d)

@@ -11,6 +11,9 @@ class PubPoufiretAdminSerializer(serializers.ModelSerializer):
     `par_type` ({pub_id: {emplacement: n}}) pour une liste sans requête par
     ligne."""
     categorie_nom = serializers.CharField(source='categorie.nom', read_only=True, default=None)
+    # default=True explicite : en multipart (formulaire), DRF lit un booléen
+    # absent comme False ; avec un default, il prend ce default (création).
+    est_active = serializers.BooleanField(default=True)
     categorie_disponible = serializers.SerializerMethodField()
     taux_clic = serializers.SerializerMethodField()
     impressions_par_type = serializers.SerializerMethodField()
@@ -75,6 +78,7 @@ class PubPoufiretAdminSerializer(serializers.ModelSerializer):
 
 class EcranDecouverteAdminSerializer(serializers.ModelSerializer):
     bouton_categorie_nom = serializers.CharField(source='bouton_categorie.nom', read_only=True, default=None)
+    est_actif = serializers.BooleanField(default=True)  # voir PubPoufiretAdminSerializer.est_active
     bouton_categorie_disponible = serializers.SerializerMethodField()
 
     class Meta:

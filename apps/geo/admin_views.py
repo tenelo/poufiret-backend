@@ -15,7 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.exports import reponse_csv
-from apps.core.permissions import ADroitDe
+from apps.core.permissions import ADroitDe, ADroitDeUnDe
 from .admin_serializers import (
     DepartementAdminSerializer, LocaliteAdminSerializer,
     QuartierAdminSerializer, RegionAdminSerializer,
@@ -25,6 +25,9 @@ from .rapprochement import appliquer, compteurs, lignes_a_traiter
 from apps.users.models import ProfilPartenaire
 
 _PERMISSION = [permissions.IsAuthenticated, ADroitDe('gerer_geographie')]
+# Listes déroulantes en lecture seule, aussi pour le ciblage des pubs Poufiret.
+_PERMISSION_OPTIONS_PUBS = [permissions.IsAuthenticated,
+                            ADroitDeUnDe('gerer_geographie', 'gerer_pubs_poufiret')]
 
 
 def _vers_bool(valeur, defaut=None):
@@ -116,8 +119,9 @@ class RegionAdminExportView(APIView):
 
 class RegionOptionsView(APIView):
     """GET /regions/options/ — id+nom pour les listes déroulantes.
-    Actifs seulement par défaut ; ?actif=0 pour voir aussi les inactifs."""
-    permission_classes = _PERMISSION
+    Actifs seulement par défaut ; ?actif=0 pour voir aussi les inactifs.
+    Lecture : gerer_geographie OU gerer_pubs_poufiret."""
+    permission_classes = _PERMISSION_OPTIONS_PUBS
 
     def get(self, request):
         qs = Region.objects.order_by('ordre', 'nom')
@@ -195,8 +199,9 @@ class DepartementAdminExportView(APIView):
 
 
 class DepartementOptionsView(APIView):
-    """GET /departements/options/?region=<id> — id+nom, filtrable par région."""
-    permission_classes = _PERMISSION
+    """GET /departements/options/?region=<id> — id+nom, filtrable par région.
+    Lecture : gerer_geographie OU gerer_pubs_poufiret."""
+    permission_classes = _PERMISSION_OPTIONS_PUBS
 
     def get(self, request):
         qs = Departement.objects.order_by('ordre', 'nom')
