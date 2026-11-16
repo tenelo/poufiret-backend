@@ -246,9 +246,10 @@ class MesPublicitesView(generics.ListCreateAPIView):
         return PubliciteCreationSerializer
 
     def get_queryset(self):
-        return Publicite.objects.filter(
+        from .services import annoter_reconduction
+        return annoter_reconduction(Publicite.objects.filter(
             partenaire__user=self.request.user,
-        ).exclude(masquee_par_partenaire=True).order_by('-cree_le')
+        ).exclude(masquee_par_partenaire=True).order_by('-cree_le'))
 
     def perform_create(self, serializer):
         profil = getattr(self.request.user, 'profil_partenaire', None)
@@ -316,7 +317,8 @@ class ReconduirePubliciteView(APIView):
                             status=404)
 
         from .services import (ReconductionInvalide, copier_pour_reconduction,
-                               options_reconduction, raison_refus_reconduction)
+                               options_reconduction, raison_refus_reconduction,
+                               verrouiller_pour_reconduction)
         refus = raison_refus_reconduction(ancienne)
         if refus:
             return Response({'erreur': True, 'message': refus}, status=400)
@@ -332,8 +334,14 @@ class ReconduirePubliciteView(APIView):
         except ReconductionInvalide as exc:
             return Response({'erreur': True, 'message': str(exc)}, status=400)
 
-        nouvelle = copier_pour_reconduction(
-            ancienne, profil, formule, nouvelle_image, portee_demandee)
+        with transaction.atomic():
+            # Verrou sur l'original : deux reconductions simultanées -> la
+            # seconde voit la copie de la première et est refusée (400).
+            refus = verrouiller_pour_reconduction(ancienne)
+            if refus:
+                return Response({'erreur': True, 'message': refus}, status=400)
+            nouvelle = copier_pour_reconduction(
+                ancienne, profil, formule, nouvelle_image, portee_demandee)
 
         return Response(
             PubliciteCreationSerializer(nouvelle, context={'request': request}).data,

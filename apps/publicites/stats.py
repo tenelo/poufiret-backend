@@ -17,6 +17,7 @@ from apps.users.models import Portee
 
 from .models import (FormulePublicite, ImpressionPublicite, Publicite,
                      TypeAffichage, nb_clients_actifs)
+from .services import annoter_reconduction, infos_reconduction
 
 
 def _stats_pub(pub, nb_actifs=None):
@@ -44,6 +45,7 @@ def _stats_pub(pub, nb_actifs=None):
         'partenaire_telephone': pub.partenaire.user.telephone,
         'formule_id': pub.formule_id,
         'prix_formule': pub.formule.prix,
+        **infos_reconduction(pub),
     }
 
 
@@ -75,8 +77,8 @@ class StatsPartenaireView(APIView):
         if profil is None:
             return Response({'erreur': True, 'message': 'Reserve aux partenaires.'},
                             status=status.HTTP_403_FORBIDDEN)
-        pubs = Publicite.objects.filter(partenaire=profil).exclude(
-            masquee_par_partenaire=True).select_related('formule', 'partenaire__user')
+        pubs = annoter_reconduction(Publicite.objects.filter(partenaire=profil).exclude(
+            masquee_par_partenaire=True).select_related('formule', 'partenaire__user'))
         donnees = []
         for pub in pubs:
             visible = stats_visibles_effectif(pub)
@@ -88,6 +90,7 @@ class StatsPartenaireView(APIView):
                     'formule': pub.formule.nom, 'statut': pub.statut,
                     'stats_disponibles': False,
                     'message': 'Statistiques bientot disponibles.',
+                    **infos_reconduction(pub),
                 }
             d['stats_visibles'] = visible
             d['statut_libelle'] = pub.get_statut_display()
@@ -215,6 +218,9 @@ class StatsAdminView(APIView):
         if erreur:
             return Response({'erreur': True, 'message': erreur},
                             status=status.HTTP_400_BAD_REQUEST)
+        # Annoté ici seulement (pas dans _publicites_admin_qs, partagé avec des
+        # agrégats) : informations de reconduction sans requête par pub.
+        pubs = annoter_reconduction(pubs)
         donnees = []
         # Nombre de clients actifs calculé UNE fois (évite un parcours des
         # profils par campagne) et seulement si une formule a une cible.

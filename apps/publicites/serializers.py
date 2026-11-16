@@ -69,6 +69,14 @@ class PubliciteCreationSerializer(serializers.ModelSerializer):
         donnees['portee'] = portee_a_appliquer(self.profil_cible(), donnees.get('portee'))
         return donnees
 
+    def to_representation(self, instance):
+        """+ reconduite_le, reconduction_id, reconduction_statut,
+        peut_etre_reconduite, reconduite_depuis_id (services.infos_reconduction)."""
+        from .services import infos_reconduction
+        donnees = super().to_representation(instance)
+        donnees.update(infos_reconduction(instance))
+        return donnees
+
     def profil_cible(self):
         """Partenaire dont le forfait fixe la portée : celui de l'utilisateur
         connecté (parcours partenaire)."""

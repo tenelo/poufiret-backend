@@ -256,6 +256,7 @@ def _pub_admin_dict(pub, request):
         'est_faveur': pub.est_faveur,
         'faveur_motif': pub.faveur_motif,
         'cree_par_admin_id': pub.cree_par_admin_id,
+        **services.infos_reconduction(pub),
     }
 
 
@@ -350,6 +351,9 @@ class ReconduirePubliciteAdminView(APIView):
 
         try:
             with transaction.atomic():
+                refus = services.verrouiller_pour_reconduction(ancienne)
+                if refus:
+                    raise services.ReconductionInvalide(refus)
                 nouvelle = services.copier_pour_reconduction(
                     ancienne, ancienne.partenaire, formule, nouvelle_image, portee_demandee)
                 ok, message = services.activer_publicite_aux_dates(
@@ -358,6 +362,8 @@ class ReconduirePubliciteAdminView(APIView):
                     raise _QuotaAtteint(message)
         except _QuotaAtteint as exc:
             return Response({'erreur': True, 'message': str(exc)}, status=status.HTTP_409_CONFLICT)
+        except services.ReconductionInvalide as exc:  # copie apparue entre-temps (double clic)
+            return Response({'erreur': True, 'message': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         _journaliser_pub_admin(
             request.user, nouvelle, 'pub_reconduite_admin',

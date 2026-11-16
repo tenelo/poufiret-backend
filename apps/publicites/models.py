@@ -159,6 +159,12 @@ class Publicite(ImagesOptimiseesMixin, ModeleBase):
         null=True, blank=True, related_name='publicites_creees_pour_partenaire',
         verbose_name="créée ou reconduite par l'admin",
     )
+    # ── Reconduction : la copie pointe vers son original (partenaire et admin,
+    # services.copier_pour_reconduction). Null pour les pubs d'avant ce champ.
+    reconduite_depuis = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='reconductions', verbose_name='reconduite depuis',
+    )
     # ── Masquage côté partenaire (soft delete, pas une suppression admin) ─
     masquee_par_partenaire = models.BooleanField(
         'masquée par le partenaire', default=False,

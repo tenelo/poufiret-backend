@@ -517,13 +517,74 @@ def appliquer_transition(pub, action):
 
 # ── Reconduction (règle de copie commune partenaire / admin) ──────────
 
+# Statuts d'une copie qui empêchent de reconduire à nouveau l'original
+# (copie non masquée par le partenaire). brouillon, terminee, rejetee : non.
+STATUTS_COPIE_BLOQUANTE = (Publicite.Statut.EN_ATTENTE_PAIEMENT,
+                           Publicite.Statut.EN_ATTENTE_VALIDATION,
+                           Publicite.Statut.ACTIVE)
+
+
+def _copies_bloquantes(pub_ou_ref):
+    return Publicite.objects.filter(reconduite_depuis=pub_ou_ref, statut__in=STATUTS_COPIE_BLOQUANTE,
+                                    masquee_par_partenaire=False)
+
+
 def raison_refus_reconduction(pub):
-    """Message si la pub ne peut pas être reconduite (seule une pub
-    terminée le peut), sinon None — partagé partenaire / admin."""
+    """Message si la pub ne peut pas être reconduite, sinon None — partagé
+    partenaire / admin : seule une pub terminée le peut, et pas si une copie
+    déjà reconduite est en attente (paiement, validation) ou active."""
     if pub.statut != Publicite.Statut.TERMINEE:
         return ('Seule une publicité terminée peut être reconduite '
                 f'(statut actuel : "{pub.get_statut_display()}").')
+    copie = _copies_bloquantes(pub).order_by('-cree_le').first()
+    if copie is not None:
+        return ('Cette publicité a déjà été reconduite (copie du '
+                f'{timezone.localtime(copie.cree_le):%d/%m/%Y}, statut « {copie.get_statut_display()} ») : '
+                'attendez que cette copie soit terminée ou rejetée avant de la reconduire à nouveau.')
     return None
+
+
+def verrouiller_pour_reconduction(ancienne):
+    """À appeler DANS la transaction qui crée la copie : verrouille la ligne
+    de l'original (select_for_update, contre les doubles clics) puis
+    recalcule le refus sous verrou. Retourne le message de refus ou None."""
+    Publicite.objects.select_for_update().filter(pk=ancienne.pk).first()
+    return raison_refus_reconduction(ancienne)
+
+
+def annoter_reconduction(qs):
+    """Ajoute aux pubs d'une liste les informations de reconduction (copie la
+    plus récente, quel que soit son statut ; copie bloquante), en sous-requêtes :
+    aucune requête par pub."""
+    from django.db.models import Exists, OuterRef, Subquery
+    derniere = Publicite.objects.filter(reconduite_depuis=OuterRef('pk')).order_by('-cree_le')
+    return qs.annotate(
+        reco_id=Subquery(derniere.values('id')[:1]),
+        reco_le=Subquery(derniere.values('cree_le')[:1]),
+        reco_statut=Subquery(derniere.values('statut')[:1]),
+        reco_bloquante=Exists(_copies_bloquantes(OuterRef('pk'))),
+    )
+
+
+def infos_reconduction(pub):
+    """Champs exposés pour chaque pub : reconduite_le, reconduction_id,
+    reconduction_statut (copie la plus récente, null sinon),
+    peut_etre_reconduite, reconduite_depuis_id (côté copie). Lit les
+    annotations de annoter_reconduction si présentes, sinon 2 requêtes."""
+    if hasattr(pub, 'reco_bloquante'):
+        reco_id, reco_le, reco_statut, bloquante = pub.reco_id, pub.reco_le, pub.reco_statut, pub.reco_bloquante
+    else:
+        derniere = pub.reconductions.order_by('-cree_le').only('id', 'cree_le', 'statut').first()
+        reco_id, reco_le, reco_statut = ((derniere.id, derniere.cree_le, derniere.statut) if derniere
+                                         else (None, None, None))
+        bloquante = pub.pk is not None and _copies_bloquantes(pub).exists()
+    return {
+        'reconduite_le': reco_le,
+        'reconduction_id': str(reco_id) if reco_id else None,
+        'reconduction_statut': reco_statut,
+        'peut_etre_reconduite': pub.statut == Publicite.Statut.TERMINEE and not bloquante,
+        'reconduite_depuis_id': str(pub.reconduite_depuis_id) if pub.reconduite_depuis_id else None,
+    }
 
 
 class ReconductionInvalide(Exception):
@@ -571,9 +632,11 @@ def copier_pour_reconduction(ancienne, profil, formule, nouvelle_image=None,
     image fournie), vidéo (référence) et portée = MAX(forfait actuel du
     partenaire, portée demandée ou celle de l'ancienne). La galerie
     (ImagePublicite) n'est PAS copiée. L'ancienne n'est jamais modifiée.
-    `champs` : valeurs supplémentaires posées dès la création (admin)."""
+    `champs` : valeurs supplémentaires posées dès la création (admin).
+    La copie est reliée à l'original (reconduite_depuis)."""
     return Publicite.objects.create(
         partenaire=profil,
+        reconduite_depuis=ancienne,
         formule=formule,
         titre=ancienne.titre,
         description=ancienne.description,

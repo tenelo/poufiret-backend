@@ -233,6 +233,9 @@ try:
         ok('originale intacte', Publicite.objects.filter(pk=ancienne.pk).values().get() == etat_avant)
         ok('journal pub_reconduite_admin', JournalModeration.objects.filter(
             action='pub_reconduite_admin', acteur=admin_avec, motif__contains=str(ancienne.id)).exists())
+        # Une copie active bloque une nouvelle reconduction de l'original
+        # (test_publicites_reconduction) : on la termine pour poursuivre.
+        Publicite.objects.filter(pk=copie.pk).update(statut='terminee')
         r = reconduire(superadmin, formule_id=str(exclu.id))
         ok('reconduction sur formule au quota atteint -> 409', r.status_code == 409, r.content)
         r = c.post(RECONDUIRE, {'date_debut': str(aujourdhui), 'reglement': 'payee',
@@ -240,10 +243,11 @@ try:
         ok('nouvelle image + portee facultatives', r.status_code == 201
            and Publicite.objects.get(id=r.json()['id']).portee == 'district'
            and Publicite.objects.get(id=r.json()['id']).image_couverture.name != ancienne.image_couverture.name, r.content)
+        Publicite.objects.filter(reconduite_depuis=ancienne, statut='active').update(statut='terminee')
         ok('formule inconnue -> 400 meme message que partenaire',
            reconduire(admin_avec, formule_id=str(uuid.uuid4())).json().get('message') == 'Formule introuvable ou inactive.')
         ok('date passee -> 400', reconduire(admin_avec, date_debut=str(aujourdhui - timedelta(days=2))).status_code == 400)
-        r = reconduire(admin_avec, pub_id=copie.id)
+        r = reconduire(admin_avec, pub_id=pub.id)
         ok('pub non terminee -> 400', r.status_code == 400 and 'Seule une publicité terminée' in r.json()['message'],
            r.content)
         ok('pub inconnue -> 404', reconduire(admin_avec, pub_id=uuid.uuid4()).status_code == 404)
@@ -252,13 +256,14 @@ try:
         r = c.post(f'/api/v1/publicites/mes-publicites/{ancienne.id}/reconduire/', {}, secure=True, **entetes(p_user))
         ok('partenaire -> 201, toujours un brouillon', r.status_code == 201 and r.json()['statut'] == 'brouillon',
            r.content)
-        ok('reponse partenaire : memes champs qu avant', set(r.json()) == {
-            'id', 'formule', 'titre', 'description', 'image_couverture', 'video', 'portee', 'statut'}, set(r.json()))
+        ok('reponse partenaire : memes champs qu avant (+ reconduction)', set(r.json()) == {
+            'id', 'formule', 'titre', 'description', 'image_couverture', 'video', 'portee', 'statut',
+            'reconduite_le', 'reconduction_id', 'reconduction_statut', 'peut_etre_reconduite', 'reconduite_depuis_id'}, set(r.json()))
         brouillon = Publicite.objects.get(id=r.json()['id'])
         ok('brouillon partenaire sans trace admin, ni dates, ni faveur', brouillon.cree_par_admin_id is None
            and brouillon.debut_diffusion is None and brouillon.est_faveur is False)
         ok('partenaire : pub non terminee -> 400 (inchange)', c.post(
-            f'/api/v1/publicites/mes-publicites/{copie.id}/reconduire/', {}, secure=True,
+            f'/api/v1/publicites/mes-publicites/{brouillon.id}/reconduire/', {}, secure=True,
             **entetes(p_user)).status_code == 400)
         ok('partenaire : portee invalide -> 400 (inchange)', c.post(
             f'/api/v1/publicites/mes-publicites/{ancienne.id}/reconduire/', {'portee': 'monde'}, secure=True,
@@ -268,8 +273,9 @@ try:
         r = c.get('/api/v1/publicites/mes-publicites/', secure=True, **entetes(p_user))
         lignes = r.json()['results'] if isinstance(r.json(), dict) else r.json()
         ok('mes-publicites : pubs creees par l admin visibles', str(pub.id) in {x['id'] for x in lignes})
-        ok('mes-publicites : aucun champ nouveau', all(set(x) == {
-            'id', 'formule', 'titre', 'description', 'image_couverture', 'video', 'portee', 'statut'} for x in lignes),
+        ok('mes-publicites : aucun champ admin (champs de reconduction seulement)', all(set(x) == {
+            'id', 'formule', 'titre', 'description', 'image_couverture', 'video', 'portee', 'statut',
+            'reconduite_le', 'reconduction_id', 'reconduction_statut', 'peut_etre_reconduite', 'reconduite_depuis_id'} for x in lignes),
            set(lignes[0]))
         ok('aucune mention de l admin dans la reponse', 'cree_par_admin' not in r.content.decode())
 
