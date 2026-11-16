@@ -5,7 +5,7 @@ GET /api/v1/publicites/admin/liste/       liste paginée + compteurs_statut
 GET /api/v1/publicites/admin/compteurs/   compteurs par statut seuls
 GET /api/v1/publicites/admin/partenaires/ partenaires ayant au moins une pub
 
-Mêmes filtres que admin/stats/ (_publicites_admin_qs) : statut, formule,
+Mêmes filtres que admin/stats/ (_publicites_admin_qs) : id, statut, formule,
 partenaire, search, portee, date_debut, date_fin, origine. Brouillons
 toujours exclus. Droit voir_stats (super-admin toujours autorisé).
 admin/stats/ reste inchangé (liste complète, format historique).
@@ -71,8 +71,11 @@ def _tri(request, ordres, defaut, departage):
 
 
 class ListePublicitesAdminView(APIView):
-    """GET admin/liste/?page=&page_size=&ordre=&statut=&partenaire=&search=
+    """GET admin/liste/?page=&page_size=&ordre=&id=&statut=&partenaire=&search=
     &date_debut=&date_fin=&formule=&origine=&portee=
+
+    id : un ou plusieurs uuid (répété ou séparés par des virgules) ; uuid mal
+    formé -> 400 ; un brouillon n'est jamais renvoyé, même par id.
 
     ordre : cree_le, debut_diffusion, fin_diffusion, affichages, clics,
     partenaire, titre (préfixe - : décroissant ; défaut -cree_le ; dates

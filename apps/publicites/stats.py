@@ -1,4 +1,5 @@
 import csv
+import uuid
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from datetime import datetime, time, timedelta
@@ -165,7 +166,8 @@ def _debut_du_jour(jour):
 
 def _publicites_admin_qs(request, avec_statut=True, avec_search=True):
     """Publicites vues par l'admin : JAMAIS les brouillons (le partenaire
-    seul voit les siens). Filtres optionnels : ?formule=<uuid>,
+    seul voit les siens). Filtres optionnels : ?id=<uuid> (un ou plusieurs,
+    répété ou séparé par des virgules ; un brouillon reste exclu), ?formule=<uuid>,
     ?partenaire=<id>, ?search= (titre / nom du partenaire), ?portee=
     (portee EFFECTIVE = MAX(forfait, achetee)), ?date_debut= / ?date_fin=
     (AAAA-MM-JJ : diffusion qui chevauche la période ; une pub sans dates de
@@ -181,6 +183,12 @@ def _publicites_admin_qs(request, avec_statut=True, avec_search=True):
           .select_related('formule', 'partenaire__user', 'partenaire__plan'))
     p = request.query_params
 
+    ids = _valeurs_multiples(p, 'id')
+    if ids:
+        try:
+            qs = qs.filter(pk__in=[uuid.UUID(v) for v in ids])
+        except ValueError:
+            return qs.none(), 'Identifiant de publicité invalide (uuid attendu).'
     formule = p.get('formule')
     if formule:
         try:

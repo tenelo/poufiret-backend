@@ -2,8 +2,10 @@
 (admin/compteurs/) et vue par partenaire (admin/partenaires/).
 
 - pagination : 25 par défaut, page_size jusqu'à 100 (plafonné), count/next/previous ;
-- chaque filtre (statut simple / multiple, partenaire, search, période,
-  formule, origine, portee) comparé au résultat attendu calculé en Python ;
+- chaque filtre (id simple / multiple / combiné à un statut, statut simple /
+  multiple, partenaire, search, période, formule, origine, portee) comparé au
+  résultat attendu calculé en Python ; uuid invalide -> 400 ; brouillon jamais
+  renvoyé, même par id ;
 - chaque tri, ascendant et descendant (dates vides en dernier, départage
   stable par id, pages sans doublon ni trou) ; ordre inconnu -> 400 ;
 - compteurs_statut (filtre statut ignoré), dans la liste et seuls ;
@@ -219,6 +221,40 @@ try:
             lambda p: p.portee_effective == 'district'))
         ok('filtres combines', set(tous_ids({'partenaire': P1.id, 'statut': 'terminee,active', 'origine': 'payee'}))
            == attendu(lambda p: p.partenaire_id == P1.id and p.statut in ('terminee', 'active') and not p.est_faveur))
+
+        print('=== 2 bis. FILTRE ID ===')
+        cible_id = str(pubs[4].id)
+        ok('id seul', tous_ids({'id': cible_id}) == [cible_id])
+        r = c.get(LISTE, {'id': cible_id}, **entetes(superadmin)).json()
+        ok('id seul (sans filtre formule) : 1 resultat, compteurs restreints', r['count'] == 1
+           and r['compteurs_statut']['total'] == 1, r)
+        deux = [str(pubs[0].id), str(pubs[1].id)]
+        ok('id multiple (virgules)', set(tous_ids({'id': ','.join(deux)})) == set(deux))
+        r = c.get(LISTE + f'?formule={F.id}&page_size=100&id={deux[0]}&id={deux[1]}', **entetes(superadmin))
+        ok('id multiple (repete)', {x['id'] for x in r.json()['results']} == set(deux))
+        st = par_id[deux[0]].statut
+        ok('id combine a un statut (correspond)', tous_ids({'id': ','.join(deux), 'statut': st}) == [
+            i for i in deux if par_id[i].statut == st] and len(tous_ids({'id': ','.join(deux), 'statut': st})) == 1)
+        autre = next(s for s in STATUTS if s not in (par_id[deux[0]].statut, par_id[deux[1]].statut))
+        ok('id combine a un autre statut -> 0 resultat', tous_ids({'id': ','.join(deux), 'statut': autre}) == [])
+        for url in (LISTE, COMPTEURS, STATS, PARTENAIRES):
+            r = c.get(url, {'id': 'pas-un-uuid'}, **entetes(superadmin))
+            ok(f'{url} : uuid invalide -> 400, message clair', r.status_code == 400
+               and 'uuid' in r.json().get('message', ''), r.content[:200])
+        r = c.get(LISTE, {'id': f'{cible_id},123'}, **entetes(superadmin))
+        ok('un seul uuid invalide parmi plusieurs -> 400', r.status_code == 400)
+        r = c.get(LISTE, {'id': brouillon_id}, **entetes(superadmin)).json()
+        ok('pub brouillon par id -> 0 resultat (liste et compteurs)', r['count'] == 0
+           and r['results'] == [] and r['compteurs_statut']['total'] == 0, r)
+        r = c.get(LISTE, {'id': str(uuid.uuid4())}, **entetes(superadmin)).json()
+        ok('uuid inexistant -> 0 resultat', r['count'] == 0)
+        ok('sans id : comportement inchange (26 pubs)', len(tous_ids({})) == 26 and c.get(
+            LISTE, {'formule': str(F.id), 'id': ''}, **entetes(superadmin)).json()['count'] == 26)
+        d = c.get(STATS, {'id': cible_id}, **entetes(superadmin)).json()
+        ok('admin/stats : filtre id', [x['id'] for x in d['publicites']] == [cible_id], d.get('totaux'))
+        d = c.get(PARTENAIRES, {'id': cible_id}, **entetes(superadmin)).json()
+        ok('admin/partenaires : filtre id (pubs comptees)', d['count'] == 1
+           and d['results'][0]['nb_publicites'] == 1, d)
 
         print('=== 3. TRIS ===')
         champs = {'cree_le': 'cree_le', 'debut_diffusion': 'debut_diffusion', 'fin_diffusion': 'fin_diffusion',
