@@ -909,11 +909,15 @@ class Panorama(models.Model):
 # VARIANTES & SUPPLÉMENTS (resto, fast-food)
 # ═══════════════════════════════════════════════════════════════════════
 
-class Variante(models.Model):
+class Variante(ImagesOptimiseesMixin, models.Model):
     """
     Déclinaison d'un article (Petit / Moyen / Grand).
     Le client choisit exactement UNE variante par article.
+    Image facultative (ex. poisson braisé petit / moyen / gros), optimisée
+    comme les images d'articles.
     """
+    champs_images = ('image',)
+
     article = models.ForeignKey(
         Article,
         on_delete=models.CASCADE,
@@ -940,6 +944,7 @@ class Variante(models.Model):
     # Stock par format/pointure (gabarits boutique) : null = illimité.
     stock = models.PositiveIntegerField(_('stock'), blank=True, null=True)
     est_epuise = models.BooleanField(_('épuisée'), default=False)
+    image = models.ImageField(_('image'), upload_to='catalogue/variantes/', blank=True, null=True)
 
     def prix_effectif(self, prix_article):
         """Prix unitaire de la variante : son prix propre, sinon prix de

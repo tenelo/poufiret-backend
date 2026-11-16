@@ -100,7 +100,9 @@ class AjouterLigneView(APIView):
     """POST /orders/paniers/ajouter/ — ajoute un article (ou une ligne de
     menu restaurant) au panier du bon partenaire.
     Body: article (id) OU ligne_menu (id) — l'un des deux obligatoire ;
-    quantite, variante_id? (ignoré pour ligne_menu, prix déjà fixé),
+    quantite, variante_id? (ignoré pour ligne_menu, prix déjà fixé ;
+    obligatoire si l'article a des formats actifs, sauf format par défaut
+    appliqué ; inconnu / inactif / d'un autre article -> 400),
     supplement_ids?[], option_ids?[] (GroupeOption, restaurants : respect
     du min/max de chaque groupe vérifié ici), note_speciale?
     Gabarits : médicament sur ordonnance refusé (pharmacie) ; variante
@@ -129,13 +131,25 @@ class AjouterLigneView(APIView):
                 return Response({'erreur': True, 'message': gabarits.MESSAGE_ORDONNANCE}, status=400)
             prix = article.prix_promotion if (article.est_en_promotion and article.prix_promotion) else article.prix
             prix = prix or 0
+            # Article à formats (variantes actives) : un format est obligatoire.
+            # Absent -> format par défaut, sinon 400 ; inconnu, inactif ou
+            # d'un autre article -> 400 (jamais de repli silencieux sur le
+            # prix de base, qui peut être vide).
+            formats = list(Variante.objects.filter(article=article, est_active=True))
             variante_id = request.data.get('variante_id')
-            if variante_id:
-                v = Variante.objects.filter(pk=variante_id, article=article).first()
-                if v:
-                    if gabarits.variante_epuisee(v):
-                        return Response({'erreur': True, 'message': f'« {v.nom} » est épuisé.'}, status=400)
-                    prix = v.prix_effectif(prix)  # prix propre, sinon base + supplément
+            if variante_id not in (None, ''):
+                v = next((x for x in formats if str(x.pk) == str(variante_id).strip()), None)
+                if v is None:
+                    return Response({'erreur': True, 'message': 'Format inconnu pour cet article.'}, status=400)
+            elif formats:
+                v = next((x for x in formats if x.est_par_defaut), None)
+                if v is None:
+                    return Response({'erreur': True, 'message': 'Choisissez un format.'}, status=400)
+            if v is not None:
+                variante_id = v.pk
+                if gabarits.variante_epuisee(v):
+                    return Response({'erreur': True, 'message': f'« {v.nom} » est épuisé.'}, status=400)
+                prix = v.prix_effectif(prix)  # prix propre, sinon base + supplément
 
         # Pièce : entier ≥ 1 ; vente au kilo (gabarit elevage) : pas de 0,5.
         unite = gabarits.UNITE_PIECE if ligne_menu else gabarits.unite_vente(article)
@@ -252,7 +266,9 @@ def _numero_commande():
 
 class ValiderPanierView(APIView):
     """POST /orders/paniers/<id>/valider/ — transforme un panier en commande.
-    Body: mode_livraison?, adresse?(id), heure_souhaitee?, mode_paiement?, notes_client?, frais_livraison?"""
+    Body: mode_livraison?, adresse?(id), heure_souhaitee?, mode_paiement?, notes_client?, frais_livraison?
+    Restauration (restaurant, fast-food, grilleur) : partenaire fermé -> 400
+    (message_statut), pour les articles de la carte comme pour les menus."""
     permission_classes = [permissions.IsAuthenticated]
 
     @transaction.atomic
@@ -263,6 +279,17 @@ class ValiderPanierView(APIView):
             return Response({'erreur': True, 'message': 'Panier vide.'}, status=400)
 
         # ── Validations restaurant (ouverture, délai limite, groupes d'options) ──
+        # Articles de la carte d'un partenaire de la restauration (restaurant,
+        # fast-food, grilleur) : même règle d'ouverture que les lignes de menu
+        # (fermé exceptionnellement, hors horaires, horaires non renseignés ->
+        # 400 avec message_statut). Les autres partenaires ne sont pas concernés.
+        if (panier.partenaire.type_partenaire in services_restaurants.TYPES_RESTAURATION
+                and any(not l.ligne_menu_id for l in lignes)):
+            fiche = services_restaurants.fiche_de(panier.partenaire)
+            if not services_restaurants.est_ouvert(fiche):
+                return Response(
+                    {'erreur': True, 'message': services_restaurants.message_statut(fiche)},
+                    status=400)
         for l in lignes:
             if l.ligne_menu_id:
                 restaurant = l.ligne_menu.menu.restaurant

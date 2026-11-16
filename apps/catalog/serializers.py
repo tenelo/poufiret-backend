@@ -135,10 +135,19 @@ class ArticleImageImbriqueeSerializer(_ArticleDeLUrlMixin, ArticleImageSerialize
 
 
 class VarianteSerializer(serializers.ModelSerializer):
+    """image : facultative (multipart) ; envoyer image vide ou null en PATCH
+    pour la retirer."""
+    # Defaults explicites : en multipart, DRF lit un booléen absent comme
+    # False ; avec un default, il prend ce default à la création.
+    est_par_defaut = serializers.BooleanField(default=False)
+    est_active = serializers.BooleanField(default=True)
+    est_epuise = serializers.BooleanField(default=False)
+    image = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = Variante
         fields = ['id', 'article', 'nom', 'prix_supplement', 'prix', 'est_par_defaut', 'ordre', 'est_active',
-                  'stock', 'est_epuise']
+                  'stock', 'est_epuise', 'image']
 
 
 class SupplementSerializer(serializers.ModelSerializer):

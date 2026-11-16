@@ -13,14 +13,14 @@ from apps.users.models import ProfilPartenaire
 
 from .models import LigneMenu, MenuProgramme, ProfilRestaurant, StockJournalierLigneMenu
 
-from .gabarits import RESTAURANT, TYPES_MOTEUR, gabarit_de_type
+from .gabarits import GABARITS_RESTAURATION, TYPES_MOTEUR, gabarit_de_type
 
-# Types de la RESTAURATION (gabarit « restaurant ») : liste publique
+# Types de la RESTAURATION (gabarits « restaurant » et « grillades ») : liste publique
 # /restaurants/, menus du jour, filtre admin des commandes ?restauration=1.
 # Le moteur (gestion, détail public, produits) sert plus largement
 # TYPES_MOTEUR (apps.restaurants.gabarits : boulangerie, pharmacie, mode,
 # librairie en plus).
-TYPES_RESTAURATION = [t for t in TYPES_MOTEUR if gabarit_de_type(t) == RESTAURANT]
+TYPES_RESTAURATION = [t for t in TYPES_MOTEUR if gabarit_de_type(t) in GABARITS_RESTAURATION]
 
 LIBELLES_JOUR_ISO = {1: 'lundi', 2: 'mardi', 3: 'mercredi', 4: 'jeudi',
                      5: 'vendredi', 6: 'samedi', 7: 'dimanche'}

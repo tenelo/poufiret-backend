@@ -25,12 +25,21 @@ PHARMACIE = 'pharmacie'
 MODE = 'mode'
 LIBRAIRIE = 'librairie'
 ELEVAGE = 'elevage'
+GRILLADES = 'grillades'
 GENERIQUE = 'generique'
+
+# Gabarits de la restauration : moteur restaurant complet (commandes,
+# horaires, fermeture…). GRILLADES = restaurant sans menus programmés :
+# la page n'affiche que la carte (articles et leurs formats).
+GABARITS_RESTAURATION = (RESTAURANT, GRILLADES)
 
 # Types pris en charge par le moteur restaurants → gabarit.
 GABARIT_PAR_TYPE = {
     T.RESTAURATEUR: RESTAURANT,
     T.FAST_FOOD: RESTAURANT,
+    # Grilleurs (poulet / poisson braisé, APF, brochettes, porc au four,
+    # choukouya…) : catégorie « Grillades & Braisés » (types_partenaire).
+    T.GRILLEUR: GRILLADES,
     T.BOULANGER: BOULANGERIE,
     T.PHARMACIEN: PHARMACIE,
     T.BOUTIQUE_MODE: MODE,
@@ -80,6 +89,11 @@ GABARITS = {
     RESTAURANT: {
         'libelle': 'Restaurant', 'libelle_section': 'Section', 'libelle_produit': 'Plat',
         'libelle_variantes': 'Variantes', 'menus_actifs': True, 'options_actives': True,
+        'pagination_publique': False, 'champs': [],
+    },
+    GRILLADES: {
+        'libelle': 'Grillades & Braisés', 'libelle_section': 'Section', 'libelle_produit': 'Article',
+        'libelle_variantes': 'Formats', 'menus_actifs': False, 'options_actives': True,
         'pagination_publique': False, 'champs': [],
     },
     BOULANGERIE: {
@@ -250,6 +264,16 @@ def commandable(article, gabarit=None):
     return bool(article.est_disponible) and not sur_ordonnance(article, gabarit)
 
 
+def prix_a_partir_de(prix_base, variantes):
+    """Plus petit prix proposé : celui des formats actifs non épuisés
+    (prix propre, sinon base + supplément), sinon le prix de base ; None si
+    aucun prix. `variantes` : variantes actives (déjà chargées)."""
+    dispo = [v for v in variantes if not variante_epuisee(v)] or list(variantes)
+    if dispo:
+        return min(v.prix_effectif(prix_base or 0) for v in dispo)
+    return prix_base
+
+
 def variante_epuisee(variante):
     """Épuisée si marquée comme telle, ou si son stock (non nul = suivi)
     est à 0."""
@@ -263,10 +287,10 @@ def de_garde(fiche, maintenant=None):
 
 
 def type_article(gabarit):
-    """Type d'Article créé par le moteur : 'plat' pour la restauration,
-    'produit' pour les autres gabarits."""
+    """Type d'Article créé par le moteur : 'plat' pour la restauration
+    (restaurant, grillades), 'produit' pour les autres gabarits."""
     from apps.catalog.models import Article
-    return Article.Type.PLAT if gabarit == RESTAURANT else Article.Type.PRODUIT
+    return Article.Type.PLAT if gabarit in GABARITS_RESTAURATION else Article.Type.PRODUIT
 
 
 def types_articles_moteur():

@@ -187,17 +187,20 @@ try:
         ok('porc Africain 1,5 kg -> 201, unite kg, prix 3000 x 1,5 = 4500', r.status_code == 201 and l
            and l['quantite'] == 1.5 and l['unite'] == 'kg' and Decimal(str(l['prix_ligne'])) == 4500, l or r.content)
         ok('porc : quantite_kg en base', LignePanier.objects.get(pk=l['id']).quantite_kg == Decimal('1.5'))
-        ok('porc : 1,2 kg refuse (pas de 0,5)', ajouter(porc, 1.2).status_code == 400)
+        ok('porc : 1,2 kg refuse (pas de 0,5)', ajouter(porc, 1.2, porc_afr['id']).status_code == 400)
+        # Format obligatoire (test_grillades) : porc a des formats, sans format par defaut.
         r = ajouter(porc, 2)
-        l = ligne_de(r, porc)
-        ok('porc sans variante 2 kg : prix 2500 x 2', l and Decimal(str(l['prix_ligne'])) == 5000, l)
-        for animal, prix in ((pintade, 5000), (mouton, 60000), (cabri, 35000), (boeuf, 400000)):
-            r = ajouter(animal, 2)
-            l = ligne_de(r, animal)
+        ok('porc a formats, sans variante ni format par defaut -> 400 (format obligatoire)',
+           r.status_code == 400 and r.json().get('message') == 'Choisissez un format.', r.content)
+        # Mouton : seul format « Gros » (supplement 10000) -> envoye explicitement.
+        for animal, prix, fmt in ((pintade, 5000, None), (mouton, 70000, gros['id']), (cabri, 35000, None),
+                                  (boeuf, 400000, None)):
+            r = ajouter(animal, 2, fmt)
+            l = ligne_de(r, animal, fmt)
             ok(f'{animal["nom"]} : 2 tetes, entier, unite piece, prix {prix} x 2', r.status_code == 201 and l
                and l['quantite'] == 2 and isinstance(l['quantite'], int) and l['unite'] == 'piece'
                and Decimal(str(l['prix_ligne'])) == 2 * prix, l or r.content)
-            ok(f'{animal["nom"]} : 1,5 tete refuse', ajouter(animal, 1.5).status_code == 400)
+            ok(f'{animal["nom"]} : 1,5 tete refuse', ajouter(animal, 1.5, fmt).status_code == 400)
         r = ajouter(poulet, 3, pondeuse['id'])
         l = ligne_de(r, poulet, pondeuse['id'])
         ok('poulet Pondeuse x3 : prix propre 3000 x 3', l and Decimal(str(l['prix_ligne'])) == 9000, l)

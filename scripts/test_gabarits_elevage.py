@@ -16,7 +16,7 @@ from django.test import Client
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework_simplejwt.tokens import AccessToken
 from apps.catalog.correspondances import categories_correspondantes
-from apps.catalog.models import Categorie, PartenaireCategorie
+from apps.catalog.models import Categorie, PartenaireCategorie, Variante
 from apps.geo.models import Departement
 from apps.orders.models import Commande, LignePanier
 from apps.restaurants import gabarits, services
@@ -191,6 +191,12 @@ try:
         ok('kg : 0,5 (minimum) -> 201', ajouter(porc['id'], '0.5').status_code == 201)
 
         print('=== 6. PANIER : QUANTITE A LA PIECE ===')
+        # Format obligatoire (test_grillades) : le poulet a un format « Gros »
+        # sans format par defaut ; un format par defaut « Standard » (sans
+        # supplement) garde l'ajout sans variante_id au prix de l'article.
+        ok('poulet sans format ni format par defaut -> 400 (format obligatoire)',
+           ajouter(poulet['id'], 2).json().get('message') == 'Choisissez un format.')
+        Variante.objects.create(article_id=poulet['id'], nom='Standard', est_par_defaut=True, ordre=0)
         for q in (1.5, 0, '2.5'):
             ok(f'piece : quantite {q!r} -> 400', ajouter(poulet['id'], q).status_code == 400)
         r = ajouter(poulet['id'], 2)

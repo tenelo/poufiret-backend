@@ -263,13 +263,19 @@ class MenuProgrammeSerializer(serializers.ModelSerializer):
 
 class VariantePubliqueSerializer(serializers.ModelSerializer):
     """prix : prix propre (null = prix de l'article + prix_supplement) ;
-    prix_effectif : prix unitaire réellement facturé au panier."""
+    prix_effectif : prix unitaire réellement facturé au panier ;
+    image : URL absolue de la photo du format, ou null."""
     est_epuise = serializers.SerializerMethodField()
     prix_effectif = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model = Variante
-        fields = ['id', 'nom', 'prix_supplement', 'prix', 'prix_effectif', 'est_par_defaut', 'stock', 'est_epuise']
+        fields = ['id', 'nom', 'prix_supplement', 'prix', 'prix_effectif', 'est_par_defaut', 'stock', 'est_epuise',
+                  'image']
+
+    def get_image(self, obj):
+        return _url_absolue(obj.image, self.context.get('request')) if obj.image else None
 
     def get_est_epuise(self, obj):
         return gabarits.variante_epuisee(obj)
@@ -337,7 +343,7 @@ class PlatCartePubliqueSerializer(serializers.ModelSerializer):
         base = obj.prix_promotion if (obj.est_en_promotion and obj.prix_promotion) else obj.prix
         return VariantePubliqueSerializer(
             _actifs_tries(obj.variantes.all(), 'est_active'), many=True,
-            context={'prix_article': base or 0}).data
+            context={**self.context, 'prix_article': base or 0}).data
 
     def to_representation(self, obj):
         """+ unite_vente ('kg' : quantité décimale au panier ; 'piece' sinon)
@@ -345,6 +351,10 @@ class PlatCartePubliqueSerializer(serializers.ModelSerializer):
         (ex. « kg » / « f/kg », « tête » / « f/tête »)."""
         donnees = super().to_representation(obj)
         gabarit = _gabarit_contexte(self, obj)
+        # Plus petit prix proposé (formats compris) : « à partir de … ».
+        base = obj.prix_promotion if (obj.est_en_promotion and obj.prix_promotion) else obj.prix
+        donnees['prix_a_partir_de'] = gabarits.prix_a_partir_de(
+            base, _actifs_tries(obj.variantes.all(), 'est_active'))
         donnees['unite_vente'] = gabarits.UNITE_KG if (
             gabarit == gabarits.ELEVAGE and (obj.fiche_specifique or {}).get('unite_prix') == gabarits.UNITE_KG
         ) else gabarits.UNITE_PIECE

@@ -298,6 +298,7 @@ class ProfilPartenaire(ImagesOptimiseesMixin, models.Model):
         BOULANGER = 'boulanger', _('Boulanger')
         RESTAURATEUR = 'restaurateur', _('Restaurateur')
         FAST_FOOD = 'fast_food', _('Fast-food')
+        GRILLEUR = 'grilleur', _('Grillades / Braisé')
         COUTURIER = 'couturier', _('Couturier / Couturière')
         MENUISIER = 'menuisier', _('Menuisier')
         PLOMBIER = 'plombier', _('Plombier')

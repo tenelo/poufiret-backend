@@ -21,6 +21,7 @@ def ok(l, c, d=''):
 
 ATTENDU = {
     'restaurant': ('Section', 'Plat', 'Variantes', True, True, False, []),
+    'grillades': ('Section', 'Article', 'Formats', False, True, False, []),
     'boulangerie': ('Section', 'Produit', 'Formats', False, True, False,
                     [('sur_commande', 'booleen'), ('delai_heures', 'entier'), ('allergenes', 'texte')]),
     'pharmacie': ('Rayon', 'Produit', 'Formats', False, False, True,

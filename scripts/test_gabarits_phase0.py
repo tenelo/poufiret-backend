@@ -82,11 +82,11 @@ try:
         ok('types geres a part : valeurs propres', gabarits.gabarit_de_type('hotelier') == 'hotel'
            and gabarits.gabarit_de_type('loueur_maison') == 'location_maison'
            and gabarits.gabarit_de_type('loueur_voiture') == 'location_vehicule')
-        ok('TYPES_MOTEUR = restaurant/fast_food/boulanger/pharmacien/boutique_mode/libraire/eleveur',
+        ok('TYPES_MOTEUR = restaurant/fast_food/boulanger/pharmacien/boutique_mode/libraire/eleveur/grilleur',
            set(services.TYPES_MOTEUR) == {'restaurateur', 'fast_food', 'boulanger', 'pharmacien',
-                                          'boutique_mode', 'libraire', 'eleveur'})
-        ok('TYPES_RESTAURATION = gabarit restaurant seulement',
-           set(services.TYPES_RESTAURATION) == {'restaurateur', 'fast_food'})
+                                          'boutique_mode', 'libraire', 'eleveur', 'grilleur'})
+        ok('TYPES_RESTAURATION = gabarits restaurant et grillades',
+           set(services.TYPES_RESTAURATION) == {'restaurateur', 'fast_food', 'grilleur'})
 
         print('=== 2. RATTACHEMENT P1 ET FICHE AUTOMATIQUES ===')
         for t in ('fast_food', 'boutique_mode', 'libraire'):

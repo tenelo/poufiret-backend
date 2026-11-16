@@ -159,10 +159,11 @@ try:
         ok('plat : cles historiques conservees + fiche_specifique/commandable + images', {
             'id', 'nom', 'slug', 'description', 'prix', 'prix_promotion', 'image', 'images', 'est_disponible',
             'est_epuise', 'variantes', 'groupes_options', 'fiche_specifique', 'commandable',
-            'unite_vente', 'unite_prix', 'unite_prix_libelle', 'suffixe_prix'} == set(plat), set(plat))
-        ok('variantes : stock / est_epuise', set(plat['variantes'][0]) == {
-            'id', 'nom', 'prix_supplement', 'prix', 'prix_effectif', 'est_par_defaut', 'stock', 'est_epuise'},
-           plat['variantes'])
+            'unite_vente', 'unite_prix', 'unite_prix_libelle', 'suffixe_prix',
+            'prix_a_partir_de'} == set(plat), set(plat))  # + prix_a_partir_de (test_grillades)
+        ok('variantes : stock / est_epuise (+ image, test_grillades)', set(plat['variantes'][0]) == {
+            'id', 'nom', 'prix_supplement', 'prix', 'prix_effectif', 'est_par_defaut', 'stock', 'est_epuise',
+            'image'}, plat['variantes'])
         ok('options toujours servies', plat['groupes_options'][0]['options'][0]['nom'] == 'Fort')
         for i in range(5):
             produit(resto, f'Plat {i}', entrees, type_='plat', images=2, variantes=2)
