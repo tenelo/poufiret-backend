@@ -27,6 +27,33 @@ LIBELLES_JOUR_ISO = {1: 'lundi', 2: 'mardi', 3: 'mercredi', 4: 'jeudi',
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# « LE PLUS COMMANDÉ » (gabarit fast_food)
+# ═══════════════════════════════════════════════════════════════════════
+
+NB_POPULAIRES, JOURS_POPULAIRES = 3, 30
+# Commandes qui ne sont pas des ventes : ignorées par « le plus commandé ».
+STATUTS_NON_VENDUS = ('annulee', 'refusee', 'expiree')
+
+
+def articles_populaires(partenaire_id, jours=JOURS_POPULAIRES, limite=NB_POPULAIRES):
+    """{article_id: rang (1 = le plus commandé)} : top des articles actifs
+    du partenaire par quantité commandée sur `jours` jours. Seules les
+    commandes réellement vendues comptent : annulées, refusées et expirées
+    exclues. Une requête groupée. Ex aequo : article le plus ancien d'abord."""
+    from django.db.models import Sum
+
+    from apps.orders.models import LigneCommande
+    lignes = (LigneCommande.objects
+              .filter(commande__partenaire_id=partenaire_id, article__isnull=False,
+                      article__est_actif=True,
+                      commande__created_at__gte=timezone.now() - timedelta(days=jours))
+              .exclude(commande__statut__in=STATUTS_NON_VENDUS)
+              .values('article_id').annotate(quantite_totale=Sum('quantite'))
+              .order_by('-quantite_totale', 'article_id')[:limite])
+    return {l['article_id']: rang for rang, l in enumerate(lignes, start=1)}
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # OUVERTURE / FERMETURE (fuseau Africa/Abidjan — settings.TIME_ZONE)
 # ═══════════════════════════════════════════════════════════════════════
 

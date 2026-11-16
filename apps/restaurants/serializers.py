@@ -310,6 +310,16 @@ class GroupeOptionPubliqueSerializer(serializers.ModelSerializer):
             _actifs_tries(obj.options.all(), 'est_actif'), many=True).data
 
 
+def _rangs_populaires(serializer, partenaire_id):
+    """Rangs « le plus commandé » d'un partenaire, calculés une fois par
+    réponse (mis en cache dans le contexte partagé par les sérialiseurs)."""
+    cle = ('populaires', partenaire_id)
+    contexte = serializer.context
+    if cle not in contexte:
+        contexte[cle] = services.articles_populaires(partenaire_id)
+    return contexte[cle]
+
+
 def _gabarit_contexte(serializer, article):
     return serializer.context.get('gabarit') or gabarits.gabarit_de(article.partenaire)
 
@@ -329,7 +339,7 @@ class PlatCartePubliqueSerializer(serializers.ModelSerializer):
         model = Article
         fields = ['id', 'nom', 'slug', 'description', 'prix', 'prix_promotion',
                   'image', 'images', 'est_disponible', 'est_epuise', 'commandable', 'fiche_specifique',
-                  'variantes', 'groupes_options']
+                  'variantes', 'groupes_options', 'temps_preparation_min']
 
     def get_image(self, obj):
         return url_image_plat(obj, self.context.get('request'))
@@ -356,6 +366,13 @@ class PlatCartePubliqueSerializer(serializers.ModelSerializer):
         base = obj.prix_promotion if (obj.est_en_promotion and obj.prix_promotion) else obj.prix
         donnees['prix_a_partir_de'] = gabarits.prix_a_partir_de(
             base, _actifs_tries(obj.variantes.all(), 'est_active'))
+        if gabarit == gabarits.FAST_FOOD:
+            # Combo (prix « au lieu de » seulement s'il dépasse le prix affiché)
+            # et « le plus commandé » (top 3 sur 30 jours, rang 1 à 3).
+            donnees.update(gabarits.infos_combo(obj, donnees['prix_a_partir_de']))
+            rang = _rangs_populaires(self, obj.partenaire_id).get(obj.id)
+            donnees['populaire'] = rang is not None
+            donnees['rang_populaire'] = rang
         donnees['unite_vente'] = gabarits.UNITE_KG if (
             gabarit == gabarits.ELEVAGE and (obj.fiche_specifique or {}).get('unite_prix') == gabarits.UNITE_KG
         ) else gabarits.UNITE_PIECE

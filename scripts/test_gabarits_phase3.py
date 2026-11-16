@@ -160,7 +160,8 @@ try:
             'id', 'nom', 'slug', 'description', 'prix', 'prix_promotion', 'image', 'images', 'est_disponible',
             'est_epuise', 'variantes', 'groupes_options', 'fiche_specifique', 'commandable',
             'unite_vente', 'unite_prix', 'unite_prix_libelle', 'suffixe_prix',
-            'prix_a_partir_de'} == set(plat), set(plat))  # + prix_a_partir_de (test_grillades)
+            'prix_a_partir_de',  # + prix_a_partir_de (test_grillades)
+            'temps_preparation_min'} == set(plat), set(plat))  # + temps de preparation (test_fast_food)
         ok('variantes : stock / est_epuise (+ image, test_grillades)', set(plat['variantes'][0]) == {
             'id', 'nom', 'prix_supplement', 'prix', 'prix_effectif', 'est_par_defaut', 'stock', 'est_epuise',
             'image'}, plat['variantes'])

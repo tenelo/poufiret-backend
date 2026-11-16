@@ -316,6 +316,10 @@ class ArticleCarteGestionSerializer(serializers.ModelSerializer):
     prix_effectif = serializers.ReadOnlyField()
     modifie_le = serializers.DateTimeField(source='updated_at', read_only=True)
 
+    temps_preparation_min = serializers.IntegerField(
+        required=False, allow_null=True, min_value=0, max_value=600,
+        help_text='Temps de préparation de cet article (minutes), affiché dans la carte.')
+
     class Meta:
         model = Article
         fields = ['id', 'nom', 'slug', 'description', 'categorie', 'section_menu',

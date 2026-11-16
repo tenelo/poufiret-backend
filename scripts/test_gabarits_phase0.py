@@ -74,7 +74,7 @@ try:
         ok('types crees : fast_food, boutique_mode (libraire deja present)',
            T('fast_food').label == 'Fast-food' and T('boutique_mode').label == 'Vendeur de chaussures / Mode'
            and T('libraire').label == 'Libraire')
-        attendu = {'restaurateur': 'restaurant', 'fast_food': 'restaurant', 'boulanger': 'boulangerie',
+        attendu = {'restaurateur': 'restaurant', 'fast_food': 'fast_food', 'boulanger': 'boulangerie',
                    'pharmacien': 'pharmacie', 'boutique_mode': 'mode', 'libraire': 'librairie',
                    'coiffeur': 'generique', 'commercant': 'generique', 'autre': 'generique',
                    'grilleur': 'grillades'}
@@ -86,7 +86,7 @@ try:
         ok('TYPES_MOTEUR = restaurant/fast_food/boulanger/pharmacien/boutique_mode/libraire/eleveur/grilleur',
            set(services.TYPES_MOTEUR) == {'restaurateur', 'fast_food', 'boulanger', 'pharmacien',
                                           'boutique_mode', 'libraire', 'eleveur', 'grilleur'})
-        ok('TYPES_RESTAURATION = gabarits restaurant et grillades',
+        ok('TYPES_RESTAURATION = gabarits restaurant, grillades et fast_food',
            set(services.TYPES_RESTAURATION) == {'restaurateur', 'fast_food', 'grilleur'})
 
         print('=== 2. RATTACHEMENT P1 ET FICHE AUTOMATIQUES ===')
@@ -116,7 +116,7 @@ try:
         ok('vitrine : gabarit', r.status_code == 200 and r.json()['gabarit'] == 'mode', r.content)
         r = req('get', f'/api/v1/auth/partenaires/{P["coiffeur"].id}/')
         ok('vitrine generique', r.json()['gabarit'] == 'generique')
-        for t, g in [('restaurateur', 'restaurant'), ('fast_food', 'restaurant'), ('pharmacien', 'pharmacie')]:
+        for t, g in [('restaurateur', 'restaurant'), ('fast_food', 'fast_food'), ('pharmacien', 'pharmacie')]:
             r = req('get', f'/api/v1/restaurants/{P[t].id}/')
             ok(f'detail /restaurants/<{t}>/ -> 200, gabarit {g}', r.status_code == 200 and r.json()['gabarit'] == g,
                r.content[:200])
@@ -156,7 +156,10 @@ try:
         ok('pharmacie : menus -> 400 details.gabarit', r.status_code == 400 and 'gabarit' in r.json()['details'],
            r.content)
         r = req('post', '/api/v1/restaurants/mon-restaurant/menus/', P['fast_food'].user, menu)
-        ok('fast-food : menus -> 201', r.status_code == 201, r.content)
+        ok('fast-food : menus -> 400 details.gabarit (gabarit fast_food sans menus)',
+           r.status_code == 400 and 'gabarit' in r.json()['details'], r.content)
+        r = req('post', '/api/v1/restaurants/mon-restaurant/menus/', P['restaurateur'].user, menu)
+        ok('restaurant : menus -> 201 (inchange)', r.status_code == 201, r.content)
         livre = req('post', '/api/v1/restaurants/mon-restaurant/carte/plats/', P['libraire'].user,
                     {'nom': 'Le Petit Prince', 'prix': 3000, 'fiche_specifique': {'auteur': 'Saint-Exupéry'}}).json()['id']
         r = req('post', '/api/v1/restaurants/mon-restaurant/carte/groupes-options/', P['libraire'].user,

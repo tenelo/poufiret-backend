@@ -26,17 +26,19 @@ MODE = 'mode'
 LIBRAIRIE = 'librairie'
 ELEVAGE = 'elevage'
 GRILLADES = 'grillades'
+FAST_FOOD = 'fast_food'
 GENERIQUE = 'generique'
 
 # Gabarits de la restauration : moteur restaurant complet (commandes,
-# horaires, fermeture…). GRILLADES = restaurant sans menus programmés :
-# la page n'affiche que la carte (articles et leurs formats).
-GABARITS_RESTAURATION = (RESTAURANT, GRILLADES)
+# horaires, fermeture…). GRILLADES et FAST_FOOD = restaurant sans menus
+# programmés : la page n'affiche que la carte (articles, formats, options).
+# FAST_FOOD ajoute combos (est_combo, prix_reference) et « le plus commandé ».
+GABARITS_RESTAURATION = (RESTAURANT, GRILLADES, FAST_FOOD)
 
 # Types pris en charge par le moteur restaurants → gabarit.
 GABARIT_PAR_TYPE = {
     T.RESTAURATEUR: RESTAURANT,
-    T.FAST_FOOD: RESTAURANT,
+    T.FAST_FOOD: FAST_FOOD,  # catégorie « Fast-food » (types_partenaire)
     # Grilleurs (poulet / poisson braisé, APF, brochettes, porc au four,
     # choukouya…) : catégorie « Grillades & Braisés » (types_partenaire).
     T.GRILLEUR: GRILLADES,
@@ -95,6 +97,17 @@ GABARITS = {
         'libelle': 'Grillades & Braisés', 'libelle_section': 'Section', 'libelle_produit': 'Article',
         'libelle_variantes': 'Formats', 'menus_actifs': False, 'options_actives': True,
         'pagination_publique': False, 'champs': [],
+    },
+    FAST_FOOD: {
+        'libelle': 'Fast-food', 'libelle_section': 'Rubrique', 'libelle_produit': 'Produit',
+        'libelle_variantes': 'Tailles', 'menus_actifs': False, 'options_actives': True,
+        'pagination_publique': False,
+        'champs': [
+            # Combo v1 : article « Menu » + groupes d'options (min/max réglés
+            # par le partenaire) ; prix_reference = prix « au lieu de ».
+            _champ('est_combo', 'Formule / combo', BOOLEEN),
+            _champ('prix_reference', 'Prix « au lieu de » (FCFA)', ENTIER),
+        ],
     },
     BOULANGERIE: {
         'libelle': 'Boulangerie', 'libelle_section': 'Section', 'libelle_produit': 'Produit',
@@ -272,6 +285,15 @@ def prix_a_partir_de(prix_base, variantes):
     if dispo:
         return min(v.prix_effectif(prix_base or 0) for v in dispo)
     return prix_base
+
+
+def infos_combo(article, prix_affiche):
+    """Fast-food : {est_combo, prix_reference}. prix_reference (« au lieu
+    de ») n'est renvoyé que s'il est supérieur au prix affiché, sinon null."""
+    fiche = article.fiche_specifique or {}
+    ref = fiche.get('prix_reference')
+    visible = ref is not None and prix_affiche is not None and ref > prix_affiche
+    return {'est_combo': bool(fiche.get('est_combo')), 'prix_reference': ref if visible else None}
 
 
 def variante_epuisee(variante):
