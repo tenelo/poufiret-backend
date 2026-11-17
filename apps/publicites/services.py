@@ -451,7 +451,8 @@ def _notifier_admins_pub(pub, type_notif, titre, message):
             ) for u in destinataires
         ])
         from apps.notifications.temps_reel import diffuser_compteurs_admin
-        diffuser_compteurs_admin(destinataires, nouvelle=True)
+        diffuser_compteurs_admin(destinataires, nouvelle=True,
+                                 push=(titre, message, {**data, 'canal': canal['canal']}))
     except Exception:
         logger.exception(
             'Notification admin pub %s (%s) : échec, transition non bloquée.',

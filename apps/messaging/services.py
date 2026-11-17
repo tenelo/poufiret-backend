@@ -160,18 +160,19 @@ def notifier_admins_intervention_nouvelle(demande):
         data = {'intervention_id': demande.id, 'statut': demande.statut}
         canal = champs_canal(Notification.Type.INTERVENTION_NOUVELLE, data)
         client = demande.user.get_full_name() or demande.user.telephone
+        titre = "Nouvelle demande d'intervention"
+        contenu = (f'{demande.numero} — {client} → {demande.artisan.nom_commerce} '
+                   f'({demande.get_type_intervention_display()}, '
+                   f'{demande.get_urgence_display()}).')
         Notification.objects.bulk_create([
             Notification(
                 user=u, type=Notification.Type.INTERVENTION_NOUVELLE,
-                titre="Nouvelle demande d'intervention",
-                contenu=(f'{demande.numero} — {client} → {demande.artisan.nom_commerce} '
-                         f'({demande.get_type_intervention_display()}, '
-                         f'{demande.get_urgence_display()}).'),
-                data=data, **canal,
+                titre=titre, contenu=contenu, data=data, **canal,
             ) for u in destinataires
         ])
         from apps.notifications.temps_reel import diffuser_compteurs_admin
-        diffuser_compteurs_admin(destinataires, nouvelle=True)
+        diffuser_compteurs_admin(destinataires, nouvelle=True,
+                                 push=(titre, contenu, {**data, 'canal': canal['canal']}))
     except Exception:
         logger.exception('Notification admin intervention %s : échec, création non bloquée.',
                          demande.pk)

@@ -35,13 +35,26 @@ def envoyer_notification(token_fcm, titre, corps, data=None):
 
 def notifier_utilisateur(user, titre, corps, data=None, request=None):
     """Notifie un utilisateur si le flag 'fcm_actif' est on et qu'il a un token.
-    Point d'entrée à appeler depuis les autres modules (chat, commandes, etc.)."""
+    Point d'entrée à appeler depuis les autres modules (chat, commandes, etc.).
+    Partenaires (non admins) : aussi en Web Push s'ils ont un abonnement dans
+    l'admin web, indépendamment de fcm_actif (apps.notifications.push_web ;
+    les admins reçoivent le leur via diffuser_compteurs_admin)."""
+    _push_web_partenaire(user, titre, corps, data)
     from waffle import flag_is_active
     base = getattr(request, '_request', request) if request else None
     actif = flag_is_active(base, 'fcm_actif') if base else _flag_global('fcm_actif')
     if not actif:
         return False, 'flag off'
     return envoyer_notification(user.token_fcm, titre, corps, data)
+
+
+def _push_web_partenaire(user, titre, corps, data):
+    try:
+        if user is not None and not (user.is_staff or user.is_superuser):
+            from .push_web import envoyer_push_web
+            envoyer_push_web([user], titre, corps, data)
+    except Exception:
+        pass  # jamais bloquant (journalisé dans push_web)
 
 
 def _flag_global(nom):

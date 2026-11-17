@@ -79,15 +79,23 @@ def _envoyer(ids, nouvelle):
                          len(ids))
 
 
-def diffuser_compteurs_admin(utilisateurs, nouvelle):
+def diffuser_compteurs_admin(utilisateurs, nouvelle, push=None):
     """Envoie à chaque admin concerné ses compteurs à jour, après validation de
     la transaction en cours (immédiatement hors transaction).
     utilisateurs : User (les non-admins sont ignorés) ou ids de comptes admin.
     nouvelle : True après création de notification(s) (son côté Angular),
-    False après lecture."""
+    False après lecture.
+    push : (titre, corps, data) -> notification système Web Push aux mêmes
+    admins (apps.notifications.push_web) ; data['canal'] fixe le tag
+    (restaurant / general) et le regroupement par non lues du canal."""
     try:
         ids = _ids_admins(utilisateurs)
         if ids:
             transaction.on_commit(lambda: _envoyer(ids, nouvelle))
+            if push:
+                from .push_web import envoyer_push_web
+                titre, corps, data = push
+                data = dict(data or {})
+                envoyer_push_web(ids, titre, corps, data, canal=data.get('canal'), avec_compteurs=True)
     except Exception:
         logger.exception('Diffusion WebSocket des compteurs admin : échec, action non bloquée.')

@@ -224,6 +224,13 @@ CHANNEL_LAYERS = {
 # ------------------------------------------------------------------------------
 FIREBASE_CREDENTIALS = config('FIREBASE_CREDENTIALS', default='')
 
+# Web Push de l'admin web (apps.notifications.push_web) : inactif tant
+# qu'une clé manque ou que le flag waffle « push_web_actif » est éteint.
+# Clés générées par : python manage.py generer_cles_vapid
+VAPID_PUBLIC_KEY = config('VAPID_PUBLIC_KEY', default='')
+VAPID_PRIVATE_KEY = config('VAPID_PRIVATE_KEY', default='')
+VAPID_SUBJECT = config('VAPID_SUBJECT', default='')
+
 # ------------------------------------------------------------------------------
 # SMS / OTP — couche d'envoi abstraite (apps/core/sms.py)
 # ------------------------------------------------------------------------------
