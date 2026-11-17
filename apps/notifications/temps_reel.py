@@ -26,19 +26,21 @@ def groupe_admin(user_id):
 def _agregats():
     from apps.moderation.models import Notification
     return {'restaurant': Count('id', filter=Q(canal=Notification.Canal.RESTAURANT)),
+            'service': Count('id', filter=Q(canal=Notification.Canal.SERVICE)),
             'general': Count('id', filter=Q(canal=Notification.Canal.GENERAL))}
 
 
-def _forme(restaurant, general):
-    return {'restaurant': restaurant, 'general': general, 'nb_non_lues': restaurant + general}
+def _forme(restaurant, service, general):
+    return {'restaurant': restaurant, 'service': service, 'general': general,
+            'nb_non_lues': restaurant + service + general}
 
 
 def compteurs_admin(user):
-    """{"restaurant": n, "general": m, "nb_non_lues": n+m} — non lues du compte,
-    en une requête (agrégat filtré)."""
+    """{"restaurant": n, "service": s, "general": m, "nb_non_lues": n+s+m} —
+    non lues du compte, en une requête (agrégat filtré)."""
     from apps.moderation.models import Notification
     c = Notification.objects.filter(user=user, lu=False).aggregate(**_agregats())
-    return _forme(c['restaurant'], c['general'])
+    return _forme(c['restaurant'], c['service'], c['general'])
 
 
 def _compteurs_par_utilisateur(ids):
@@ -46,8 +48,8 @@ def _compteurs_par_utilisateur(ids):
     from apps.moderation.models import Notification
     lignes = (Notification.objects.filter(user_id__in=ids, lu=False).order_by()
               .values('user_id').annotate(**_agregats()))
-    par_id = {l['user_id']: _forme(l['restaurant'], l['general']) for l in lignes}
-    return {i: par_id.get(i, _forme(0, 0)) for i in ids}
+    par_id = {l['user_id']: _forme(l['restaurant'], l['service'], l['general']) for l in lignes}
+    return {i: par_id.get(i, _forme(0, 0, 0)) for i in ids}
 
 
 def _ids_admins(utilisateurs):
@@ -87,7 +89,7 @@ def diffuser_compteurs_admin(utilisateurs, nouvelle, push=None):
     False après lecture.
     push : (titre, corps, data) -> notification système Web Push aux mêmes
     admins (apps.notifications.push_web) ; data['canal'] fixe le tag
-    (restaurant / general) et le regroupement par non lues du canal."""
+    (restaurant / service / general) et le regroupement par non lues du canal."""
     try:
         ids = _ids_admins(utilisateurs)
         if ids:

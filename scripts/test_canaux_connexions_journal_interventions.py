@@ -1,4 +1,4 @@
-"""Tests : notifications admin à deux canaux, connexions admin à une ligne,
+"""Tests : notifications admin par canal (restaurant / service / general), connexions admin à une ligne,
 journal d'audit regroupé (+ purge en simulation), centre de gestion admin
 des demandes d'intervention.
 
@@ -35,6 +35,9 @@ HOST = 'poufiret.tenelo.cloud'
 from unittest import mock as _mock_debit
 from rest_framework.views import APIView as _APIViewDebit
 _mock_debit.patch.object(_APIViewDebit, 'get_throttles', return_value=[]).start()
+# Web Push neutralise : les vrais points d'emission ne doivent jamais envoyer
+# de notification systeme aux admins reels pendant le test.
+_mock_debit.patch('apps.notifications.push_web.est_actif', return_value=False).start()
 NB = 0
 
 
@@ -97,7 +100,9 @@ try:
         # ═══════════════════════════════════════════════════════════════
         print('\n=== 1. NOTIFICATIONS : CANAUX ET CIBLES ===')
         resto = ProfilPartenaire.objects.filter(type_partenaire='restaurateur').first()
-        autre = ProfilPartenaire.objects.exclude(type_partenaire='restaurateur').first()
+        from apps.notifications.canaux import types_canal_restaurant
+        # « autre » : ni restauration ni boulanger (cloche Autres).
+        autre = ProfilPartenaire.objects.exclude(type_partenaire__in=types_canal_restaurant()).first()
 
         def commande(partenaire):
             return Commande.objects.create(
@@ -121,9 +126,9 @@ try:
         ok('pub -> general, cible publicites',
            champs_canal('pub_a_valider', {'publicite_id': 'abc'})
            == {'canal': 'general', 'cible': {'ecran': 'publicites', 'id': 'abc'}})
-        ok('demande location -> general, cible demandes_location',
+        ok('demande location -> service, cible demandes_location',
            champs_canal('reservation_nouvelle', {'demande_id': 7})
-           == {'canal': 'general', 'cible': {'ecran': 'demandes_location', 'id': 7}})
+           == {'canal': 'service', 'cible': {'ecran': 'demandes_location', 'id': 7}})
         ok('commande_acceptee (autre type) d\'un restaurant -> general',
            champs_canal('commande_acceptee', {'commande_id': c_resto.id}, commande=c_resto)['canal'] == 'general')
 
@@ -147,11 +152,13 @@ try:
         ok('?canal=inconnu -> 400', req('get', '/api/v1/notifications/admin/?canal=x', cmd_admin).status_code == 400)
 
         attendu_r = Notification.objects.filter(user=cmd_admin, lu=False, canal='restaurant').count()
+        attendu_s = Notification.objects.filter(user=cmd_admin, lu=False, canal='service').count()
         attendu_g = Notification.objects.filter(user=cmd_admin, lu=False, canal='general').count()
         with CaptureQueriesContext(connection) as ctx:
             r = req('get', '/api/v1/notifications/admin/compteur/', cmd_admin)
-        ok('compteur {restaurant, general, nb_non_lues}', r.json() == {
-            'restaurant': attendu_r, 'general': attendu_g, 'nb_non_lues': attendu_r + attendu_g}, r.json())
+        ok('compteur {restaurant, service, general, nb_non_lues}', r.json() == {
+            'restaurant': attendu_r, 'service': attendu_s, 'general': attendu_g,
+            'nb_non_lues': attendu_r + attendu_s + attendu_g}, r.json())
         requetes_notif = [q for q in ctx.captured_queries if 'moderation_notification' in q['sql']]
         ok('compteur : UNE requete sur les notifications', len(requetes_notif) == 1, len(requetes_notif))
 
@@ -191,7 +198,7 @@ try:
            {superadmin.id, voir.id, gerer.id} <= set(notifs.values_list('user_id', flat=True)))
         ok('pas aux admins sans droit', not notifs.filter(user__in=[sans, cmd_admin]).exists())
         n = notifs.get(user=voir)
-        ok('canal general, cible interventions', n.canal == 'general'
+        ok('canal service, cible interventions', n.canal == 'service'
            and n.cible == {'ecran': 'interventions', 'id': d1.id}, (n.canal, n.cible))
         ok('un seul exemplaire par destinataire (distinct)', notifs.filter(user=superadmin).count() == 1)
 

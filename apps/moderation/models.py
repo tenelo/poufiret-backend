@@ -237,8 +237,9 @@ class Notification(models.Model):
         INTERVENTION_NOUVELLE = 'intervention_nouvelle', _('Nouvelle demande d\'intervention')
 
     class Canal(models.TextChoices):
-        RESTAURANT = 'restaurant', _('Restaurant')
-        GENERAL = 'general', _('Général')
+        RESTAURANT = 'restaurant', _('Restaurants')
+        SERVICE = 'service', _('Services')
+        GENERAL = 'general', _('Autres')  # valeur gardée (existant)
 
     user = models.ForeignKey(
         User, on_delete=models.CASCADE,
@@ -258,7 +259,7 @@ class Notification(models.Model):
         help_text=_('Données pour le deep-linking (ex: {"article_id": 42, "commande_id": 7}).'),
     )
 
-    # Notifications admin : canal (centre restaurant / général) et écran
+    # Notifications admin : canal (cloches Restaurants / Services / Autres) et écran
     # cible du deep-linking {"ecran": ..., "id": ...} — voir
     # apps.notifications.canaux.champs_canal (calcul unique).
     canal = models.CharField(

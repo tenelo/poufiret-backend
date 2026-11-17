@@ -6,7 +6,11 @@
   admin de commande) ;
 - « nouvelle: false » après lire et tout-lire (endpoints REST, réponses inchangées) ;
 - isolation entre deux admins ;
-- action métier réussie même si la diffusion échoue (erreur journalisée).
+- action métier réussie même si la diffusion échoue (erreur journalisée) ;
+- trois cloches (restaurant / service / general) : message WS avec
+  « service », ?canal=service, classement de chaque type de partenaire et
+  de chaque événement (vrais points d'émission), migration de données
+  moderation.0008.
 
 Couche de canaux EN MÉMOIRE (pas de Redis), données propres, transaction
 annulée (rien ne persiste), limitation de débit désactivée. on_commit des
@@ -15,10 +19,13 @@ jamais validée). Total OK / KO.
 Execution :
     docker exec -i backend-poufiret python manage.py shell < scripts/test_notifications_temps_reel.py
 """
+import importlib
 import uuid
+from types import SimpleNamespace
 from unittest import mock
 
 from asgiref.sync import async_to_sync
+from django.apps import apps as django_apps
 from channels.db import database_sync_to_async
 from channels.layers import channel_layers
 from channels.testing import WebsocketCommunicator
@@ -39,6 +46,9 @@ HOST = 'poufiret.tenelo.cloud'
 from unittest import mock as _mock_debit
 from rest_framework.views import APIView as _APIViewDebit
 _mock_debit.patch.object(_APIViewDebit, 'get_throttles', return_value=[]).start()
+# Web Push neutralise : les vrais points d'emission ne doivent jamais envoyer
+# de notification systeme aux admins reels pendant le test.
+_mock_debit.patch('apps.notifications.push_web.est_actif', return_value=False).start()
 
 # Couche de canaux en mémoire pour ce script (Redis non sollicité).
 _couche = override_settings(CHANNEL_LAYERS={'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'}})
@@ -56,7 +66,7 @@ class Rollback(Exception):
 
 
 NB_OK, KO = 0, []
-CLES = {'type', 'restaurant', 'general', 'nb_non_lues', 'nouvelle'}
+CLES = {'type', 'restaurant', 'service', 'general', 'nb_non_lues', 'nouvelle'}
 
 
 def ok(libelle, cond, detail=''):
@@ -125,11 +135,13 @@ async def scenario(d):
     ok('admin B connecte', (await cb.connect())[0])
     m = await ca.receive_json_from(timeout=3)
     ok('A : compteurs a la connexion (1 restaurant + 1 general, nouvelle false)',
-       m == {'type': 'compteurs', 'restaurant': 1, 'general': 1, 'nb_non_lues': 2, 'nouvelle': False}, m)
+       m == {'type': 'compteurs', 'restaurant': 1, 'service': 0, 'general': 1, 'nb_non_lues': 2,
+             'nouvelle': False}, m)
     m = await cb.receive_json_from(timeout=3)
-    ok('B : compteurs a la connexion (0)', m == {'type': 'compteurs', 'restaurant': 0, 'general': 0,
+    ok('B : compteurs a la connexion (0)', m == {'type': 'compteurs', 'restaurant': 0, 'service': 0, 'general': 0,
                                                   'nb_non_lues': 0, 'nouvelle': False}, m)
-    ok('REST compteur inchange (meme calcul)', await compter(A) == {'restaurant': 1, 'general': 1, 'nb_non_lues': 2})
+    ok('REST compteur (meme calcul, + service)',
+       await compter(A) == {'restaurant': 1, 'service': 0, 'general': 1, 'nb_non_lues': 2})
 
     print('=== 3. CREATION (bulk_create) ===')
     await apres_commit(lambda: _notifier_admins_commande(d['commande'], 'commande_nouvelle', 'Nouvelle commande', 'QA'))
@@ -144,8 +156,8 @@ async def scenario(d):
         diffuser_compteurs_admin([B], nouvelle=True)
     await apres_commit(notif_pour_b)
     m = await cb.receive_json_from(timeout=3)
-    ok('B : sa notification (nouvelle true, 1 general)', m == {'type': 'compteurs', 'restaurant': 0, 'general': 1,
-                                                                'nb_non_lues': 1, 'nouvelle': True}, m)
+    ok('B : sa notification (nouvelle true, 1 general)', m == {'type': 'compteurs', 'restaurant': 0, 'service': 0,
+                                                                'general': 1, 'nb_non_lues': 1, 'nouvelle': True}, m)
     ok('isolation : A ne recoit rien', await ca.receive_nothing(timeout=0.5))
     ok('un non-admin est ignore par la diffusion', await database_sync_to_async(
         lambda: diffuser_compteurs_admin([client], nouvelle=True))() is None and await ca.receive_nothing(timeout=0.3))
@@ -163,12 +175,37 @@ async def scenario(d):
     r = await poster(A, '/api/v1/notifications/admin/tout-lire/')
     ok('tout-lire -> 200 (reponse inchangee)', r.status_code == 200 and r.json()['nb_non_lues'] == 0, r.content[:200])
     m = await ca.receive_json_from(timeout=3)
-    ok('A : nouvelle false apres tout-lire, 0', m == {'type': 'compteurs', 'restaurant': 0, 'general': 0,
-                                                       'nb_non_lues': 0, 'nouvelle': False}, m)
+    ok('A : nouvelle false apres tout-lire, 0', m == {'type': 'compteurs', 'restaurant': 0, 'service': 0,
+                                                       'general': 0, 'nb_non_lues': 0, 'nouvelle': False}, m)
     ok('tout-lire sans rien a lire : pas de message',
        (await poster(A, '/api/v1/notifications/admin/tout-lire/')).status_code == 200
        and await ca.receive_nothing(timeout=0.3))
     ok('isolation : B ne recoit rien des lectures de A', await cb.receive_nothing(timeout=0.3))
+
+    print('=== 4b. CLOCHE SERVICES (vrai point d emission : reservation) ===')
+    from apps.reservations.services import _notifier_admins_demande
+    demande = SimpleNamespace(id=987650, pk=987650, statut='en_attente')
+    await apres_commit(lambda: _notifier_admins_demande(demande, 'reservation_nouvelle', 'Nouvelle demande', 'QA'))
+    m = await ca.receive_json_from(timeout=3)
+    ok('A : message WS service 1 (nouvelle true)', m == {'type': 'compteurs', 'restaurant': 0, 'service': 1,
+                                                          'general': 0, 'nb_non_lues': 1, 'nouvelle': True}, m)
+    ok('message : cles exactes (service ajoute)', set(m) == CLES, set(m))
+    m = await cb.receive_json_from(timeout=3)
+    ok('B (gerer_reservations) : service 1 + general 1', m == {'type': 'compteurs', 'restaurant': 0, 'service': 1,
+                                                               'general': 1, 'nb_non_lues': 2, 'nouvelle': True}, m)
+
+    def lister(user, url):
+        return database_sync_to_async(lambda: Client().get(
+            url, secure=True, HTTP_HOST=HOST, HTTP_AUTHORIZATION=f'Bearer {AccessToken.for_user(user)}'))()
+    r = await lister(A, '/api/v1/notifications/admin/?canal=service')
+    res = r.json().get('results', []) if r.status_code == 200 else []
+    ok('liste ?canal=service -> la reservation (ecran demandes_location)', r.status_code == 200 and len(res) == 1
+       and res[0]['canal'] == 'service' and res[0]['cible'] == {'ecran': 'demandes_location', 'id': 987650}
+       and r.json()['nb_non_lues'] == 1, r.content[:300])
+    r = await poster(A, '/api/v1/notifications/admin/tout-lire/?canal=service')
+    ok('tout-lire ?canal=service -> 1', r.status_code == 200 and r.json()['nb_mises_a_jour'] == 1, r.content[:200])
+    m = await ca.receive_json_from(timeout=3)
+    ok('A : service 0 apres tout-lire du canal', m['service'] == 0 and m['nouvelle'] is False, m)
 
     print('=== 5. DIFFUSION EN ECHEC ===')
     notif_b = await database_sync_to_async(lambda: Notification.objects.get(user=B, titre='Pour B'))()
@@ -190,6 +227,99 @@ async def scenario(d):
     await cb.disconnect()
 
 
+def classement(A, client, plan):
+    """Classement de chaque type de partenaire et de chaque événement (vrais
+    points d'émission), puis migration de données moderation.0008."""
+    from apps.administration.views_telephone import _notifier_changement_telephone
+    from apps.messaging.services import notifier_admins_intervention_nouvelle
+    from apps.notifications.canaux import canal_notification
+    from apps.publicites.services import _notifier_admins_pub
+    from apps.reservations.services import _notifier_admins_demande
+
+    print('=== 6. CLASSEMENT PAR TYPE DE PARTENAIRE ===')
+    resto = {'restaurateur', 'fast_food', 'grilleur', 'boulanger'}
+    commandes = {}
+    for t in ProfilPartenaire.TypePartenaire.values:
+        p = ProfilPartenaire.objects.create(
+            user=utilisateur('partenaire'), plan=plan, nom_commerce=f'NTR {t} {uuid.uuid4().hex[:6]}',
+            type_partenaire=t, statut='actif', est_visible=True)
+        c = Commande.objects.create(numero=f'PFR-NTR-{uuid.uuid4().hex[:10]}', user=client,
+                                    partenaire=p, total=1000)
+        commandes[t] = c
+        attendu = 'restaurant' if t in resto else 'general'
+        for type_notif in ('commande_nouvelle', 'commande_annulee_client'):
+            _notifier_admins_commande(c, type_notif, 'Commande', 'QA')
+            n = Notification.objects.filter(user=A, type=type_notif, data__commande_id=c.id).first()
+            ok(f'{t} : {type_notif} -> {attendu}', n is not None and n.canal == attendu, getattr(n, 'canal', None))
+        ok(f'{t} : commande_acceptee (autre type) -> general',
+           canal_notification('commande_acceptee', {'commande_id': c.id}, commande=c) == 'general')
+    from apps.restaurants.services import TYPES_RESTAURATION
+    ok('TYPES_RESTAURATION inchange (boulanger exclu)', 'boulanger' not in {str(t) for t in TYPES_RESTAURATION})
+    from apps.catalog.models import Categorie
+    cat_boul = Categorie.objects.filter(types_partenaire__contains=['boulanger']).first()
+    if cat_boul:
+        c = commandes['commercant']
+        c.categorie = cat_boul
+        c.save(update_fields=['categorie'])
+        ok('categorie de boulangerie sur une commande commercant -> restaurant',
+           canal_notification('commande_nouvelle', {'commande_id': c.id}, commande=c) == 'restaurant')
+        c.categorie = None
+        c.save(update_fields=['categorie'])
+
+    print('=== 7. CLASSEMENT PAR EVENEMENT (vrais points d emission) ===')
+    def derniere(**kw):
+        return Notification.objects.filter(user=A, **kw).order_by('-id').first()
+    _notifier_admins_demande(SimpleNamespace(id=987651, pk=987651, statut='en_attente'),
+                             'reservation_nouvelle', 'Nouvelle demande', 'QA')
+    n = derniere(data__demande_id=987651)
+    ok('reservation (nouvelle / annulee) -> service', n is not None and n.canal == 'service', getattr(n, 'canal', None))
+    interv = SimpleNamespace(
+        id=987652, pk=987652, statut='en_attente', numero='INT-QA', artisan=SimpleNamespace(nom_commerce='Artisan QA'),
+        user=SimpleNamespace(get_full_name=lambda: 'Client QA', telephone='+2250000000000'),
+        get_type_intervention_display=lambda: 'Depannage', get_urgence_display=lambda: 'Urgent')
+    notifier_admins_intervention_nouvelle(interv)
+    n = derniere(data__intervention_id=987652)
+    ok('demande d intervention -> service', n is not None and n.canal == 'service', getattr(n, 'canal', None))
+    pid = str(uuid.uuid4())
+    for type_notif in ('pub_soumise', 'pub_a_valider'):
+        _notifier_admins_pub(SimpleNamespace(id=pid, pk=pid, statut='en_attente'), type_notif, 'Pub', 'QA')
+        n = derniere(type=type_notif, data__publicite_id=pid)
+        ok(f'{type_notif} -> general', n is not None and n.canal == 'general', getattr(n, 'canal', None))
+    _notifier_changement_telephone(A, '+2250700000099', 'QA')
+    n = derniere(type='compte_telephone_modifie')
+    ok('changement de numero -> general', n is not None and n.canal == 'general', getattr(n, 'canal', None))
+    ok('systeme / autre -> general', canal_notification('systeme', {}) == 'general')
+    ok('type ancien demande_intervention -> service', canal_notification('demande_intervention', {}) == 'service')
+
+    print('=== 8. MIGRATION DE DONNEES moderation.0008 ===')
+    def ancienne(type_notif, canal, **data):
+        return Notification.objects.create(user=A, type=type_notif, titre='t', contenu='c', data=data, canal=canal)
+    a_resa = ancienne('reservation_nouvelle', 'general', demande_id=11)
+    a_interv = ancienne('intervention_nouvelle', 'general', intervention_id=12)
+    a_boul = ancienne('commande_nouvelle', 'general', commande_id=commandes['boulanger'].id)
+    a_boul_annul = ancienne('commande_annulee_client', 'general', commande_id=commandes['boulanger'].id)
+    a_comm = ancienne('commande_nouvelle', 'general', commande_id=commandes['commercant'].id)
+    a_resto = ancienne('commande_nouvelle', 'restaurant', commande_id=commandes['restaurateur'].id)
+    a_garde = ancienne('commande_nouvelle', 'restaurant', commande_id=commandes['pharmacien'].id)
+    a_pub = ancienne('pub_a_valider', 'general', publicite_id='x-1')
+    a_tel = ancienne('compte_telephone_modifie', 'general', nouveau_telephone='+2250700000098')
+    mig = importlib.import_module('apps.moderation.migrations.0008_notification_canal_service')
+    mig.reclasser(django_apps, None)
+    for n in (a_resa, a_interv, a_boul, a_boul_annul, a_comm, a_resto, a_garde, a_pub, a_tel):
+        n.refresh_from_db()
+    ok('migration : reservation -> service', a_resa.canal == 'service', a_resa.canal)
+    ok('migration : intervention -> service', a_interv.canal == 'service', a_interv.canal)
+    ok('migration : commande boulanger -> restaurant', a_boul.canal == 'restaurant', a_boul.canal)
+    ok('migration : annulation boulanger -> restaurant', a_boul_annul.canal == 'restaurant', a_boul_annul.canal)
+    ok('migration : commande commercant reste general', a_comm.canal == 'general', a_comm.canal)
+    ok('migration : commande restaurateur reste restaurant', a_resto.canal == 'restaurant', a_resto.canal)
+    ok('migration : jamais de retrogradation restaurant -> general', a_garde.canal == 'restaurant', a_garde.canal)
+    ok('migration : pub et telephone restent general', a_pub.canal == 'general' and a_tel.canal == 'general')
+    mig.annuler(django_apps, None)
+    a_resa.refresh_from_db()
+    ok('migration inverse : service -> general', a_resa.canal == 'general', a_resa.canal)
+
+
 try:
     with transaction.atomic():
         plan = PlanAbonnement.objects.get(libelle='Basique')
@@ -206,6 +336,7 @@ try:
         Notification.objects.create(user=A, type='systeme', titre='G', contenu='QA', canal='general')
         async_to_sync(scenario)({'A': A, 'B': B, 'client': client, 'commande': commande,
                                  'notif_resto': notif_resto})
+        classement(A, client, plan)
         raise Rollback()
 except Rollback:
     print('\nRollback effectue (rien persiste).')

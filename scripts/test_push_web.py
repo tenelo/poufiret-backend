@@ -9,7 +9,10 @@
 - payload ngsw (notification, tag par canal, renotify, onActionClick),
   URL /notifications/ouvrir?ecran=&id= (et sans cible), texte regroupé ;
 - nettoyage : 410 / 404 supprimés, 5 échecs consécutifs, succès -> remise à 0 ;
-- flag éteint ou clés absentes : rien n'est envoyé.
+- flag éteint ou clés absentes : rien n'est envoyé ;
+- trois cloches : tag restaurant / service / general et regroupement par
+  canal, vrais points d'émission (commande boulanger, réservation,
+  intervention, pub, changement de numéro).
 
 Le réseau (pywebpush) et le pool de threads sont simulés (exécution
 synchrone) ; les callbacks on_commit sont exécutés explicitement.
@@ -191,11 +194,11 @@ try:
            n.get('data') == {'url': url, 'onActionClick': {'default': {
                'operation': 'navigateLastFocusedOrOpen', 'url': url}}}, n.get('data'))
         executer(lambda: diffuser_compteurs_admin([admin], True, push=(
-            'Réservation', 'Demande D-7', {'demande_id': 7, 'canal': 'restaurant'})))
+            'Réservation', 'Demande D-7', {'demande_id': 7, 'canal': 'service'})))
         n = (envois_vers(E['a1']) or [(None, {'notification': {}})])[0][1]['notification']
-        ok('canal restaurant sans non lue : texte simple, tag restaurant, ecran demandes_location', (
+        ok('canal service sans non lue : texte simple, tag service, ecran demandes_location', (
             n.get('body'), n.get('tag'), n.get('data', {}).get('url')) == (
-            'Demande D-7', 'restaurant', '/notifications/ouvrir?ecran=demandes_location&id=7'), n)
+            'Demande D-7', 'service', '/notifications/ouvrir?ecran=demandes_location&id=7'), n)
         executer(lambda: diffuser_compteurs_admin([admin], False))
         ok('diffusion sans push (lecture) : aucune notification systeme', not envois_vers(E['a1'], E['a2']))
         commande = Commande.objects.create(numero=f'PFR-PUSH-{uid}', user=client, partenaire=partenaire,
@@ -206,6 +209,52 @@ try:
         ok('vrai point d emission (commande) : push admin avec lien vers la commande', len(recus) == 2 and all(
             p['notification']['data']['url'] == f'/notifications/ouvrir?ecran=commandes&id={commande.id}'
             and p['notification']['title'] == 'Nouvelle commande' for _, p in recus), ENVOIS)
+        ok('commande commercant : tag general', recus and all(p['notification']['tag'] == 'general' for _, p in recus))
+
+        print('=== 2b. TROIS CLOCHES ===')
+        Notification.objects.filter(user=admin).update(lu=True)
+        for canal_, nb_ in (('restaurant', 2), ('service', 3)):
+            for _ in range(nb_):
+                Notification.objects.create(user=admin, type='systeme', titre='x', contenu='x', canal=canal_)
+        for canal_, attendu in (('restaurant', '2 nouvelles notifications (dernière : C)'),
+                                ('service', '3 nouvelles notifications (dernière : C)'),
+                                ('general', 'C')):
+            executer(lambda: diffuser_compteurs_admin([admin], True, push=('T', 'C', {'canal': canal_})))
+            n = (envois_vers(E['a1']) or [(None, {'notification': {}})])[0][1]['notification']
+            ok(f'canal {canal_} : tag {canal_}, regroupement sur les seules non lues du canal',
+               (n.get('tag'), n.get('body')) == (canal_, attendu), n)
+        Notification.objects.filter(user=admin).update(lu=True)
+
+        def tag_du_push(fn):
+            executer(fn)
+            recus = envois_vers(E['a1'])
+            return recus[0][1]['notification'].get('tag') if recus else None
+        from apps.administration.views_telephone import _notifier_changement_telephone
+        from apps.messaging.services import notifier_admins_intervention_nouvelle
+        from apps.publicites.services import _notifier_admins_pub
+        from apps.reservations.services import _notifier_admins_demande
+        boul = ProfilPartenaire.objects.create(
+            user=utilisateur('partenaire'), plan=PlanAbonnement.objects.get(libelle='Basique'),
+            nom_commerce=f'Boulangerie Push {uid}', type_partenaire='boulanger', statut='actif', est_visible=True)
+        c_boul = Commande.objects.create(numero=f'PFR-PUSHB-{uid}', user=client, partenaire=boul,
+                                         statut='nouvelle', sous_total=1000, total=1000)
+        ok('commande boulanger -> tag restaurant', tag_du_push(lambda: _notifier_admins_commande(
+            c_boul, 'commande_nouvelle', 'Nouvelle commande', 'Boulangerie')) == 'restaurant')
+        ok('reservation -> tag service', tag_du_push(lambda: _notifier_admins_demande(
+            SimpleNamespace(id=987661, pk=987661, statut='en_attente'),
+            'reservation_nouvelle', 'Nouvelle demande', 'QA')) == 'service')
+        interv = SimpleNamespace(
+            id=987662, pk=987662, statut='en_attente', numero='INT-QA',
+            artisan=SimpleNamespace(nom_commerce='Artisan QA'),
+            user=SimpleNamespace(get_full_name=lambda: 'Client QA', telephone='+2250000000000'),
+            get_type_intervention_display=lambda: 'Depannage', get_urgence_display=lambda: 'Urgent')
+        ok('intervention -> tag service', tag_du_push(lambda: notifier_admins_intervention_nouvelle(interv)) == 'service')
+        pid = str(uuid.uuid4())
+        ok('pub soumise -> tag general', tag_du_push(lambda: _notifier_admins_pub(
+            SimpleNamespace(id=pid, pk=pid, statut='en_attente'), 'pub_soumise', 'Pub', 'QA')) == 'general')
+        ok('changement de numero -> tag general', tag_du_push(lambda: _notifier_changement_telephone(
+            admin, '+2250700000097', 'QA')) == 'general')
+        Notification.objects.filter(user=admin).update(lu=True)
 
         print('=== 3. PARTENAIRES ===')
         executer(lambda: notifier_utilisateur(p_user, 'Commande annulee', 'La commande PFR-9 a ete annulee.',

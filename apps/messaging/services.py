@@ -145,7 +145,7 @@ def assigner_intervention(demande, artisan, acteur, commentaire='', request=None
 
 
 def notifier_admins_intervention_nouvelle(demande):
-    """Notification in-app intervention_nouvelle (canal general, cible
+    """Notification in-app intervention_nouvelle (canal service, cible
     interventions) aux super-admins et aux admins ayant voir_interventions
     ou gerer_interventions. Best-effort : ne bloque jamais la création."""
     try:

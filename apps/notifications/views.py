@@ -11,7 +11,7 @@ from .temps_reel import compteurs_admin, diffuser_compteurs_admin
 
 
 def _filtre_canal(qs, request):
-    """?canal=restaurant|general (absent : tous). Retourne (qs, erreur)."""
+    """?canal=restaurant|service|general (absent : tous). Retourne (qs, erreur)."""
     canal = request.query_params.get('canal')
     if not canal:
         return qs, None
@@ -50,7 +50,7 @@ class EnregistrerTokenFCMView(APIView):
 
 
 class NotificationsAdminListView(generics.ListAPIView):
-    """GET /notifications/admin/?non_lues=1&canal=restaurant|general — notifications in-app du compte
+    """GET /notifications/admin/?non_lues=1&canal=restaurant|service|general — notifications in-app du compte
     admin connecté (isolées par destinataire), paginées (StandardPagination),
     plus `nb_non_lues` ajouté à l'enveloppe de pagination."""
     serializer_class = NotificationAdminSerializer
@@ -77,7 +77,7 @@ class NotificationsAdminListView(generics.ListAPIView):
 class NotificationsAdminCompteurView(APIView):
     """GET /notifications/admin/compteur/ — non lues par canal, en UNE
     requête (agrégat filtré), pensé pour un polling fréquent :
-    {"restaurant": n, "general": m, "nb_non_lues": n+m}."""
+    {"restaurant": n, "service": s, "general": m, "nb_non_lues": n+s+m}."""
     permission_classes = [permissions.IsAuthenticated, EstAdminOuSuperAdmin]
 
     def get(self, request):

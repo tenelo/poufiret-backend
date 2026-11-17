@@ -46,13 +46,16 @@ def _blacklister_refresh_tokens(user):
 
 
 def _notifier_changement_telephone(cible, nouveau, message):
+    from apps.notifications.canaux import champs_canal
+    type_notif = Notification.Type.COMPTE_TELEPHONE_MODIFIE
+    data = {'nouveau_telephone': nouveau}
+    canal = champs_canal(type_notif, data)  # -> general (Autres)
     Notification.objects.create(
-        user=cible, type=Notification.Type.COMPTE_TELEPHONE_MODIFIE,
-        titre='Numéro de connexion modifié', contenu=message,
-        data={'nouveau_telephone': nouveau})
+        user=cible, type=type_notif, titre='Numéro de connexion modifié', contenu=message,
+        data=data, **canal)
     from apps.notifications.temps_reel import diffuser_compteurs_admin
     diffuser_compteurs_admin([cible], nouvelle=True,  # sans effet si la cible n'est pas admin
-                             push=('Numéro de connexion modifié', message, {'canal': 'general'}))
+                             push=('Numéro de connexion modifié', message, {'canal': canal['canal']}))
     notifier_utilisateur(cible, 'Numéro de connexion modifié', message,
                          data={'type': 'compte', 'sous_type': 'telephone_modifie'})
 
