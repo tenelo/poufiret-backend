@@ -435,6 +435,13 @@ class CartePartenairesView(_APIView):
 from apps.restaurants.gabarits import gabarit_de_type  # noqa: E402
 
 
+class PaginationPartenairesCategorie(StandardPagination):
+    """20 par page, ?page_size= jusqu'à 50 ; format DRF (count, next,
+    previous, results)."""
+    page_size = 20
+    max_page_size = 50
+
+
 class PartenairesParCategorieView(_APIView):
     """GET /categories/<slug>/partenaires/ — partenaires visibles rattachés
     à la catégorie ou y ayant un article actif.
@@ -442,8 +449,17 @@ class PartenairesParCategorieView(_APIView):
     Catégorie parente : agrège la catégorie ET toutes ses sous-catégories
     actives (récursif, sans doublon). ?sous_categorie=<id ou slug> : seulement
     cette sous-catégorie (et ses descendantes) ; 404 si ce n'est pas une
-    sous-catégorie active de la catégorie demandée."""
+    sous-catégorie active de la catégorie demandée.
+
+    ?q= : début de mot, sans casse ni accents (apps.catalog.recherche,
+    même logique que la recherche publique) sur nom_commerce, secteur,
+    quartier (texte et quartier_geo), localité et description.
+    ?page= (optionnel) : réponse paginée {count, next, previous, results},
+    20 par page (?page_size= max 50). Sans ?page= : liste simple, comme
+    avant (anciennes versions de l'app). Ordre identique dans les deux
+    modes : faveur, nom, id."""
     permission_classes = []
+    pagination_class = PaginationPartenairesCategorie
 
     def get(self, request, slug=None):
         from .models import Categorie, Article
@@ -478,7 +494,7 @@ class PartenairesParCategorieView(_APIView):
                        .filter(q_partenaire_public(), id__in=list(ids))
                        .filter(filtre_visibilite(dep_user, localites))
                        .select_related('departement__region', 'localite', 'quartier_geo', 'profil_etablissement')
-                       .order_by('-est_faveur', 'nom_commerce'))
+                       .order_by('-est_faveur', 'nom_commerce', 'id'))
         # ?type_etablissement=hotel|residence_meublee|… (hôteliers ; inconnu → 400).
         type_etab = request.query_params.get('type_etablissement')
         if type_etab:
@@ -486,6 +502,21 @@ class PartenairesParCategorieView(_APIView):
                 return _Response({'erreur': True, 'message': f"Type d'établissement inconnu : {type_etab}."},
                                  status=400)
             partenaires = partenaires.filter(etablissements.q_type_etablissement(type_etab))
+        from .recherche import normaliser_terme, q_debut_de_mot
+        terme = normaliser_terme(request.query_params.get('q'))
+        if terme:
+            partenaires = partenaires.filter(q_debut_de_mot(
+                terme, 'nom_commerce', 'secteur', 'quartier', 'quartier_geo__nom',
+                'localite__nom', 'description'))
+        # Pagination seulement si ?page= est présent ; dans les deux cas,
+        # seuls les partenaires renvoyés sont construits.
+        paginateur = None
+        if 'page' in request.query_params:
+            paginateur = self.pagination_class()
+            partenaires = paginateur.paginate_queryset(partenaires, request, view=self)
+        else:
+            partenaires = list(partenaires)
+        ids_renvoyes = [p.id for p in partenaires]
         def _url(champ):
             if not champ:
                 return ''
@@ -497,7 +528,7 @@ class PartenairesParCategorieView(_APIView):
         # defini une (sinon on retombe sur celle du profil).
         # (agrégation : celle de la catégorie demandée d'abord, sinon d'une sous-catégorie).
         couvertures = {}
-        for l in PartenaireCategorie.objects.filter(categorie_id__in=perimetre, partenaire_id__in=list(ids)):
+        for l in PartenaireCategorie.objects.filter(categorie_id__in=perimetre, partenaire_id__in=ids_renvoyes):
             if l.image_couverture and (l.categorie_id == cat.pk or l.partenaire_id not in couvertures):
                 couvertures[l.partenaire_id] = l.image_couverture
         def _coords(profil):
@@ -532,6 +563,8 @@ class PartenairesParCategorieView(_APIView):
                 'whatsapp_externe': whatsapp_externe(p),
                 **etablissements.champs_type_etablissement(p),
             })
+        if paginateur is not None:
+            return paginateur.get_paginated_response(donnees)
         return _Response(donnees)
 
 
