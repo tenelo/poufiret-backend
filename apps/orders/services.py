@@ -2,9 +2,10 @@
 partagée par le client, le partenaire et l'admin), demande de livreur
 (TeneLivr) et notifications.
 
-TRANSITIONS, _LIBELLES_COMMANDE et _notifier_transition_commande viennent de
-apps.orders.views (déplacés ici, comportement inchangé) pour que le centre de
-gestion admin s'y greffe sans dupliquer la machine d'état.
+La machine d'état (transitions_pour : parcours « court » ou « restauration »
+selon le type du partenaire), _LIBELLES_COMMANDE et
+_notifier_transition_commande sont la source unique pour le client, le
+partenaire et le centre de gestion admin.
 """
 import logging
 
@@ -16,18 +17,82 @@ from .models import Commande, HistoriqueCommande
 
 logger = logging.getLogger('poufiret.orders')
 
-# ── Machine d'état (inchangée, déplacée depuis views.py) ─────────────
-TRANSITIONS = {
-    'nouvelle': ['acceptee', 'refusee', 'annulee'],
-    'acceptee': ['en_preparation', 'annulee'],
-    'en_preparation': ['prete', 'annulee'],
-    'prete': ['en_livraison', 'livree', 'expiree'],
-    'en_livraison': ['livree'],
-    'livree': [],
-    'refusee': [],
-    'annulee': [],
-    'expiree': [],
-}
+# ── Machine d'état : deux parcours selon le type du partenaire ───────
+# « court » (commerces : boulangerie, mode, élevage, pharmacie, librairie…)
+# et « restauration » (TYPES_RESTAURATION : restaurateur, fast_food,
+# grilleur — « Accepter » = lancer la préparation). Les 9 statuts du modèle
+# restent ; en_preparation n'est plus atteint par les nouvelles commandes,
+# mais une commande déjà en en_preparation / prete termine son parcours.
+PARCOURS_COURT = 'court'
+PARCOURS_RESTAURATION = 'restauration'
+
+_S = Commande.Statut
+
+
+def parcours_de(commande):
+    """'restauration' si le partenaire est d'un type de restauration
+    (apps.restaurants.services.TYPES_RESTAURATION), sinon 'court'."""
+    from apps.restaurants.services import TYPES_RESTAURATION
+    if commande.partenaire.type_partenaire in TYPES_RESTAURATION:
+        return PARCOURS_RESTAURATION
+    return PARCOURS_COURT
+
+
+def _en_livraison_si_livraison(commande):
+    return [_S.EN_LIVRAISON] if commande.mode_livraison == Commande.ModeLivraison.LIVRAISON else []
+
+
+def transitions_pour(commande):
+    """Statuts cibles autorisés depuis le statut actuel de CETTE commande
+    (source unique : client, partenaire, admin).
+
+    Court        : nouvelle → acceptee | refusee | annulee ;
+                   acceptee → [en_livraison si livraison] | livree | expiree | annulee ;
+                   en_livraison → livree.
+    Restauration : nouvelle → acceptee | refusee | annulee ;
+                   acceptee → prete | annulee ;
+                   prete → [en_livraison si livraison] | livree | expiree ;
+                   en_livraison → livree.
+    Anciennes commandes (les deux parcours) : en_preparation → prete | annulee ;
+                   prete → [en_livraison si livraison] | livree | expiree."""
+    statut = commande.statut
+    if statut == _S.NOUVELLE:
+        return [_S.ACCEPTEE, _S.REFUSEE, _S.ANNULEE]
+    if statut == _S.ACCEPTEE:
+        if parcours_de(commande) == PARCOURS_RESTAURATION:
+            return [_S.PRETE, _S.ANNULEE]
+        return _en_livraison_si_livraison(commande) + [_S.LIVREE, _S.EXPIREE, _S.ANNULEE]
+    if statut == _S.EN_PREPARATION:
+        return [_S.PRETE, _S.ANNULEE]
+    if statut == _S.PRETE:
+        return _en_livraison_si_livraison(commande) + [_S.LIVREE, _S.EXPIREE]
+    if statut == _S.EN_LIVRAISON:
+        return [_S.LIVREE]
+    return []
+
+
+def etapes_pour(commande):
+    """Statuts du parcours NORMAL de cette commande, dans l'ordre (frise de
+    suivi) : court → nouvelle, acceptee, [en_livraison], livree ;
+    restauration → nouvelle, acceptee, prete, [en_livraison], livree."""
+    etapes = [_S.NOUVELLE, _S.ACCEPTEE]
+    if parcours_de(commande) == PARCOURS_RESTAURATION:
+        etapes.append(_S.PRETE)
+    return etapes + _en_livraison_si_livraison(commande) + [_S.LIVREE]
+
+
+def transitions_possibles(commande, cibles=None, commentaire_annulation_obligatoire=True):
+    """[{action, libelle, commentaire_obligatoire}] — format du centre admin,
+    réutilisé côté partenaire / client. `cibles` : sous-ensemble autorisé
+    (défaut : transitions_pour(commande))."""
+    if cibles is None:
+        cibles = transitions_pour(commande)
+    return [{
+        'action': str(action),
+        'libelle': ACTIONS_LIBELLES.get(action, str(action)),
+        'commentaire_obligatoire': commentaire_annulation_obligatoire and action == _S.ANNULEE,
+    } for action in cibles]
+
 
 _LIBELLES_COMMANDE = {
     'acceptee': 'a ete acceptee',
@@ -77,12 +142,20 @@ ACTIONS_LIBELLES = {
 }
 
 
+def statut_permet_livreur(commande):
+    """Statut à partir duquel un livreur peut être demandé : acceptee ou
+    prete (anciennes commandes) au parcours court ; prete en restauration."""
+    if parcours_de(commande) == PARCOURS_RESTAURATION:
+        return commande.statut == _S.PRETE
+    return commande.statut in (_S.ACCEPTEE, _S.PRETE)
+
+
 def commande_eligible_livreur(commande):
     """Vrai si `demander_livreur(commande, ...)` réussirait — mêmes
     conditions, sans effet de bord (pas de création de Course)."""
     if commande.mode_livraison != Commande.ModeLivraison.LIVRAISON:
         return False
-    if commande.statut != Commande.Statut.PRETE:
+    if not statut_permet_livreur(commande):
         return False
     if commande.courses.exclude(statut__in=['annulee', 'refusee']).exists():
         return False
@@ -109,6 +182,8 @@ def _notifier_transition_commande(commande, cible, acteur_est_client, request=No
                 request=request)
         return
     libelle = _LIBELLES_COMMANDE.get(cible)
+    if cible == 'acceptee' and parcours_de(commande) == PARCOURS_RESTAURATION:
+        libelle = 'a ete acceptee et est en preparation'
     if libelle:
         notifier_utilisateur(
             commande.user, 'Suivi de commande',
@@ -160,7 +235,7 @@ def appliquer_transition_commande(commande, cible, acteur, acteur_role,
     """Point CENTRAL de toute transition de commande (client, partenaire,
     admin) — ne vérifie PAS les droits d'accès par rôle (l'appelant s'en
     charge, comme pour apps.publicites.services.appliquer_transition) :
-    - vérifie la machine d'état (TRANSITIONS) ;
+    - vérifie la machine d'état (transitions_pour : parcours de la commande) ;
     - applique le changement de statut + les dates clés existantes ;
     - historise (HistoriqueCommande : statut, acteur, rôle, commentaire) ;
     - notifie client/partenaire via _notifier_transition_commande, à
@@ -169,8 +244,8 @@ def appliquer_transition_commande(commande, cible, acteur, acteur_role,
 
     Retourne (ok: bool, message: str).
     """
-    if cible not in TRANSITIONS.get(commande.statut, []):
-        return False, f"Transition {commande.statut} → {cible} non autorisée."
+    if cible not in transitions_pour(commande):
+        return False, message_transition_refusee(commande, cible)
 
     commande.statut = cible
     maintenant = timezone.now()
@@ -219,6 +294,18 @@ def appliquer_transition_commande(commande, cible, acteur, acteur_role,
     return True, f"Statut : {commande.get_statut_display()}."
 
 
+def message_transition_refusee(commande, cible):
+    """Message clair d'une transition interdite (400), avec les actions
+    possibles depuis le statut actuel."""
+    actuel = str(commande.get_statut_display())
+    libelles = {v: str(l) for v, l in Commande.Statut.choices}
+    vise = libelles.get(cible, cible or '—')
+    possibles = [libelles.get(c, str(c)) for c in transitions_pour(commande)]
+    suite = (f" Statut(s) possible(s) depuis « {actuel} » : {', '.join(possibles)}."
+             if possibles else f" Aucun changement possible depuis « {actuel} ».")
+    return f"Transition {commande.statut} → {cible} non autorisée : « {actuel} » → « {vise} » impossible.{suite}"
+
+
 class DemandeLivreurInvalide(Exception):
     """400 — la commande n'est pas éligible à une demande de livreur."""
 
@@ -232,7 +319,8 @@ class LivraisonEnCoursError(Exception):
 
 def demander_livreur(commande, demandeur, type_demandeur='partenaire'):
     """Crée une demande de livraison (Course TeneLivr) pour une commande
-    prête — MÊME logique que apps.orders.views.CommanderLivreurView
+    acceptée (parcours court) ou prête (restauration, et anciennes
+    commandes) — voir statut_permet_livreur — MÊME logique que apps.orders.views.CommanderLivreurView
     (partenaire) : mêmes gardes, même création de Course, même tentative
     d'assignation. Réutilisée par le partenaire ET par l'admin.
 
@@ -268,9 +356,12 @@ def demander_livreur(commande, demandeur, type_demandeur='partenaire'):
             'Une course est déjà en cours pour cette commande.',
             course_active.numero)
 
-    if commande.statut != Commande.Statut.PRETE:
+    if not statut_permet_livreur(commande):
+        if parcours_de(commande) == PARCOURS_RESTAURATION:
+            raise DemandeLivreurInvalide(
+                "La commande doit être prête avant d'appeler un livreur.")
         raise DemandeLivreurInvalide(
-            "La commande doit être prête avant d'appeler un livreur.")
+            "La commande doit être acceptée avant d'appeler un livreur.")
     if profil.localisation is None:
         raise DemandeLivreurInvalide(
             "Le commerce n'a pas de position GPS. Renseignez-la d'abord.")

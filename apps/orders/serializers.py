@@ -107,6 +107,9 @@ class CommandeSerializer(serializers.ModelSerializer):
     partenaire_nom = serializers.CharField(source='partenaire.nom_commerce', read_only=True)
     client_nom = serializers.SerializerMethodField()
     client_telephone = serializers.CharField(source='user.telephone', read_only=True)
+    parcours = serializers.SerializerMethodField()
+    etapes = serializers.SerializerMethodField()
+    transitions_possibles = serializers.SerializerMethodField()
 
     class Meta:
         model = Commande
@@ -114,8 +117,33 @@ class CommandeSerializer(serializers.ModelSerializer):
                   'mode_livraison', 'adresse', 'adresse_snapshot', 'heure_souhaitee',
                   'statut', 'raison_refus', 'sous_total', 'frais_livraison', 'total',
                   'mode_paiement', 'notes_client', 'notes_partenaire', 'lignes',
-                  'created_at', 'acceptee_le', 'prete_le', 'livree_le']
+                  'created_at', 'acceptee_le', 'prete_le', 'livree_le',
+                  'parcours', 'etapes', 'transitions_possibles']
         read_only_fields = ['numero', 'user', 'partenaire', 'statut', 'sous_total', 'total']
 
     def get_client_nom(self, obj):
         return obj.user.get_full_name() or obj.user.username or obj.user.telephone
+
+    def get_parcours(self, obj):
+        from .services import parcours_de
+        return parcours_de(obj)
+
+    def get_etapes(self, obj):
+        from .services import etapes_pour
+        return [str(e) for e in etapes_pour(obj)]
+
+    def get_transitions_possibles(self, obj):
+        """Actions que le DEMANDEUR peut faire (mêmes règles que
+        TransitionCommandeView) : le partenaire de la commande → toutes les
+        transitions de son parcours ; le client seul → annuler une commande
+        encore « nouvelle ». Pas de motif obligatoire côté partenaire."""
+        from .services import transitions_pour, transitions_possibles
+        requete = self.context.get('request')
+        user = getattr(requete, 'user', None)
+        profil = getattr(user, 'profil_partenaire', None) if user is not None else None
+        est_partenaire = profil is not None and obj.partenaire_id == profil.id
+        if est_partenaire or user is None or obj.user_id != getattr(user, 'id', None):
+            cibles = transitions_pour(obj)
+        else:
+            cibles = [Commande.Statut.ANNULEE] if obj.statut == Commande.Statut.NOUVELLE else []
+        return transitions_possibles(obj, cibles, commentaire_annulation_obligatoire=False)

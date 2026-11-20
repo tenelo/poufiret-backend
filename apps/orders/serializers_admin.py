@@ -10,9 +10,7 @@ from .serializers import QuantiteField, UniteField
 from apps.users.models import ProfilPartenaire
 
 from .models import Commande, HistoriqueCommande, NoteAdminCommande
-from .services import (
-    ACTIONS_LIBELLES, GROUPE_PAR_STATUT, LIBELLES_GROUPE, TRANSITIONS,
-)
+from .services import GROUPE_PAR_STATUT, LIBELLES_GROUPE, etapes_pour, parcours_de
 
 
 def _nom_utilisateur(user):
@@ -89,13 +87,21 @@ class CommandeAdminListSerializer(serializers.ModelSerializer):
     departement_nom = serializers.SerializerMethodField()
     age_minutes = serializers.SerializerMethodField()
     livraison = serializers.SerializerMethodField()
+    parcours = serializers.SerializerMethodField()
+    etapes = serializers.SerializerMethodField()
 
     class Meta:
         model = Commande
         fields = ['id', 'reference', 'cree_le', 'statut', 'statut_libelle',
                   'groupe', 'montant_total', 'nb_articles', 'mode_livraison',
                   'mode_livraison_libelle', 'client', 'partenaire',
-                  'departement_nom', 'age_minutes', 'livraison']
+                  'departement_nom', 'age_minutes', 'livraison', 'parcours', 'etapes']
+
+    def get_parcours(self, obj):
+        return parcours_de(obj)
+
+    def get_etapes(self, obj):
+        return [str(e) for e in etapes_pour(obj)]
 
     def get_statut_libelle(self, obj):
         return obj.get_statut_display()
@@ -205,11 +211,9 @@ class CommandeAdminDetailSerializer(CommandeAdminListSerializer):
         return HistoriqueCommandeSerializer(obj.historique.all(), many=True).data
 
     def get_transitions_possibles(self, obj):
-        return [{
-            'action': action,
-            'libelle': ACTIONS_LIBELLES.get(action, action),
-            'commentaire_obligatoire': action == Commande.Statut.ANNULEE,
-        } for action in TRANSITIONS.get(obj.statut, [])]
+        # Admin : motif obligatoire pour annuler (TransitionAdminView).
+        from .services import transitions_possibles
+        return transitions_possibles(obj, commentaire_annulation_obligatoire=True)
 
     def get_peut_demander_livreur(self, obj):
         from .services import commande_eligible_livreur

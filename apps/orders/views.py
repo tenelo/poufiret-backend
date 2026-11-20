@@ -253,8 +253,9 @@ from datetime import datetime
 from .models import Commande, LigneCommande, HistoriqueCommande
 from .serializers import CommandeSerializer
 from .services import (
-    TRANSITIONS, DemandeLivreurInvalide, LivraisonEnCoursError,
+    DemandeLivreurInvalide, LivraisonEnCoursError,
     _notifier_admins_commande, appliquer_transition_commande, demander_livreur,
+    message_transition_refusee, transitions_pour,
 )
 
 
@@ -540,9 +541,11 @@ _LIBELLES_COMMANDE = {
 
 
 class TransitionCommandeView(APIView):
-    """POST /orders/commandes/<id>/transition/ — change le statut selon le workflow.
-    Body: statut (cible), raison_refus? Le partenaire gère accept/refus/prepa/prete/livraison;
-    le client peut annuler une commande encore 'nouvelle'.
+    """POST /orders/commandes/<id>/transition/ — change le statut selon le
+    parcours de la commande (services.transitions_pour : « court » pour les
+    commerces, « restauration » pour restaurateur / fast-food / grilleur).
+    Body: statut (cible), raison_refus? Le partenaire fait avancer la
+    commande ; le client peut annuler une commande encore 'nouvelle'.
 
     Délègue à services.appliquer_transition_commande (source unique,
     partagée avec le centre de gestion admin) pour l'application du
@@ -559,9 +562,9 @@ class TransitionCommandeView(APIView):
         if not (est_client or est_part):
             return Response({'erreur': True, 'message': 'Accès refusé.'}, status=403)
 
-        if cible not in TRANSITIONS.get(c.statut, []):
+        if cible not in transitions_pour(c):
             return Response({'erreur': True,
-                'message': f"Transition {c.statut} → {cible} non autorisée."}, status=400)
+                'message': message_transition_refusee(c, cible)}, status=400)
 
         # Le client ne peut qu'annuler une commande 'nouvelle'
         if est_client and not est_part:
@@ -582,7 +585,8 @@ class TransitionCommandeView(APIView):
 
 class CommanderLivreurView(APIView):
     """POST /orders/commandes/<pk>/livreur/ — le partenaire proprietaire
-    declenche une course de livraison pour une commande prete.
+    declenche une course de livraison pour une commande acceptée (parcours
+    court) ou prête (restauration).
 
     Délègue à services.demander_livreur (source unique, partagée avec le
     centre de gestion admin) — mêmes gardes, même ordre, même comportement."""
